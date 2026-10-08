@@ -1,0 +1,68 @@
+# Customer-support triage: the example scenario.
+# Routes are scored by their description text. Wording matters a great deal: each description below is a
+# full sentence answering the routing question. Measure any change with `uv run pytest -m slow -k collapse`
+# or, once you have a review record, with `uv run python evaluate.py`.
+
+[clm]
+model_id = "mlx-community/CLM-v0.1-8B-MLX-8bit"   # the 4bit build is smaller but routes worse
+history_turns = 6
+
+[generator]
+backend = "mlx"                                    # "mlx" or "ollama"
+model = "mlx-community/Qwen3-4B-Instruct-2507-4bit"   # with ollama, for example "gemma4:26b"
+max_tokens = 400
+
+[routing]
+instructions = "What does the customer need?"
+confidence_threshold = 0.6
+
+# Before a tool runs, CLM answers this yes/no question about the proposed call.
+[tool_check]
+instructions = "Is this tool call appropriate for what the user asked?"
+threshold = 0.5
+max_tool_rounds = 3
+
+[routes.Refund_Processor]
+description = "The customer needs a charge corrected or refunded."
+system_prompt = "You are a billing support agent. Help the customer with charges and refunds. Look up the invoice with your tools before answering; if you do not have the invoice number, ask for it. Be brief and concrete."
+examples = ["Invoice INV-2041 was charged twice, can you check it?", "Please refund last month's duplicate charge"]
+tools = ["lookup_invoice", "issue_refund"]
+
+[routes.Tech_Support]
+description = "The customer needs a technical problem fixed."
+system_prompt = "You are a technical support agent. Ask for the details needed to reproduce the problem and suggest one next step. Be brief."
+examples = ["The app crashes when I open the settings page", "I cannot log in, the reset email never arrives"]
+
+[routes.Human_Escalation]
+description = "The customer is angry and demands to speak to a manager."
+system_prompt = "You are a support agent handing the customer over to a human colleague. Apologise once, say a person will take over, and ask for the best way to reach them."
+examples = ["This is the third time I have written, get me a manager"]
+
+[routes.General_FAQ]
+description = "The customer needs information about the product."
+system_prompt = "You are a support agent answering general product questions. Answer briefly. If you do not know, say so."
+examples = ["Do you offer a student discount?", "How do I change my notification settings?"]
+
+# CLM always picks one of the routes, so a scenario needs one for requests it does not cover.
+[routes.Out_Of_Scope]
+description = "The customer is asking about something unrelated to the product."
+system_prompt = "You are a customer support agent. The request is outside what you handle. Say so politely and list what you can help with: billing, technical problems and product questions."
+examples = ["What is the weather like in Paris tomorrow?"]
+
+[questions.urgent]
+type = "noul"
+instructions = "Is this urgent?"
+
+[questions.frustration]
+type = "score"
+instructions = "How frustrated is the customer?"
+criteria = ["Calm", "Frustrated", "Very angry"]
+
+
+# Both modes reuse the route a reviewer chose in --review mode when a new message is this similar.
+[record]
+live_corrections = true
+match_threshold = 0.97
+
+[tools]
+module = "fake_tools"

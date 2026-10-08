@@ -1,0 +1,25 @@
+"""Labelled first messages for checking the demo scenario's routing with the real CLM."""
+
+CASES = [
+    ("I need access to the readmissions data for our quality audit", "Data_Access"),
+    ("Can I get into the oncology registry?", "Data_Access"),
+    ("Please give my team read access to the pharmacy dispensing tables", "Data_Access"),
+    ("How do I get permission to see the theatre utilisation dataset?", "Data_Access"),
+    ("We want to study whether the discharge checklist reduced readmissions", "Research_Support"),
+    ("I'm planning a research project on missed outpatient appointments and need help with the design",
+     "Research_Support"),
+    ("Can someone help us analyse our survey results for a paper?", "Research_Support"),
+    ("We have ethics approval for a falls study and need a statistician", "Research_Support"),
+    ("How many emergency attendances did we have last month by triage category?", "Information_Request"),
+    ("I need a list of wards with the longest length of stay this quarter", "Information_Request"),
+    ("Can you pull the number of cancelled operations for March?", "Information_Request"),
+    ("Please send me a chart of staffing levels by shift for the board meeting", "Information_Request"),
+    ("What is happening with ticket 2?", "Ticket_Status"),
+    ("I opened a request last week about the readmissions extract, any update?", "Ticket_Status"),
+    ("Has my ticket been picked up yet?", "Ticket_Status"),
+    ("Should this patient be started on a beta blocker?", "Out_Of_Scope"),
+    ("What dose of heparin is right for someone with kidney failure?", "Out_Of_Scope"),
+    ("The printer on ward 4 is broken", "Out_Of_Scope"),
+    ("Can you book me a meeting room for Thursday?", "Out_Of_Scope"),
+    ("My patient's test results look odd, what should I do?", "Out_Of_Scope"),
+]

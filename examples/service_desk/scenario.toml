@@ -1,0 +1,122 @@
+# A front end to a data and analytics service desk.
+# Someone in a clinical environment describes what they need; the assistant works out the kind of
+# request, collects the details, drafts the ticket and submits it to the tracker.
+# It is not a clinical tool: questions about a particular patient's care are declined.
+
+[clm]
+model_id = "mlx-community/CLM-v0.1-8B-MLX-8bit"
+history_turns = 6
+heads = "scenario.heads"            # trained heads, made by train.py; the released ones are used until then
+# To ask the CLM authors' server instead of running CLM in this process (untested against a real server):
+# backend = "server"
+# url = "http://localhost:8700"
+# api_key_env = "CLM_API_KEY"       # optional
+
+[generator]
+backend = "mlx"                                        # "mlx", "ollama" or "openai"
+model = "mlx-community/Qwen3-4B-Instruct-2507-4bit"    # with ollama, for example "gemma4:26b"
+max_tokens = 500
+# Any server with the OpenAI chat interface (Ollama, vLLM, LM Studio, llama.cpp):
+# backend = "openai"
+# base_url = "http://localhost:11434/v1"
+# model = "gemma4:26b"
+# api_key_env = "MODEL_API_KEY"     # optional
+
+[synthesize]
+messages = "messages that staff might send to a help desk"   # what synthesize.py asks the language model to write
+
+[routing]
+instructions = "What does the requester need?"
+confidence_threshold = 0.6
+
+[tool_check]
+instructions = "Is this tool call appropriate for what the user asked?"
+threshold = 0.5
+max_tool_rounds = 6
+
+[tools]
+module = "service_desk_tools"      # a Python file beside this scenario
+confirm = ["create_ticket"]        # never runs without the user's yes
+
+[tools.settings]
+queues_file = "queues.json"
+catalogue_db = "catalogue.db"      # built from catalogue_sql the first time
+catalogue_sql = "catalogue.sql"
+# tracker_url = "http://127.0.0.1:8765"
+tracker_url = "http://localhost:3000"
+repository = "desk-admin/requests" # owner/name of the repository whose issues are the tickets
+token_env = "TRACKER_TOKEN"        # environment variable holding an access token; the mock needs none
+
+[routes.Data_Access]
+description = "The requester needs access to an existing dataset or system."
+system_prompt = "You help staff open a request for access to data. Never copy patient names or identifiers into a ticket. Find the dataset in the catalogue and check who handles access requests before submitting. Be brief."
+tools = ["find_dataset", "lookup_queue", "search_tickets", "create_ticket"]
+examples = ["I need access to the readmissions data for an audit", "Can I get into the oncology registry?"]
+
+[routes.Data_Access.fields]
+dataset = "Which dataset or system they need access to"
+purpose = "What they will use it for"
+detail_level = "Whether they need aggregate, de-identified or identifiable data"
+duration = "How long they need access"
+
+[routes.Research_Support]
+description = "The requester needs help planning or carrying out a research study or analysis."
+system_prompt = "You help staff open a request for research support. Never copy patient names or identifiers into a ticket. Check who handles research requests and whether a similar ticket exists before submitting. Be brief."
+tools = ["lookup_queue", "search_tickets", "create_ticket"]
+examples = ["We want to study whether the discharge checklist reduced readmissions"]
+
+[routes.Research_Support.fields]
+research_question = "The question the study is trying to answer"
+population = "Which patients or services the study covers"
+ethics_status = "Whether ethics approval is in place, pending or not yet sought"
+timeline = "When they need to start or finish"
+help_needed = "What kind of help they need: study design, data, analysis"
+
+[routes.Information_Request]
+description = "The requester needs a specific figure, list or report pulled together."
+system_prompt = "You help staff open a request for a figure or report. Never copy patient names or identifiers into a ticket. Check who handles reporting requests and whether a similar ticket exists before submitting. Be brief."
+tools = ["lookup_queue", "search_tickets", "create_ticket"]
+examples = ["How many emergency attendances did we have last month by triage category?"]
+
+[routes.Information_Request.fields]
+question = "The question the figure or report should answer"
+scope = "Which patients or services, and what time period"
+deadline = "When they need it"
+format = "How they want it: a number, a table, a chart"
+
+[routes.Ticket_Status]
+description = "The requester is asking about a ticket they have already opened."
+system_prompt = "You look up existing tickets. Use the ticket number if the user gave one; otherwise search by what they describe. Report the status in one or two sentences."
+tools = ["get_ticket", "search_tickets"]
+examples = ["What is happening with ticket 2?"]
+
+# CLM always picks one of the routes, so a scenario needs one for requests it does not cover.
+[routes.Out_Of_Scope]
+description = "The requester is asking about the care of a particular patient, or about something this service desk does not handle."
+system_prompt = "This service desk handles requests for data access, research support and reports. It cannot advise on the care of a patient. Say so in one or two sentences and suggest who to ask instead: the clinical team for patient care."
+examples = ["Should this patient be started on a beta blocker?"]
+
+[questions.urgency]
+type = "score"
+instructions = "How soon is this needed?"
+criteria = ["No deadline is mentioned", "Needed within weeks", "Needed within days"]
+
+[questions.identifiable]
+type = "noul"
+instructions = "Does this request involve data that identifies individual patients?"
+
+[[rules]]
+when = "urgency >= 1.5"
+tell = "Set the ticket's priority to High and state the deadline in the summary."
+
+[[rules]]
+when = "identifiable >= 0.5"
+tell = "Add the label governance-review and say that data governance must approve before work starts."
+
+[record]
+live_corrections = true
+match_threshold = 0.97
+# The record holds the text of reviewed conversations. See "Where text goes" in the README.
+# path = "private/desk.record.jsonl"   # default: scenario.record.jsonl beside this file
+# key_file = "record.key"              # encrypt it; make the key with: python record.py newkey record.key
+# key_env = "DESK_RECORD_KEY"          # or take the key from an environment variable

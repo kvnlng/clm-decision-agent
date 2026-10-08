@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.superpowers/
+docs/superpowers/
+.DS_Store
+*.record.jsonl
+examples/service_desk/catalogue.db
+.forgejo-local.env
+*.heads/
+*.key

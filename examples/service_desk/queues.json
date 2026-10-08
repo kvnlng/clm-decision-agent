@@ -1,0 +1,20 @@
+{
+  "Data_Access": {
+    "team": "Data Governance",
+    "approvals": ["line manager", "data steward of the dataset"],
+    "turnaround": "5 working days",
+    "note": "Requests for identifiable data also need a privacy review."
+  },
+  "Research_Support": {
+    "team": "Research Analytics",
+    "approvals": ["ethics committee approval or an exemption"],
+    "turnaround": "10 working days for a first meeting",
+    "note": "The team can help with study design before ethics approval is in place."
+  },
+  "Information_Request": {
+    "team": "Reporting and Insights",
+    "approvals": [],
+    "turnaround": "3 working days for a simple count, longer for a new report",
+    "note": "Results are aggregated; small numbers are suppressed."
+  }
+}

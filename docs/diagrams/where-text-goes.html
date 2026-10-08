@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Where text goes</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+body{margin:0}
+</style>
+</head>
+<body>
+<div style="position: relative; width: 1640px; height: 940px; background: #F4F5F2; color: #17212B; font-family: 'IBM Plex Sans', system-ui, sans-serif">
+<div style="position: absolute; left: 364px; top: 176px; width: 392px; height: 624px; background: #E6E9E4; border-radius: 12px"></div>
+<div style="position: absolute; left: 772px; top: 176px; width: 392px; height: 624px; background: #E6E9E4; border-radius: 12px"></div>
+<div style="position: absolute; left: 1180px; top: 176px; width: 392px; height: 624px; box-sizing: border-box; background: #EFE7DB; border: 2px dashed #B45309; border-radius: 12px"></div>
+<div style="position: absolute; left: 64px; top: 64px; font-size: 32px; line-height: 40px; font-weight: 600">Where the text of a conversation goes</div>
+<div style="position: absolute; left: 64px; top: 112px; width: 1300px; font-size: 16px; line-height: 24px; color: #4A5560">Solid boxes are the example's defaults. Dashed boxes are where a setting can send the text instead.</div>
+<div style="position: absolute; left: 380px; top: 196px; width: 360px; font-size: 17px; line-height: 24px; font-weight: 600">Inside the chat's process</div>
+<div style="position: absolute; left: 788px; top: 196px; width: 360px; font-size: 17px; line-height: 24px; font-weight: 600">Elsewhere on this computer</div>
+<div style="position: absolute; left: 1196px; top: 196px; width: 360px; font-size: 17px; line-height: 24px; font-weight: 600">Another machine</div>
+<div style="position: absolute; left: 64px; top: 252px; width: 280px; font-size: 15px; line-height: 20px"><b>CLM</b><br>every turn<br><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px; color: #4A5560">[clm] backend, url</span></div>
+<div style="position: absolute; left: 64px; top: 364px; width: 280px; font-size: 15px; line-height: 20px"><b>Language model</b><br>every turn<br><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px; color: #4A5560">[generator] backend, base_url</span></div>
+<div style="position: absolute; left: 64px; top: 476px; width: 280px; font-size: 15px; line-height: 20px"><b>Tools</b><br>when the language model calls one<br><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px; color: #4A5560">[tools.settings]</span></div>
+<div style="position: absolute; left: 64px; top: 588px; width: 280px; font-size: 15px; line-height: 20px"><b>Review record</b><br>review mode only<br><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px; color: #4A5560">[record] path, key_file</span></div>
+<div style="position: absolute; left: 64px; top: 700px; width: 280px; font-size: 15px; line-height: 20px"><b>Training files</b><br>if you train from reviews</div>
+<div style="position: absolute; left: 380px; top: 240px; width: 360px; height: 88px; box-sizing: border-box; padding: 8px 12px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 8px; font-size: 15px; line-height: 22px; background: #1E3A8A; color: #FFFFFF"><span><b>CLM, the MLX build</b><br>runs inside the chat</span></div>
+<div style="position: absolute; left: 788px; top: 240px; width: 360px; height: 88px; box-sizing: border-box; padding: 8px 12px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 8px; font-size: 15px; line-height: 22px; border: 2px dashed #5B6772; color: #36414B"><span><b>A CLM server at localhost</b><br>backend = "server"</span></div>
+<div style="position: absolute; left: 1196px; top: 240px; width: 360px; height: 88px; box-sizing: border-box; padding: 8px 12px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 8px; font-size: 15px; line-height: 22px; border: 2px dashed #5B6772; color: #36414B"><span><b>A CLM server elsewhere</b><br>url names another machine</span></div>
+<div style="position: absolute; left: 380px; top: 352px; width: 360px; height: 88px; box-sizing: border-box; padding: 8px 12px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 8px; font-size: 15px; line-height: 22px; background: #FFFFFF; border: 2px solid #17212B"><span><b>The language model, MLX</b><br>runs inside the chat</span></div>
+<div style="position: absolute; left: 788px; top: 352px; width: 360px; height: 88px; box-sizing: border-box; padding: 8px 12px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 8px; font-size: 15px; line-height: 22px; border: 2px dashed #5B6772; color: #36414B"><span><b>Ollama, or an OpenAI-style server</b><br>at a localhost address</span></div>
+<div style="position: absolute; left: 1196px; top: 352px; width: 360px; height: 88px; box-sizing: border-box; padding: 8px 12px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 8px; font-size: 15px; line-height: 22px; border: 2px dashed #5B6772; color: #36414B"><span><b>A model server elsewhere</b><br>base_url names another machine</span></div>
+<div style="position: absolute; left: 380px; top: 464px; width: 360px; height: 88px; box-sizing: border-box; padding: 8px 12px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 8px; font-size: 15px; line-height: 22px; background: #DDE1DB; border: 1px solid #8A949B"><span><b>Your tool functions</b><br>get what the language model passes</span></div>
+<div style="position: absolute; left: 788px; top: 464px; width: 360px; height: 88px; box-sizing: border-box; padding: 8px 12px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 8px; font-size: 15px; line-height: 22px; background: #DDE1DB; border: 1px solid #8A949B"><span><b>What the example's tools reach</b><br>queues.json, catalogue.db, a local tracker</span></div>
+<div style="position: absolute; left: 1196px; top: 464px; width: 360px; height: 88px; box-sizing: border-box; padding: 8px 12px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 8px; font-size: 15px; line-height: 22px; border: 2px dashed #5B6772; color: #36414B"><span><b>Whatever your own tools call</b><br>the chat cannot see inside them</span></div>
+<div style="position: absolute; left: 788px; top: 576px; width: 360px; height: 88px; box-sizing: border-box; padding: 8px 12px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 8px; font-size: 15px; line-height: 22px; background: #DDE1DB; border: 1px solid #8A949B"><span><b>The record file, on disk</b><br>owner-only; encrypted if you set a key</span></div>
+<div style="position: absolute; left: 788px; top: 688px; width: 360px; height: 88px; box-sizing: border-box; padding: 8px 12px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 8px; font-size: 15px; line-height: 22px; background: #DDE1DB; border: 1px solid #8A949B"><span><b>Examples file and trained heads</b><br>on disk, never encrypted</span></div>
+<div style="position: absolute; left: 64px; top: 824px; width: 1500px; font-size: 14px; line-height: 22px; color: #4A5560">The chat prints these destinations at start-up. It cannot see inside your tools, or a proxy set in your environment. Run mode saves nothing.</div>
+<div style="position: absolute; left: 64px; top: 850px; width: 1500px; font-size: 14px; line-height: 22px; color: #4A5560">Encryption protects the record file on disk and nothing more. It is not de-identification: the text still reaches the models and the tools.</div>
+</div>
+</body>
+</html>
