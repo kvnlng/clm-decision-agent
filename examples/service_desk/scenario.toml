@@ -42,8 +42,8 @@ confirm = ["create_ticket"]        # never runs without the user's yes
 queues_file = "queues.json"
 catalogue_db = "catalogue.db"      # built from catalogue_sql the first time
 catalogue_sql = "catalogue.sql"
-# tracker_url = "http://127.0.0.1:8765"
-tracker_url = "http://localhost:3000"
+tracker_url = "http://127.0.0.1:8765"     # the mock tracker
+# tracker_url = "http://localhost:3000"   # a local Forgejo: see the README beside this file
 repository = "desk-admin/requests" # owner/name of the repository whose issues are the tickets
 token_env = "TRACKER_TOKEN"        # environment variable holding an access token; the mock needs none
 

@@ -3,6 +3,8 @@ name = "clm-agent"
 version = "0.1.0"
 description = "Local chat agent: CLM decides, a generator writes, LangGraph connects them"
 requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = [
     "mlx>=0.32",
     "mlx-lm>=0.32.0",

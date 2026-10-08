@@ -117,3 +117,8 @@ Measured on the example scenario, on an M5 Max with 64 GB:
 CLM is described in Kwok et al. (2026) and published at
 [Contrastive-LM/CLM](https://github.com/Contrastive-LM/CLM). This project uses the community
 MLX builds of it.
+
+## Licence
+
+Copyright 2026 Kevin Long. Licensed under the [Apache License 2.0](LICENSE). The licence covers this
+repository only: the models it downloads have their own terms.
