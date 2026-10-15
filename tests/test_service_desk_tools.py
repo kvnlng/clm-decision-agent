@@ -14,14 +14,13 @@ EXAMPLE = Path(__file__).parent.parent / "examples" / "service_desk"
 
 
 @pytest.fixture
-def configured(tmp_path, tracker_url, monkeypatch):
-    """The tools pointed at copies of the demo data and at the mock tracker on a free port."""
-    for name in ("queues.json", "catalogue.sql"):
-        shutil.copy(EXAMPLE / name, tmp_path / name)
+def configured(tmp_path, tracker_url, openmetadata_url, monkeypatch):
+    """The tools pointed at a copy of the demo data and at the mock tracker and OpenMetadata on free ports."""
+    shutil.copy(EXAMPLE / "queues.json", tmp_path / "queues.json")
     monkeypatch.delenv("DESK_TOKEN", raising=False)
 
     def configure(**overrides):
-        settings = {"queues_file": "queues.json", "catalogue_db": "catalogue.db", "catalogue_sql": "catalogue.sql",
+        settings = {"queues_file": "queues.json", "openmetadata_url": openmetadata_url,
                     "tracker_url": tracker_url, "repository": "desk-admin/requests",
                     "token_env": "DESK_TOKEN", **overrides}
         desk.configure(settings, tmp_path)
@@ -40,15 +39,30 @@ def test_lookup_queue_names_the_known_types_when_asked_for_another(configured):
         desk.lookup_queue.invoke({"request_type": "Billing"})
 
 
-def test_configure_builds_the_catalogue_database_from_the_sql_file(configured, tmp_path):
-    assert (tmp_path / "catalogue.db").exists()
+def test_list_datasets_reads_the_catalogue_from_openmetadata_once(configured, openmetadata_server):
+    entries = desk.list_datasets.invoke({})
+    assert len(entries) == 8
+    assert desk.list_datasets.invoke({}) == entries
+    assert sum(path == "/api/v1/tables" for path in openmetadata_server.requests) == 1
+
+
+def test_list_datasets_reports_an_unreachable_server(configured):
+    configured(openmetadata_url="http://127.0.0.1:9")
+    with pytest.raises(ToolException, match=r"OpenMetadata at http://127\.0\.0\.1:9 could not be reached"):
+        desk.list_datasets.invoke({})
+
+
+def test_list_datasets_keeps_the_configured_domain(configured):
+    configured(openmetadata_domain="Workforce")
+    assert [entry["name"] for entry in desk.list_datasets.invoke({})] == ["Staffing Rosters"]
 
 
 def test_find_dataset_matches_name_or_description(configured):
     by_name = desk.find_dataset.invoke({"search_term": "oncology"})
     assert [row["name"] for row in by_name] == ["Oncology Registry"]
     assert by_name[0] == {"name": "Oncology Registry", "description": "Cancer diagnoses, staging and treatment dates",
-                          "steward": "Cancer Services", "sensitivity": "identifiable"}
+                          "facts": ["Cancer Services owns Oncology Registry.",
+                                    "Oncology Registry contains sensitive personal data."]}
     by_description = desk.find_dataset.invoke({"search_term": "cancellations"})
     assert [row["name"] for row in by_description] == ["Theatre Utilisation"]
 
@@ -59,10 +73,9 @@ def test_find_dataset_uses_each_word_and_returns_at_most_five(configured):
     assert len(desk.find_dataset.invoke({"search_term": "ward"})) <= 5
 
 
-@pytest.mark.parametrize("term", ["'; DROP TABLE datasets; --", 'x" OR "1"="1', "100% of %"])
+@pytest.mark.parametrize("term", ["'; DROP TABLE datasets; --", 'x" OR "1"="1', "100% of %", "a an"])
 def test_find_dataset_treats_odd_characters_as_text(configured, term):
     assert desk.find_dataset.invoke({"search_term": term}) == []
-    assert desk.find_dataset.invoke({"search_term": "oncology"})      # the table is still there
 
 
 def test_search_tickets_returns_number_summary_and_status(configured):
@@ -136,20 +149,8 @@ def test_unreachable_tracker_says_where_and_how_to_start_it(configured):
 
 def test_tools_list_names(configured):
     assert [tool.name for tool in desk.TOOLS] == [
-        "lookup_queue", "find_dataset", "search_tickets", "get_ticket", "create_ticket"]
+        "lookup_queue", "find_dataset", "list_datasets", "search_tickets", "get_ticket", "create_ticket"]
     assert json.dumps(desk.lookup_queue.invoke({"request_type": "Information_Request"}))
-
-
-def test_a_failed_catalogue_build_leaves_nothing_behind_and_the_next_start_rebuilds(configured, tmp_path):
-    (tmp_path / "catalogue.db").unlink()
-    script = (tmp_path / "catalogue.sql").read_text()
-    (tmp_path / "catalogue.sql").write_text(script + "\nINSERT INTO no_such_table VALUES (1);\n")
-    with pytest.raises(Exception):
-        configured()
-    assert not (tmp_path / "catalogue.db").exists()
-    (tmp_path / "catalogue.sql").write_text(script)
-    configured()
-    assert desk.find_dataset.invoke({"search_term": "oncology"})
 
 
 @pytest.mark.parametrize("number", ["../labels", "1/../../admin", "1?state=all", "DSD-1", ""])

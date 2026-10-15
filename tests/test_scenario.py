@@ -208,9 +208,9 @@ def test_the_demo_scenario_loads_and_its_tools_resolve(tmp_path):
     import shutil                              # pylint: disable=import-outside-toplevel
     from pathlib import Path                   # pylint: disable=import-outside-toplevel
     from tools import resolve_tools            # pylint: disable=import-outside-toplevel
-    # A copy, because loading the tools builds catalogue.db beside the scenario
+    # A copy, so a test cannot change the example's files
     example = Path(__file__).parent.parent / "examples" / "service_desk"
-    for name in ("scenario.toml", "queues.json", "catalogue.sql"):
+    for name in ("scenario.toml", "queues.json"):
         shutil.copy(example / name, tmp_path / name)
     demo = load_scenario(tmp_path / "scenario.toml")
     assert list(demo.routes) == ["Data_Access", "Research_Support", "Information_Request", "Ticket_Status",
@@ -219,7 +219,8 @@ def test_the_demo_scenario_loads_and_its_tools_resolve(tmp_path):
     assert demo.confirm_tools == ("create_ticket",)
     assert [rule.question for rule in demo.rules] == ["urgency", "identifiable"]
     assert [t.name for t in resolve_tools(demo)["Ticket_Status"]] == ["get_ticket", "search_tickets"]
-    assert (tmp_path / "catalogue.db").exists()
+    assert demo.catalogue.tool == "list_datasets" and demo.catalogue.routes == ("Data_Access",)
+    assert demo.catalogue.field == "dataset"
 
 
 def test_a_route_with_fields_needs_a_confirm_tool_to_submit_with(write_scenario):

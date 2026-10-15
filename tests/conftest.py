@@ -142,3 +142,19 @@ def tracker_server():
 @pytest.fixture
 def tracker_url(tracker_server):
     return f"http://127.0.0.1:{tracker_server.server_address[1]}"
+
+
+@pytest.fixture
+def openmetadata_server():
+    from mock_openmetadata import make_server  # pylint: disable=import-outside-toplevel
+    server = make_server(port=0)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
+    thread.start()
+    yield server
+    server.shutdown()
+    server.server_close()
+
+
+@pytest.fixture
+def openmetadata_url(openmetadata_server):
+    return f"http://127.0.0.1:{openmetadata_server.server_address[1]}"

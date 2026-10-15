@@ -128,10 +128,10 @@ DESK_KEYS = ("messages", "draft", "draft_route", "draft_start", "follow_up")
 
 @pytest.fixture(scope="module")
 def desk(tmp_path_factory):
-    # A copy, because loading the tools builds catalogue.db beside the scenario
+    # A copy, so a test cannot change the example's files
     example = Path(__file__).parent.parent / "examples" / "service_desk"
     folder = tmp_path_factory.mktemp("desk")
-    for name in ("scenario.toml", "queues.json", "catalogue.sql"):
+    for name in ("scenario.toml", "queues.json"):
         shutil.copy(example / name, folder / name)
     return load_scenario(folder / "scenario.toml")
 

@@ -1,12 +1,16 @@
 """Tools for the data service desk demo. Each reaches a different kind of data source:
 
     lookup_queue    a local JSON file
-    find_dataset    a SQLite database, through a parameterised query
+    list_datasets, find_dataset    a data catalogue's REST API (OpenMetadata's), read once
     search_tickets, get_ticket, create_ticket    an issue tracker's REST API
+
+list_datasets is also the scenario's catalogue tool: the framework calls it at start-up and CLM
+chooses between the datasets it returns (see [catalogue] in scenario.toml).
 
 The tracker calls follow the REST API of Forgejo and Gitea, which the mock tracker imitates.
 The scenario's [tools.settings] table is passed to configure(): tracker_url, repository
-("owner/name") and token_env, the name of the environment variable that holds an access token.
+("owner/name") and token_env, the name of the environment variable that holds an access token;
+and openmetadata_url, openmetadata_token_env and, optionally, openmetadata_domain.
 For another tracker, rewrite the three tracker tools; nothing else depends on them.
 """
 from __future__ import annotations
@@ -14,38 +18,27 @@ from __future__ import annotations
 import json
 import os
 import re
-import sqlite3
-from contextlib import closing
 from pathlib import Path
 
 import httpx
+import openmetadata_catalogue
 from langchain_core.tools import ToolException, tool
 
 SETTINGS: dict = {}
 TICKET_NUMBER = re.compile(r"#?\d+")
 PRIORITIES = ("low", "medium", "high")
-PATH_SETTINGS = ("queues_file", "catalogue_db", "catalogue_sql")
+PATH_SETTINGS = ("queues_file",)
+_DATASETS: list = []        # the catalogue, once read
 
 
 def configure(settings: dict, scenario_dir: Path) -> None:
-    """Take the scenario's settings; build the catalogue database from its SQL file if it is not there yet."""
+    """Take the scenario's settings. The catalogue is read again on first use."""
     SETTINGS.clear()
     SETTINGS.update(settings)
     for key in PATH_SETTINGS:
         if key in SETTINGS:
             SETTINGS[key] = str(Path(scenario_dir) / SETTINGS[key])
-    database, script = SETTINGS.get("catalogue_db"), SETTINGS.get("catalogue_sql")
-    if database and script and not Path(database).exists():
-        # Built under another name and renamed, so a failed build cannot leave a half-made catalogue
-        statements, building = Path(script).read_text(encoding="utf-8"), Path(database + ".building")
-        building.unlink(missing_ok=True)
-        try:
-            with closing(sqlite3.connect(building)) as connection:
-                connection.executescript(statements)
-                connection.commit()
-            building.replace(database)
-        finally:
-            building.unlink(missing_ok=True)
+    _DATASETS.clear()
 
 
 @tool
@@ -58,22 +51,31 @@ def lookup_queue(request_type: str) -> dict:
     return queues[request_type]
 
 
+def _datasets() -> list[dict]:
+    """The catalogue, read from OpenMetadata on first use and kept."""
+    if not _DATASETS:
+        token = os.environ.get(SETTINGS.get("openmetadata_token_env", ""), "") or None
+        tables, lineage = openmetadata_catalogue.fetch(SETTINGS["openmetadata_url"], token,
+                                                       SETTINGS.get("openmetadata_domain"))
+        _DATASETS.extend(openmetadata_catalogue.to_entries(tables, lineage))
+    return _DATASETS
+
+
+@tool
+def list_datasets() -> list[dict]:
+    """List every dataset in the catalogue, with its description and what is known about it:
+    who owns it, how sensitive it is and what it is built from."""
+    return _datasets()
+
+
 @tool
 def find_dataset(search_term: str) -> list[dict]:
     """Search the catalogue of datasets by name or description.
-    Returns up to five datasets with name, description, steward and sensitivity."""
-    words = [word for word in re.findall(r"\w+", search_term) if len(word) > 2][:5]
-    if not words:
-        return []
-    # One pair of placeholders per word; the words themselves never become part of the SQL text
-    condition = " OR ".join("name LIKE ? OR description LIKE ?" for _ in words)
-    values = [f"%{word}%" for word in words for _ in range(2)]
-    with closing(sqlite3.connect(SETTINGS["catalogue_db"])) as connection:
-        connection.row_factory = sqlite3.Row
-        rows = connection.execute(
-            f"SELECT name, description, steward, sensitivity FROM datasets WHERE {condition} ORDER BY name LIMIT 5",
-            values).fetchall()
-    return [dict(row) for row in rows]
+    Returns up to five datasets with name, description and what is known about each."""
+    words = [word.lower() for word in re.findall(r"\w+", search_term) if len(word) > 2][:5]
+    found = [entry for entry in _datasets()
+             if any(word in f"{entry['name']} {entry['description']}".lower() for word in words)]
+    return sorted(found, key=lambda entry: entry["name"])[:5]
 
 
 def _request(method: str, path: str, **kwargs) -> httpx.Response:
@@ -166,4 +168,4 @@ def create_ticket(summary: str, description: str, priority: str = "Medium", labe
     return {"number": created["number"], "url": created.get("html_url"), "status": "created"}
 
 
-TOOLS = [lookup_queue, find_dataset, search_tickets, get_ticket, create_ticket]
+TOOLS = [lookup_queue, find_dataset, list_datasets, search_tickets, get_ticket, create_ticket]

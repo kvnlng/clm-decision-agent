@@ -40,16 +40,27 @@ confirm = ["create_ticket"]        # never runs without the user's yes
 
 [tools.settings]
 queues_file = "queues.json"
-catalogue_db = "catalogue.db"      # built from catalogue_sql the first time
-catalogue_sql = "catalogue.sql"
+openmetadata_url = "http://127.0.0.1:8585"   # the mock catalogue
+openmetadata_token_env = "OPENMETADATA_TOKEN" # environment variable holding a bot account's token; the mock needs none
+# openmetadata_domain = "Clinical Data"       # only take this domain's tables
 tracker_url = "http://127.0.0.1:8765"     # the mock tracker
 # tracker_url = "http://localhost:3000"   # a local Forgejo: see the README beside this file
 repository = "desk-admin/requests" # owner/name of the repository whose issues are the tickets
 token_env = "TRACKER_TOKEN"        # environment variable holding an access token; the mock needs none
 
+# CLM chooses which dataset a request means, from the datasets list_datasets returns. It is called
+# once at start-up. A confident choice fills the dataset field, and what is known about the dataset
+# (owner, sensitivity, lineage) informs CLM's other questions and the language model.
+[catalogue]
+tool = "list_datasets"
+routes = ["Data_Access"]
+field = "dataset"
+instructions = "Which dataset does the requester mean?"
+confidence_threshold = 0.5
+
 [routes.Data_Access]
 description = "The requester needs access to an existing dataset or system."
-system_prompt = "You help staff open a request for access to data. Never copy patient names or identifiers into a ticket. Find the dataset in the catalogue and check who handles access requests before submitting. Be brief."
+system_prompt = "You help staff open a request for access to data. Never copy patient names or identifiers into a ticket. If the dataset is not clear, search the catalogue. Check who handles access requests before submitting. Be brief."
 tools = ["find_dataset", "lookup_queue", "search_tickets", "create_ticket"]
 examples = ["I need access to the readmissions data for an audit", "Can I get into the oncology registry?"]
 
