@@ -75,9 +75,11 @@ def tool_call(name, **args):
 class FakeRouter:
     """`decisions` is one decision used for every state, or a dict of state_text -> decision."""
 
-    def __init__(self, decisions, tool_p=0.9, vectors=None):
+    def __init__(self, decisions, tool_p=0.9, vectors=None, asks=None):
         self.decisions, self.tool_p, self.vectors = decisions, tool_p, vectors or {}
         self.states, self.tool_states = [], []
+        # Answers for ask(), returned in order
+        self.asks, self.ask_calls = list(asks or []), []
 
     def decide(self, state_text, scenario):
         self.states.append(state_text)
@@ -90,6 +92,10 @@ class FakeRouter:
 
     def embed_state(self, state_text, scenario):
         return self.vectors[state_text]
+
+    def ask(self, state, questions):
+        self.ask_calls.append((state, questions))
+        return self.asks.pop(0)
 
 
 class FakeGenerator:

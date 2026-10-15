@@ -6,7 +6,8 @@
 from uuid import uuid4
 
 import pytest
-from conftest import INTAKE_TOML, FakeGenerator, FakeRouter, decision, tool_call
+from conftest import (CATALOGUE_ENTRIES, CATALOGUE_TOML, INTAKE_TOML, FakeGenerator, FakeRouter, decision,
+                      tool_call)
 from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.types import Command
 
@@ -272,3 +273,112 @@ def test_a_second_request_is_worked_on_without_the_finished_one_in_view(intake):
     turn(graph, session, "wrong amount")
     acted = gen.calls[6]
     assert [m.content for m in acted["messages"]] == ["now INV-9 please", "What is wrong with INV-9?", "wrong amount"]
+
+
+# The catalogue: CLM picks an invoice on the Billing intake, and a confident pick's facts inform the rest
+
+URGENT = {"urgent": {"type": "noul", "noul": 0.8}}
+NOTHING = '{"invoice": null, "problem": null}'
+
+
+@pytest.fixture
+def catalogue_intake(write_scenario):
+    return load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML))
+
+
+def pick(choice, confidence):
+    others = {entry["name"]: 1 - confidence for entry in CATALOGUE_ENTRIES if entry["name"] != choice}
+    return {"catalogue": {"type": "choice", "choice": choice, "confidence": confidence,
+                          "probabilities": {choice: confidence, **others}}}
+
+
+def with_catalogue(scenario, router, gen):
+    return build_graph(scenario, router, gen, catalogue=CATALOGUE_ENTRIES)
+
+
+def test_a_confident_pick_fills_the_field_and_its_facts_inform_questions_and_prompt(catalogue_intake):
+    router = FakeRouter(decision("Billing"), asks=[pick("INV-1", 0.9), URGENT])
+    gen = FakeGenerator('{"invoice": "the march one", "problem": null}', "What is wrong with it?")
+    out, _, _ = turn(with_catalogue(catalogue_intake, router, gen), new_session(), "my march invoice")
+
+    assert out["draft"] == {"invoice": "INV-1"}                     # CLM's pick overrides the extraction
+    assert out["decision"]["catalogue"] == {"choice": "INV-1", "confidence": 0.9, "picked": True,
+                                            "probabilities": pick("INV-1", 0.9)["catalogue"]["probabilities"]}
+    assert out["decision"]["answers"] == URGENT
+    assert len(router.ask_calls) == 2
+    (pick_state, pick_questions), (state, questions) = router.ask_calls[0], router.ask_calls[1]
+    assert pick_state == "User: my march invoice"
+    assert pick_questions["catalogue"]["criteria"] == {"INV-1": "March invoice", "INV-2": "April invoice"}
+    assert pick_questions["catalogue"]["instructions"] == "Which invoice?"
+    assert state == "User: my march invoice\n\nKnown about INV-1:\n- INV-1 was paid."
+    assert set(questions) == {"urgent"}
+    assert out["decision"]["state_text"] == "User: my march invoice"   # routing never sees the facts
+    assert "Known about INV-1:\n- INV-1 was paid." in gen.calls[-1]["system"]
+    assert "Signals: urgent 80%" in gen.calls[-1]["system"]
+
+
+def test_a_pick_below_the_threshold_changes_nothing(catalogue_intake):
+    router = FakeRouter(decision("Billing"), asks=[pick("INV-1", 0.3)])
+    gen = FakeGenerator(NOTHING, "Which invoice?")
+    out, _, _ = turn(with_catalogue(catalogue_intake, router, gen), new_session(), "an invoice")
+
+    assert out["draft"] == {}
+    assert out["decision"]["catalogue"]["picked"] is False
+    assert len(router.ask_calls) == 1
+    assert "Known about" not in gen.calls[-1]["system"]
+
+
+def test_a_low_pick_keeps_a_value_picked_earlier(catalogue_intake):
+    router = FakeRouter(decision("Billing"), asks=[pick("INV-1", 0.9), URGENT, pick("INV-2", 0.3)])
+    gen = FakeGenerator(NOTHING, "What is wrong with it?", NOTHING, "What is wrong with it?")
+    graph = with_catalogue(catalogue_intake, router, gen)
+    _, session, _ = turn(graph, new_session(), "the march invoice")
+    out, _, _ = turn(graph, session, "hmm, let me think")
+
+    assert out["draft"] == {"invoice": "INV-1"}
+
+
+def test_the_pick_runs_once_in_a_turn_that_calls_tools(catalogue_intake):
+    router = FakeRouter(decision("Billing"), asks=[pick("INV-1", 0.9), URGENT])
+    gen = FakeGenerator('{"invoice": "INV-1", "problem": "charged twice"}',
+                        tool_call("lookup_invoice", invoice_number="INV-1"), "I have looked it up.")
+    out, _, _ = turn(with_catalogue(catalogue_intake, router, gen), new_session(), "INV-1 was charged twice")
+
+    assert isinstance(out["messages"][-2], ToolMessage)             # the route's node ran a second time
+    assert out["messages"][-1].content == "I have looked it up."
+    assert len(router.ask_calls) == 2
+    assert gen.calls[-1]["system"].count("Known about INV-1") == 1
+
+
+def test_no_pick_on_a_clarify_turn(catalogue_intake):
+    router = FakeRouter(decision("Billing", confidence=0.3))
+    out, _, _ = turn(with_catalogue(catalogue_intake, router, FakeGenerator("Billing or tech?")), new_session(), "hmm")
+
+    assert router.ask_calls == []
+    assert "catalogue" not in out["decision"]
+
+
+def test_routes_outside_the_catalogue_are_untouched(catalogue_intake):
+    router = FakeRouter(decision("Tech"))
+    turn(with_catalogue(catalogue_intake, router, FakeGenerator("Try restarting it.")), new_session(), "it crashed")
+
+    assert router.ask_calls == []
+
+
+def test_rules_are_recomputed_from_the_answers_asked_again(write_scenario):
+    rules = '\n[[rules]]\nwhen = "urgent >= 0.5"\ntell = "Mark it urgent."\n'
+    scenario = load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML + rules))
+    router = FakeRouter(decision("Billing"), asks=[pick("INV-1", 0.9), URGENT])
+    gen = FakeGenerator(NOTHING, "What is wrong with it?")
+    out, _, _ = turn(with_catalogue(scenario, router, gen), new_session(), "the march invoice")
+
+    assert out["decision"]["rules"] == ["urgent >= 0.5"]
+    assert "- Mark it urgent." in gen.calls[-1]["system"]
+
+
+def test_without_entries_the_catalogue_routes_behave_as_before(catalogue_intake):
+    router = FakeRouter(decision("Billing"))
+    gen = FakeGenerator('{"invoice": "INV-1", "problem": null}', "What is wrong with it?")
+    out, _, _ = turn(build_graph(catalogue_intake, router, gen), new_session(), "about INV-1")
+
+    assert out["draft"] == {"invoice": "INV-1"} and router.ask_calls == []

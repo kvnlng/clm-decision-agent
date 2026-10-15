@@ -54,6 +54,7 @@ STOPPED_PROMPT = (
     "Tell the user this in one or two sentences and ask what they would like to do. Do not claim that "
     "anything was submitted."
 )
+CATALOGUE_QID = "catalogue"
 NON_ANSWERS = frozenset({"", "null", "none", "unknown", "n/a", "not stated", "not specified"})
 # A small model often copies the user's whole non-answer ("not sure yet, my manager asked") into the field
 NON_ANSWER_STARTS = ("not sure", "unsure", "i'm not sure", "i am not sure", "don't know", "i don't know",
@@ -120,6 +121,12 @@ def guidance_block(scenario: Scenario, answers: dict) -> str:
     return "\n\nGuidance:\n" + "\n".join(f"- {tell}" for tell in tells) if tells else ""
 
 
+def facts_block(entry: dict) -> str:
+    """What is known about a picked catalogue entry, as a block for CLM's state and the model's prompt."""
+    facts = entry.get("facts") or []
+    return f"\n\nKnown about {entry['name']}:\n" + "\n".join(f"- {fact}" for fact in facts) if facts else ""
+
+
 def parse_fields(text: str, fields: dict) -> dict | None:
     """The field values stated in the generator's extraction output; None if it holds no JSON object."""
     match = re.search(r"\{.*\}", text, re.DOTALL)
@@ -151,6 +158,31 @@ def build_graph(scenario: Scenario, router, generator, registry: dict | None = N
     all_tools = {tool.name: tool for tools in route_tools.values() for tool in tools}
     record = record or (lambda entry: None)
 
+    entries = {entry["name"]: entry for entry in catalogue or []}
+
+    def consult(state: AgentState, route) -> dict:
+        """Once a turn on a catalogue route: CLM picks an entry; a confident pick adds its facts and re-asks."""
+        decision, settings = state["decision"], scenario.catalogue
+        if not entries or route.name not in settings.routes or CATALOGUE_QID in decision:
+            return decision
+        # The routing text, without facts: the pick is about what the user said
+        text = decision["state_text"]
+        question = {"type": "choice", "instructions": settings.instructions,
+                    "criteria": {name: entry["description"] for name, entry in entries.items()}}
+        answer = router.ask(text, {CATALOGUE_QID: question})[CATALOGUE_QID]
+        picked = answer["confidence"] >= settings.confidence_threshold
+        decision = {**decision, CATALOGUE_QID: {"choice": answer["choice"], "confidence": answer["confidence"],
+                                                "probabilities": answer["probabilities"], "picked": picked}}
+        if picked and scenario.questions:
+            answers = router.ask(text + facts_block(entries[answer["choice"]]), scenario.questions)
+            decision.update(answers=answers, rules=[rule.when for rule in scenario.matching_rules(answers)])
+        return decision
+
+    def known(decision: dict) -> str:
+        """The picked entry's facts for the model's prompt; empty without a confident pick."""
+        pick = decision.get(CATALOGUE_QID)
+        return facts_block(entries[pick["choice"]]) if pick and pick["picked"] else ""
+
     def needs_confirm(check: dict) -> bool:
         return any(call["name"] in scenario.confirm_tools for call in check["calls"])
     graph = StateGraph(AgentState)
@@ -172,12 +204,13 @@ def build_graph(scenario: Scenario, router, generator, registry: dict | None = N
         tools = route_tools[route.name]
 
         def node(state: AgentState) -> dict:
-            answers = state["decision"]["answers"]
-            system = route.system_prompt + signals_line(answers) + guidance_block(scenario, answers)
+            decision = consult(state, route)
+            answers = decision["answers"]
+            system = route.system_prompt + signals_line(answers) + guidance_block(scenario, answers) + known(decision)
             offered = tools if tools and state["tool_rounds"] < scenario.max_tool_rounds else None
             # Earlier tool traffic teaches a model the tool-call format, so routes without tools do not see it
             history = state["messages"] if tools else plain_history(state["messages"])
-            return {"messages": [generator.generate(system, history, tools=offered)]}
+            return {"messages": [generator.generate(system, history, tools=offered)], "decision": decision}
         return node
 
     def stopped(state: AgentState) -> str | None:
@@ -195,8 +228,9 @@ def build_graph(scenario: Scenario, router, generator, registry: dict | None = N
         tools = route_tools[route.name]
 
         def node(state: AgentState) -> dict:  # pylint: disable=too-many-locals
-            messages, answers = state["messages"], state["decision"]["answers"]
-            base = route.system_prompt + signals_line(answers) + guidance_block(scenario, answers)
+            decision = consult(state, route)
+            messages, answers = state["messages"], decision["answers"]
+            base = route.system_prompt + signals_line(answers) + guidance_block(scenario, answers) + known(decision)
             if state.get("submitted"):
                 try:
                     reply = generator.generate(base + DONE_PROMPT, messages)
@@ -205,7 +239,7 @@ def build_graph(scenario: Scenario, router, generator, registry: dict | None = N
                     reply = AIMessage(
                         content=f"Your request was submitted. The service answered: {messages[-1].content}")
                 # The next request starts after this reply, so it is not filled from this conversation
-                return {"messages": [reply], "draft_start": len(messages) + 1, "follow_up": True}
+                return {"messages": [reply], "draft_start": len(messages) + 1, "follow_up": True, "decision": decision}
 
             opened = state.get("draft_route") == route.name
             draft = dict(state.get("draft") or {}) if opened else {}
@@ -215,10 +249,14 @@ def build_graph(scenario: Scenario, router, generator, registry: dict | None = N
                 listing = "\n".join(f'- "{name}": {ask}' for name, ask in route.fields.items())
                 extraction = generator.generate(EXTRACT_PROMPT.format(fields=listing), plain_history(messages[start:]))
                 draft.update(parse_fields(str(extraction.content), route.fields) or {})
+            pick = decision.get(CATALOGUE_QID)
+            if pick and pick["picked"]:
+                draft[scenario.catalogue.field] = pick["choice"]
             if state.get("follow_up") and not draft:
                 # CLM always picks a route, so "thanks" after a submission lands on one. A message that
                 # holds no detail of a new request gets a reply; it does not start the questions again.
-                return {"messages": [generator.generate(base + FOLLOW_UP_PROMPT, plain_history(messages))]}
+                return {"messages": [generator.generate(base + FOLLOW_UP_PROMPT, plain_history(messages))],
+                        "decision": decision}
 
             # A request that was already submitted stays out of view: a small model will otherwise
             # repeat its "submitted" reply instead of working on the new one
@@ -236,7 +274,7 @@ def build_graph(scenario: Scenario, router, generator, registry: dict | None = N
             progress = {"filled": len(route.fields) - len(missing), "total": len(route.fields), "missing": missing}
             return {"messages": [reply], "draft": draft, "draft_route": route.name, "draft_start": start,
                     "follow_up": False,
-                    "intake": progress}
+                    "intake": progress, "decision": decision}
         return node
 
     def clarify(state: AgentState) -> dict:

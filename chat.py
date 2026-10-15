@@ -30,6 +30,10 @@ def format_decision(decision: dict, scenario) -> str:
     signals = signals_line(decision["answers"]).strip()
     if signals:
         lines.append(f"  {signals}")
+    pick = decision.get("catalogue")
+    if pick:
+        outcome = "used" if pick["picked"] else "not confident enough to use"
+        lines.append(f"  catalogue: {pick['choice']} {pick['confidence']:.2f} ({outcome})")
     if decision.get("rules"):
         lines.append("  rules applied: " + "; ".join(decision["rules"]))
     return "\n".join(lines)

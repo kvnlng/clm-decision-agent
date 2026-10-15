@@ -448,3 +448,14 @@ def test_data_notice_warns_when_tracing_would_send_prompts_elsewhere(scenario, m
     assert "LangSmith" not in format_data_notice(scenario, review=False, encrypted=False)
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     assert "ALSO sent to LangSmith" in format_data_notice(scenario, review=False, encrypted=False)
+
+
+@pytest.mark.parametrize("picked, shown", [(True, "used"), (False, "not confident enough to use")])
+def test_the_catalogue_pick_is_listed_with_the_decision(scenario, picked, shown):
+    made = {**decision("Billing"), "catalogue": {"choice": "INV-1", "confidence": 0.42, "picked": picked,
+                                                 "probabilities": {"INV-1": 0.42, "INV-2": 0.58}}}
+    assert f"  catalogue: INV-1 0.42 ({shown})" in chat.format_decision(made, scenario)
+
+
+def test_without_a_pick_no_catalogue_line_is_shown(scenario):
+    assert "catalogue" not in chat.format_decision(decision("Billing"), scenario)
