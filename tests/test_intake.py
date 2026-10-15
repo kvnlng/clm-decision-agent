@@ -330,9 +330,11 @@ def test_a_pick_below_the_threshold_changes_nothing(catalogue_intake):
 
 def test_a_low_pick_keeps_a_value_picked_earlier(catalogue_intake):
     router = FakeRouter(decision("Billing"), asks=[pick("INV-1", 0.9), URGENT, pick("INV-2", 0.3)])
-    gen = FakeGenerator(NOTHING, "What is wrong with it?", NOTHING, "What is wrong with it?")
+    # The extraction gives back the user's own words for the field on every turn
+    words = '{"invoice": "the march one", "problem": null}'
+    gen = FakeGenerator(words, "What is wrong with it?", words, "What is wrong with it?")
     graph = with_catalogue(catalogue_intake, router, gen)
-    _, session, _ = turn(graph, new_session(), "the march invoice")
+    _, session, _ = turn(graph, new_session(), "the march one")
     out, _, _ = turn(graph, session, "hmm, let me think")
 
     assert out["draft"] == {"invoice": "INV-1"}
@@ -403,3 +405,27 @@ def test_with_no_questions_listed_none_are_asked_again(write_scenario):
 
     assert len(router.ask_calls) == 1
     assert out["draft"] == {"invoice": "INV-1"}
+
+
+def test_a_later_confident_pick_replaces_an_earlier_one(catalogue_intake):
+    router = FakeRouter(decision("Billing"), asks=[pick("INV-1", 0.9), URGENT, pick("INV-2", 0.9), URGENT])
+    gen = FakeGenerator(NOTHING, "What is wrong with it?", NOTHING, "What is wrong with it?")
+    graph = with_catalogue(catalogue_intake, router, gen)
+    _, session, _ = turn(graph, new_session(), "the march invoice")
+    out, _, _ = turn(graph, session, "sorry, I meant April")
+
+    assert out["draft"] == {"invoice": "INV-2"}
+
+
+def test_thanks_after_a_submission_does_not_open_a_request_even_with_a_confident_pick(catalogue_intake):
+    # The conversation CLM reads still holds the submitted request, so its pick on "thanks" is confident
+    router = FakeRouter(decision("Billing"), asks=[pick("INV-1", 0.9), URGENT, pick("INV-1", 0.9), URGENT])
+    gen = FakeGenerator('{"invoice": "INV-1", "problem": "charged twice"}', submit_call(), "Submitted as F-1.",
+                        NOTHING, "You're welcome.")
+    graph = with_catalogue(catalogue_intake, router, gen)
+    _, session, _ = turn(graph, new_session(), "INV-1 was charged twice")
+    assert session["follow_up"] is True
+
+    out, _, _ = turn(graph, session, "thanks!")
+    assert out["messages"][-1].content == "You're welcome."
+    assert (out["draft"], out["draft_route"], out["intake"]) == ({}, None, None)

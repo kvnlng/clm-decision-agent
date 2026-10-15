@@ -250,15 +250,20 @@ def build_graph(scenario: Scenario, router, generator, registry: dict | None = N
             if isinstance(messages[-1], HumanMessage):      # the start of a turn, not a return from a tool
                 listing = "\n".join(f'- "{name}": {ask}' for name, ask in route.fields.items())
                 extraction = generator.generate(EXTRACT_PROMPT.format(fields=listing), plain_history(messages[start:]))
-                draft.update(parse_fields(str(extraction.content), route.fields) or {})
-            pick = decision.get(CATALOGUE_QID)
-            if pick and pick["picked"]:
-                draft[scenario.catalogue.field] = pick["choice"]
+                found = parse_fields(str(extraction.content), route.fields) or {}
+                if scenario.catalogue and draft.get(scenario.catalogue.field) in entries:
+                    # A catalogue name CLM chose earlier is not replaced by the user's own words for it
+                    found.pop(scenario.catalogue.field, None)
+                draft.update(found)
             if state.get("follow_up") and not draft:
                 # CLM always picks a route, so "thanks" after a submission lands on one. A message that
                 # holds no detail of a new request gets a reply; it does not start the questions again.
+                # Checked before the pick: CLM still reads the submitted request and may pick from it.
                 return {"messages": [generator.generate(base + FOLLOW_UP_PROMPT, plain_history(messages))],
                         "decision": decision}
+            pick = decision.get(CATALOGUE_QID)
+            if pick and pick["picked"]:
+                draft[scenario.catalogue.field] = pick["choice"]
 
             # A request that was already submitted stays out of view: a small model will otherwise
             # repeat its "submitted" reply instead of working on the new one
