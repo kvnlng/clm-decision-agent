@@ -18,7 +18,7 @@ from generator import GeneratorError, make_generator
 from graph import build_graph, describe_calls, signals_line
 from record import append_record, load_records, locked_lines, record_key, touch_record
 from scenario import ScenarioError, load_scenario
-from tools import load_tools, resolve_tools
+from tools import load_catalogue, load_tools, resolve_tools
 
 
 def format_decision(decision: dict, scenario) -> str:
@@ -304,6 +304,7 @@ def load_agent(path: str, review: bool = False):  # pylint: disable=too-many-loc
         scenario = load_scenario(path)
         registry = load_tools(scenario)
         resolve_tools(scenario, registry)
+        catalogue = load_catalogue(scenario, registry)
         key = record_key(scenario)
     except ScenarioError as error:
         raise StartupError(str(error)) from error
@@ -335,8 +336,11 @@ def load_agent(path: str, review: bool = False):  # pylint: disable=too-many-loc
     mode = "Review mode" if review else "Run mode"
     print(f"{mode}: {_count(count, 'reviewed route')} loaded from {scenario.record_path.name}{note}")
 
+    if catalogue is not None:
+        print(f"Catalogue: {len(catalogue)} entries from {scenario.catalogue.tool}.")
     record = make_recorder(scenario, router) if review else None
-    graph = build_graph(scenario, router, generator, registry=registry, review=review, record=record)
+    graph = build_graph(scenario, router, generator, registry=registry, review=review, record=record,
+                        catalogue=catalogue)
     print(f"Ready. This agent handles: {', '.join(scenario.routes)}.")
     return scenario, graph
 

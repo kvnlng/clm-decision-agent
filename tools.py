@@ -8,6 +8,8 @@ from langchain_core.tools import BaseTool
 
 from scenario import Scenario, ScenarioError
 
+MAX_ENTRIES = 50
+
 
 def load_tools(scenario: Scenario) -> dict:
     """Tool name -> tool, from the module named in [tools]. The module's configure() is called if it has one."""
@@ -51,3 +53,41 @@ def resolve_tools(scenario: Scenario, registry: dict | None = None) -> dict[str,
         if tool_name not in registry:
             raise ScenarioError(f"tools.confirm: unknown tool '{tool_name}' ({known})")
     return resolved
+
+
+def load_catalogue(scenario: Scenario, registry: dict) -> list[dict] | None:
+    """The catalogue tool's entries, called once and checked against the contract; None without [catalogue]."""
+    if scenario.catalogue is None:
+        return None
+    name = scenario.catalogue.tool
+    if name not in registry:
+        raise ScenarioError(f"catalogue.tool: unknown tool '{name}'")
+    where = f"catalogue.tool '{name}'"
+    # An adopter's tool can fail in any way; each failure should be one line, not a traceback
+    try:
+        entries = registry[name].invoke({})
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        raise ScenarioError(f"{where}: {error}") from error
+    if not isinstance(entries, list):
+        raise ScenarioError(f"{where} must return a list of entries")
+    if not 2 <= len(entries) <= MAX_ENTRIES:
+        noun = "entry" if len(entries) == 1 else "entries"
+        raise ScenarioError(f"{where} returned {len(entries)} {noun}; it needs from 2 to {MAX_ENTRIES}")
+    seen: set = set()
+    for number, entry in enumerate(entries, 1):
+        _check_entry(entry, f"{where}: entry {number}", seen)
+    return entries
+
+
+def _check_entry(entry, where: str, seen: set) -> None:
+    if not isinstance(entry, dict):
+        raise ScenarioError(f"{where} must be a table of name, description and facts")
+    for key in ("name", "description"):
+        if not isinstance(entry.get(key), str) or not entry[key].strip():
+            raise ScenarioError(f"{where}: '{key}' must be non-empty text")
+    facts = entry.get("facts", [])
+    if not isinstance(facts, list) or not all(isinstance(fact, str) for fact in facts):
+        raise ScenarioError(f"{where}: 'facts' must be a list of sentences")
+    if entry["name"] in seen:
+        raise ScenarioError(f"{where}: the name '{entry['name']}' is used twice")
+    seen.add(entry["name"])

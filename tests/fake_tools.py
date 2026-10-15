@@ -3,6 +3,7 @@ from langchain_core.tools import ToolException, tool
 
 SETTINGS = {}
 CONFIGURED = []
+CATALOGUE = []      # what list_invoices returns; a test sets it
 
 
 def configure(settings, scenario_dir):
@@ -42,4 +43,12 @@ def broken_submit(summary: str) -> dict:
     raise ToolException("The service could not be reached.")
 
 
-TOOLS = [lookup_invoice, issue_refund, submit_form, broken_submit]
+@tool
+def list_invoices() -> list:
+    """List the invoices a customer might mean."""
+    if CATALOGUE == ["fail"]:
+        raise ToolException("The billing system could not be reached.")
+    return CATALOGUE
+
+
+TOOLS = [lookup_invoice, issue_refund, submit_form, broken_submit, list_invoices]

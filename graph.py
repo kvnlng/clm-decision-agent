@@ -145,7 +145,7 @@ def parse_fields(text: str, fields: dict) -> dict | None:
 # The nodes are closures over the scenario, router and generator, so they live in one function.
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-statements
 def build_graph(scenario: Scenario, router, generator, registry: dict | None = None,
-                review: bool = False, record=None):
+                review: bool = False, record=None, catalogue: list[dict] | None = None):
     """`review=True` adds nodes that pause for a human verdict and pass each verdict to `record`."""
     route_tools = resolve_tools(scenario, registry)
     all_tools = {tool.name: tool for tools in route_tools.values() for tool in tools}

@@ -7,17 +7,17 @@ import re
 
 import fake_tools
 import pytest
-from conftest import BASE_TOML
+from conftest import BASE_TOML, CATALOGUE_ENTRIES, CATALOGUE_TOML, INTAKE_TOML
 
 from scenario import ScenarioError, load_scenario
-from tools import load_tools, resolve_tools
+from tools import load_catalogue, load_tools, resolve_tools
 
 
 def test_tools_are_loaded_from_the_module_and_configured(write_scenario):
     path = write_scenario(BASE_TOML.replace('module = "fake_tools"',
                                             'module = "fake_tools"\n\n[tools.settings]\nurl = "http://x"'))
     registry = load_tools(load_scenario(path))
-    assert sorted(registry) == ["broken_submit", "issue_refund", "lookup_invoice", "submit_form"]
+    assert sorted(registry) == ["broken_submit", "issue_refund", "list_invoices", "lookup_invoice", "submit_form"]
     assert fake_tools.SETTINGS == {"url": "http://x", "scenario_dir": str(path.resolve().parent)}
 
 
@@ -66,3 +66,45 @@ def test_a_broken_tools_module_is_a_scenario_error(write_scenario, tmp_path, nam
     scenario = load_scenario(write_scenario(BASE_TOML.replace('"fake_tools"', f'"{name}"')))
     with pytest.raises(ScenarioError, match=re.escape(message)):
         load_tools(scenario)
+
+
+@pytest.fixture
+def with_catalogue(write_scenario, monkeypatch):
+    def _load(entries):
+        monkeypatch.setattr(fake_tools, "CATALOGUE", entries)
+        loaded = load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML))
+        return load_catalogue(loaded, load_tools(loaded))
+    return _load
+
+
+def test_no_catalogue_means_no_call(scenario):
+    assert load_catalogue(scenario, load_tools(scenario)) is None
+
+
+def test_catalogue_entries_are_returned_as_given(with_catalogue):
+    assert with_catalogue(CATALOGUE_ENTRIES) == CATALOGUE_ENTRIES
+
+
+GOOD, OTHER = CATALOGUE_ENTRIES
+
+
+@pytest.mark.parametrize("entries, message", [
+    ({"name": "x"}, "must return a list of entries"),
+    ([GOOD], "returned 1 entry; it needs from 2 to 50"),
+    ([dict(GOOD, name=f"N{i}") for i in range(51)], "returned 51 entries; it needs from 2 to 50"),
+    ([GOOD, "INV-2"], "entry 2 must be a table of name, description and facts"),
+    ([GOOD, dict(OTHER, name="INV-1")], "entry 2: the name 'INV-1' is used twice"),
+    ([GOOD, dict(OTHER, description=" ")], "entry 2: 'description' must be non-empty text"),
+    ([GOOD, dict(OTHER, facts="paid")], "entry 2: 'facts' must be a list of sentences"),
+    ([GOOD, {"name": "INV-2"}], "entry 2: 'description' must be non-empty text"),
+    (["fail"], "The billing system could not be reached."),
+])
+def test_catalogue_contract_errors_are_one_line(with_catalogue, entries, message):
+    with pytest.raises(ScenarioError, match=re.escape("catalogue.tool 'list_invoices'") + ".*" + re.escape(message)):
+        with_catalogue(entries)
+
+
+def test_an_unknown_catalogue_tool_is_a_scenario_error(write_scenario):
+    loaded = load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML.replace("list_invoices", "nope")))
+    with pytest.raises(ScenarioError, match=re.escape("catalogue.tool: unknown tool 'nope'")):
+        load_catalogue(loaded, load_tools(loaded))
