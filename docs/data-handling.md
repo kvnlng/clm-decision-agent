@@ -19,6 +19,10 @@ During a conversation the user's words reach:
 With the default settings both models run inside the chat's process and nothing leaves the
 machine except what your tools send.
 
+A catalogue tool (`[catalogue]`) is called at start-up, before any conversation, so its source
+receives a token and the tool's own queries, not conversation text. The facts it returns are
+then sent wherever CLM and the language model run.
+
 `serve.py` sends text to the same places. It accepts requests from this computer only and keeps
 its one conversation in memory, so it saves nothing either: [serving.md](serving.md).
 

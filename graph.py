@@ -173,8 +173,10 @@ def build_graph(scenario: Scenario, router, generator, registry: dict | None = N
         picked = answer["confidence"] >= settings.confidence_threshold
         decision = {**decision, CATALOGUE_QID: {"choice": answer["choice"], "confidence": answer["confidence"],
                                                 "probabilities": answer["probabilities"], "picked": picked}}
-        if picked and scenario.questions:
-            answers = router.ask(text + facts_block(entries[answer["choice"]]), scenario.questions)
+        informed = {name: scenario.questions[name] for name in settings.questions}
+        if picked and informed:
+            # Only the questions the facts bear on: facts also sway unrelated ones, such as urgency
+            answers = {**decision["answers"], **router.ask(text + facts_block(entries[answer["choice"]]), informed)}
             decision.update(answers=answers, rules=[rule.when for rule in scenario.matching_rules(answers)])
         return decision
 

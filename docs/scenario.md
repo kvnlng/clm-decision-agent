@@ -87,6 +87,20 @@ tell = "Set the ticket's priority to High and state the deadline in the summary.
 `when` is `<question> >= <number>` or `<= <number>` for yes/no and score questions, and
 `<question> == <option>` for choice questions.
 
+## Where information comes from
+
+**Information from outside the framework reaches the assistant only through tools** in the
+scenario's tools module. The framework itself holds no code for any data source. A tool has one
+of two roles, or both:
+
+| Role | Called by | When | Its result goes to | Safeguards |
+|---|---|---|---|---|
+| Model tool | The language model | When it decides to | The language model | CLM checks the call; a `confirm` tool waits for the user's yes |
+| Context tool | The framework | At a fixed point (the catalogue: start-up) | CLM and the language model | A contract, checked by the framework |
+
+The framework's own files are not outside information: the scenario, the review record, the
+example messages and the trained heads.
+
 ## Tools
 
 Tools are ordinary Python functions in a file beside the scenario.
@@ -103,7 +117,7 @@ tracker_url = "http://127.0.0.1:8765"
 The module defines `TOOLS`, a list of functions decorated with LangChain's `@tool`, and
 optionally `configure(settings, scenario_dir)`, which is called once at start-up.
 [service_desk_tools.py](../examples/service_desk/service_desk_tools.py) shows a file lookup,
-a parameterised SQL query and calls to a web service.
+a data catalogue read from OpenMetadata, and calls to an issue tracker.
 
 - The function's docstring is what the language model reads to decide when to call it.
 - A route can only use the tools it lists.
@@ -119,6 +133,48 @@ instructions = "Is this tool call appropriate for what the user asked?"
 threshold = 0.5          # below this a call is declined (confirm tools ask the user instead)
 max_tool_rounds = 3      # tool-calling steps allowed in one turn
 ```
+
+## Catalogue
+
+A catalogue lets CLM choose *which thing* a request is about (a dataset, a system, a product)
+from a list your own source supplies, and lets what is known about it inform the decision.
+
+```toml
+[catalogue]
+tool = "list_datasets"              # a tool in TOOLS: the context tool
+routes = ["Data_Access"]            # the routes it applies to
+field = "dataset"                   # the field a confident choice fills; each route must have it
+instructions = "Which dataset does the requester mean?"
+confidence_threshold = 0.5          # below this the choice is not used
+questions = ["identifiable"]        # optional: the questions the facts bear on (default: all)
+```
+
+On a listed route, once a turn, CLM chooses between the entries' descriptions. A choice at or
+above the threshold fills the field, and the entry's facts are added to what CLM reads before it
+answers the listed questions again, so the rules can respond to them. List only the questions
+the facts bear on: they sway others too. In the example, a dataset's owner and sensitivity
+raised the urgency of a message that gave no deadline. The language model
+sees the facts too. Below the threshold nothing changes: the language model asks. The facts
+never reach the routing decision, so reviewed routes and trained heads are unaffected.
+
+**The catalogue tool must:**
+
+1. be a LangChain tool in `TOOLS`, taking no required arguments (it is called as `tool.invoke({})`);
+2. return between 2 and 50 entries, each `{"name": str, "description": str, "facts": [str, ...]}`:
+   - `name`: non-empty and unique; it fills the field and is shown to the user;
+   - `description`: one or two plain sentences on what the entry is. CLM matches the
+     conversation against it, so it carries most of the decision;
+   - `facts`: plain sentences, possibly none, each understandable on its own;
+3. report failure by raising `ToolException` with a message a person can act on.
+
+It **may** read from anywhere, keep what it read, and be listed in a route's `tools` as well. It
+**should not** send conversation text anywhere; called at start-up, it has none.
+
+The framework calls it once, at start-up. A failure, or a result that breaks the contract, stops
+start-up with one line naming the rule. A source with more than 50 entries narrows them itself,
+for example by domain. CLM has not been trained on your entries, so expect its choice to be
+less confident than its routing: in the example, 2 of 4 test messages were matched, and the two
+misses were below the threshold.
 
 ## Reviewing and reuse
 

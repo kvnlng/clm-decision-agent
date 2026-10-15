@@ -382,3 +382,24 @@ def test_without_entries_the_catalogue_routes_behave_as_before(catalogue_intake)
     out, _, _ = turn(build_graph(catalogue_intake, router, gen), new_session(), "about INV-1")
 
     assert out["draft"] == {"invoice": "INV-1"} and router.ask_calls == []
+
+
+def test_only_the_listed_questions_are_asked_again_with_the_facts(write_scenario):
+    two = '\n[questions.angry]\ntype = "noul"\ninstructions = "Is the customer angry?"\n'
+    scenario = load_scenario(write_scenario(INTAKE_TOML + two + CATALOGUE_TOML + 'questions = ["angry"]\n'))
+    first = {"urgent": {"type": "noul", "noul": 0.1}, "angry": {"type": "noul", "noul": 0.2}}
+    angry = {"angry": {"type": "noul", "noul": 0.9}}
+    router = FakeRouter(decision("Billing", answers=first), asks=[pick("INV-1", 0.9), angry])
+    out, _, _ = turn(with_catalogue(scenario, router, FakeGenerator(NOTHING, "Which problem?")), new_session(), "x")
+
+    assert set(router.ask_calls[1][1]) == {"angry"}
+    assert out["decision"]["answers"] == {"urgent": first["urgent"], **angry}
+
+
+def test_with_no_questions_listed_none_are_asked_again(write_scenario):
+    scenario = load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML + "questions = []\n"))
+    router = FakeRouter(decision("Billing"), asks=[pick("INV-1", 0.9)])
+    out, _, _ = turn(with_catalogue(scenario, router, FakeGenerator(NOTHING, "Which problem?")), new_session(), "x")
+
+    assert len(router.ask_calls) == 1
+    assert out["draft"] == {"invoice": "INV-1"}

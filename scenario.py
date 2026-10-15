@@ -74,6 +74,7 @@ class Catalogue:
     field: str
     instructions: str
     confidence_threshold: float
+    questions: tuple[str, ...] = ()    # the scenario's questions asked again with the picked entry's facts
 
 
 @dataclass(frozen=True)
@@ -257,7 +258,7 @@ def _tools(table: dict) -> tuple[str | None, tuple[str, ...], dict]:
     return module, tuple(confirm), dict(settings)
 
 
-def _catalogue(data: dict, routes: dict[str, Route]) -> Catalogue | None:
+def _catalogue(data: dict, routes: dict[str, Route], questions: dict[str, dict]) -> Catalogue | None:
     if "catalogue" not in data:
         return None
     table, where = _table(data, "catalogue"), "catalogue"
@@ -270,8 +271,14 @@ def _catalogue(data: dict, routes: dict[str, Route]) -> Catalogue | None:
             raise ScenarioError(f"catalogue.routes: unknown route '{name}'")
         if field_name not in routes[name].fields:
             raise ScenarioError(f"catalogue.field: route '{name}' has no field '{field_name}'")
+    informed = table.get("questions", list(questions))
+    if not isinstance(informed, list) or not all(isinstance(name, str) for name in informed):
+        raise ScenarioError("catalogue.questions must be a list of question names")
+    for name in informed:
+        if name not in questions:
+            raise ScenarioError(f"catalogue.questions: unknown question '{name}'")
     return Catalogue(tool, tuple(names), field_name, _text(table, "instructions", where),
-                     _number(table, "confidence_threshold", where, 0.5, 0, 1))
+                     _number(table, "confidence_threshold", where, 0.5, 0, 1), tuple(informed))
 
 
 def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-locals
@@ -347,7 +354,7 @@ def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-loc
         tool_settings=tool_settings,
         clm_heads=path.parent / _text(clm, "heads", "clm") if "heads" in clm else None,
         synthesize_messages=_text(_table(data, "synthesize"), "messages", "synthesize", DEFAULT_SYNTHESIZE),
-        catalogue=_catalogue(data, routes),
+        catalogue=_catalogue(data, routes, questions),
     )
 
 

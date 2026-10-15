@@ -20,14 +20,15 @@ This framework gives each model the job it is suited to:
 
 | Job | Done by |
 |---|---|
-| Which kind of request is this? What are the answers to the scenario's other questions? Is this tool call appropriate? | CLM |
+| Which kind of request is this? Which catalogue entry does it mean? What are the answers to the scenario's other questions? Is this tool call appropriate? | CLM |
 | Asking questions, writing replies, wording what a tool submits, choosing tool arguments | The language model |
 | Is every required detail collected? | Plain code |
 | Should this action, which changes something, go ahead? | The user |
 | Was CLM's decision right? | A reviewer, whose answers are saved and reused |
 
 All of it is driven by one file, the **scenario**, which lists the kinds of request, what to
-collect for each, the questions to ask CLM, and the tools.
+collect for each, the questions to ask CLM, and the tools. Information from outside, such as a
+data catalogue, comes in only through those tools.
 
 ![Architecture: the scenario file configures the turn, which exchanges information with CLM, the language model and the tools; reviews and generated examples retrain CLM's routing](docs/diagrams/architecture.png)
 
@@ -39,8 +40,9 @@ The first run downloads about 11 GB of models.
 ```bash
 uv sync
 uv run python examples/service_desk/mock_tracker.py                     # terminal 1
-uv run python train.py examples/service_desk/scenario.toml              # terminal 2, once
-uv run python chat.py examples/service_desk/scenario.toml --review      # terminal 2
+uv run python examples/service_desk/mock_openmetadata.py                # terminal 2
+uv run python train.py examples/service_desk/scenario.toml              # terminal 3, once
+uv run python chat.py examples/service_desk/scenario.toml --review      # terminal 3
 ```
 
 Then type, for example, `I need access to the oncology registry`.
@@ -91,6 +93,9 @@ Measured on the example scenario, on an M5 Max with 64 GB:
 - **Untrained, CLM routes poorly**: 8 of 20 hand-written test messages. Trained on 318
   generated examples it gets 16 of 20, and its wrong answers come with low confidence. Twenty
   messages is a small test.
+- **Choosing from a catalogue is weaker than routing**, because CLM was trained on the routes,
+  not on your catalogue's entries: 2 of 4 test messages found the right dataset. The two misses
+  were below the confidence threshold, so they were not used and the language model asked.
 - **CLM's probabilities are relative, not calibrated.** Treat the confidence threshold as a
   setting to tune with `evaluate.py`, not as a probability of being right.
 - **The language model makes mistakes too**: it can mis-extract a detail or word a
@@ -110,7 +115,7 @@ Measured on the example scenario, on an M5 Max with 64 GB:
 | `tools.py` | Loads a scenario's tools |
 | `record.py`, `evaluate.py` | The review record and its replay |
 | `dataset.py`, `synthesize.py`, `train.py` | Training |
-| `examples/service_desk/` | The worked example |
+| `examples/service_desk/` | The worked example, with mock stand-ins for an issue tracker and OpenMetadata |
 | `mlx_clm_triage.py` | A single CLM call, the smallest possible example |
 | `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads the models) |
 

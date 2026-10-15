@@ -17,7 +17,7 @@ from clm_router import LocalContrastiveRouter
 from generator import make_generator
 from graph import build_graph
 from scenario import load_scenario
-from tools import load_tools
+from tools import load_catalogue, load_tools
 
 
 pytestmark = pytest.mark.slow
@@ -199,3 +199,26 @@ def test_demo_routing_stays_above_its_floor(desk):
     print(f"demo routing: {correct} of {len(CASES)} correct; chosen: "
           f"{ {name: sum(got == name for got, _ in results) for name in desk.routes} }")
     assert correct >= ROUTING_FLOOR, f"{correct} of {len(CASES)} routed correctly"
+
+
+PICKS = [("I need the cancer registry data", "Oncology Registry"),
+         ("Can I see how long people wait in A&E?", "Emergency Department Attendances"),
+         ("I want the theatre cancellation figures", "Theatre Utilisation"),
+         ("Could I get the medicines dispensed on each ward?", "Pharmacy Dispensing")]
+
+
+def test_clm_picks_the_expected_dataset_from_the_catalogue(desk, openmetadata_url):
+    registry = load_tools(desk)
+    service_desk_tools.configure({"openmetadata_url": openmetadata_url}, desk.path.parent)
+    entries = load_catalogue(desk, registry)
+    question = {"type": "choice", "instructions": desk.catalogue.instructions,
+                "criteria": {entry["name"]: entry["description"] for entry in entries}}
+    router = LocalContrastiveRouter(desk.clm_model_id)
+    picks = [router.ask(f"User: {text}", {"catalogue": question})["catalogue"] for text, _ in PICKS]
+    for (text, want), got in zip(PICKS, picks):
+        print(f"{got['choice']:<36}{got['confidence']:.2f}  (wanted {want}) {text}")
+    # Measured 2 of 4 right, released and trained heads alike: CLM was not trained on these options.
+    # What the design relies on is that a wrong pick is not confident enough to be used.
+    threshold = desk.catalogue.confidence_threshold
+    assert sum(got["choice"] == want for (_, want), got in zip(PICKS, picks)) >= 2
+    assert all(got["choice"] == want for (_, want), got in zip(PICKS, picks) if got["confidence"] >= threshold)

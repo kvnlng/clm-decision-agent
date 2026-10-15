@@ -303,7 +303,7 @@ def test_catalogue_is_optional(scenario):
 
 def test_catalogue_loads_with_a_default_threshold(write_scenario):
     loaded = load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML))
-    assert loaded.catalogue == Catalogue("list_invoices", ("Billing",), "invoice", "Which invoice?", 0.5)
+    assert loaded.catalogue == Catalogue("list_invoices", ("Billing",), "invoice", "Which invoice?", 0.5, ("urgent",))
 
 
 @pytest.mark.parametrize("change, message", [
@@ -321,3 +321,10 @@ def test_catalogue_errors_name_the_setting(write_scenario, change, message):
 def test_catalogue_threshold_must_be_from_0_to_1(write_scenario):
     with pytest.raises(ScenarioError, match=re.escape("catalogue.confidence_threshold must be a number from 0 to 1")):
         load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML + "confidence_threshold = 2\n"))
+
+
+def test_catalogue_questions_name_the_questions_the_facts_inform(write_scenario):
+    loaded = load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML + "questions = []\n"))
+    assert loaded.catalogue.questions == ()
+    with pytest.raises(ScenarioError, match=re.escape("catalogue.questions: unknown question 'mood'")):
+        load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML + 'questions = ["mood"]\n'))

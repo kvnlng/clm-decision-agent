@@ -13,7 +13,8 @@ Two terminals, from the project root.
 
 ```bash
 uv run python examples/service_desk/mock_tracker.py                      # terminal 1: the mock tracker
-uv run python chat.py examples/service_desk/scenario.toml --review     # terminal 2: the assistant
+uv run python examples/service_desk/mock_openmetadata.py                 # terminal 2: the mock catalogue
+uv run python chat.py examples/service_desk/scenario.toml --review     # terminal 3: the assistant
 ```
 
 Try: `I need access to the oncology registry`, then answer its questions. Type `draft` to see
@@ -27,7 +28,8 @@ still asks before it submits a ticket.
 | Decision | Made by |
 |---|---|
 | The kind of request, on the first message | CLM; you can correct it in review mode, and the correction is reused |
-| How urgent it is, and whether identifiable data is involved | CLM; the rules in the scenario turn these into instructions for the ticket text |
+| Which dataset is meant | CLM, from the catalogue in OpenMetadata; the language model asks when CLM is not sure |
+| How urgent it is, and whether identifiable data is involved | CLM, informed by what the catalogue knows about the dataset; the rules in the scenario turn these into instructions for the ticket text |
 | Which details are still missing | Code, from the fields listed for the request type |
 | The wording of questions and of the ticket | The language model |
 | Whether to submit | You |
@@ -45,7 +47,8 @@ re-classified.
 | `scenario.toml` | Request types, the fields each needs, CLM's extra questions, the rules, and the tool settings |
 | `service_desk_tools.py` | The tools. Each reaches a different kind of data source |
 | `queues.json` | Which team handles each request type (read by `lookup_queue`) |
-| `catalogue.sql` | The dataset catalogue; built into `catalogue.db` on first run (queried by `find_dataset`) |
+| `openmetadata_catalogue.py` | Reads the dataset catalogue from OpenMetadata and writes each table as an entry with facts (used by `list_datasets` and `find_dataset`) |
+| `mock_openmetadata.py` | A stand-in for OpenMetadata's REST interface, serving eight invented datasets |
 | `scenario.examples.jsonl` | Labelled example messages for training |
 | `mock_tracker.py` | A stand-in for an issue tracker's REST interface (Forgejo's) |
 
@@ -102,6 +105,26 @@ have is created.
 
 For a different tracker, rewrite the three tracker tools in `service_desk_tools.py`. Nothing
 else depends on them.
+
+## Using a real OpenMetadata instead of the mock
+
+The catalogue comes from [OpenMetadata](https://open-metadata.org)'s REST API: the tables,
+with their owners, tags and domains, and each table's lineage. OpenMetadata follows its own
+graph to answer; the assistant only reads the answers, once, at start-up.
+
+1. In OpenMetadata, create a bot account and copy its token.
+2. In `[tools.settings]` set `openmetadata_url` to your instance, for example
+   `"http://localhost:8585"`, and optionally `openmetadata_domain` to keep one domain's tables.
+   CLM chooses between at most 50 datasets.
+3. In the terminal where you run the assistant: `export OPENMETADATA_TOKEN=<the token>`.
+
+**This has been run only against the mock.** The request paths and field names follow
+OpenMetadata's documentation; check them against your version first (older versions, for
+example, return `owner` rather than `owners`). Tables without a description are left out,
+because CLM chooses by description: the better your descriptions, the better it chooses.
+
+For another catalogue, rewrite `openmetadata_catalogue.py`, or the two dataset tools.
+Nothing else depends on them.
 
 ## Pointing at other models
 
