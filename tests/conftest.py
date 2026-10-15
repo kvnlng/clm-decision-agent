@@ -116,6 +116,12 @@ INTAKE_TOML = (BASE_TOML
                + '\n[routes.Billing.fields]\ninvoice = "Which invoice"\nproblem = "What is wrong with it"\n')
 
 
+# A catalogue on the intake route: CLM picks an invoice and the pick fills the `invoice` field
+CATALOGUE_TOML = ('\n[catalogue]\ntool = "list_invoices"\nroutes = ["Billing"]\nfield = "invoice"\n'
+                  'instructions = "Which invoice?"\n')
+CATALOGUE_ENTRIES = [{"name": "INV-1", "description": "March invoice", "facts": ["INV-1 was paid."]},
+                     {"name": "INV-2", "description": "April invoice", "facts": []}]
+
 @pytest.fixture
 def tracker_server():
     from mock_tracker import make_server  # pylint: disable=import-outside-toplevel

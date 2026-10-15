@@ -7,8 +7,8 @@ import re
 
 import pytest
 
-from conftest import BASE_TOML, INTAKE_TOML
-from scenario import Rule, ScenarioError, load_scenario
+from conftest import BASE_TOML, CATALOGUE_TOML, INTAKE_TOML
+from scenario import Catalogue, Rule, ScenarioError, load_scenario
 
 
 def test_loads_values_and_defaults(write_scenario):
@@ -294,3 +294,29 @@ def test_names_of_newer_internal_steps_are_reserved_too(write_scenario, name):
 def test_addresses_and_key_settings_are_checked(write_scenario, old, new, message):
     with pytest.raises(ScenarioError, match=re.escape(message)):
         load_scenario(write_scenario(BASE_TOML.replace(old, new)))
+
+
+def test_catalogue_is_optional(scenario):
+    assert scenario.catalogue is None
+
+
+def test_catalogue_loads_with_a_default_threshold(write_scenario):
+    loaded = load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML))
+    assert loaded.catalogue == Catalogue("list_invoices", ("Billing",), "invoice", "Which invoice?", 0.5)
+
+
+@pytest.mark.parametrize("change, message", [
+    (('routes = ["Billing"]', 'routes = ["Nope"]'), "catalogue.routes: unknown route 'Nope'"),
+    (('routes = ["Billing"]', 'routes = ["Tech"]'), "catalogue.field: route 'Tech' has no field 'invoice'"),
+    (('routes = ["Billing"]', 'routes = []'), "catalogue.routes must be a non-empty list of route names"),
+    (('field = "invoice"', 'field = "colour"'), "catalogue.field: route 'Billing' has no field 'colour'"),
+    (('tool = "list_invoices"\n', ''), "catalogue: missing 'tool'"),
+])
+def test_catalogue_errors_name_the_setting(write_scenario, change, message):
+    with pytest.raises(ScenarioError, match=re.escape(message)):
+        load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML.replace(*change)))
+
+
+def test_catalogue_threshold_must_be_from_0_to_1(write_scenario):
+    with pytest.raises(ScenarioError, match=re.escape("catalogue.confidence_threshold must be a number from 0 to 1")):
+        load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML + "confidence_threshold = 2\n"))

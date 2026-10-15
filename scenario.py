@@ -66,6 +66,17 @@ class Route:
 
 
 @dataclass(frozen=True)
+class Catalogue:
+    """A context tool whose entries CLM chooses between on some routes, filling one intake field."""
+
+    tool: str
+    routes: tuple[str, ...]
+    field: str
+    instructions: str
+    confidence_threshold: float
+
+
+@dataclass(frozen=True)
 class Scenario:  # pylint: disable=too-many-instance-attributes
     """Everything read from one scenario file."""
 
@@ -99,6 +110,7 @@ class Scenario:  # pylint: disable=too-many-instance-attributes
     record_key_env: str | None = None
     record_key_file: Path | None = None
     synthesize_messages: str = DEFAULT_SYNTHESIZE
+    catalogue: Catalogue | None = None
 
     @property
     def record_path(self) -> Path:
@@ -245,6 +257,23 @@ def _tools(table: dict) -> tuple[str | None, tuple[str, ...], dict]:
     return module, tuple(confirm), dict(settings)
 
 
+def _catalogue(data: dict, routes: dict[str, Route]) -> Catalogue | None:
+    if "catalogue" not in data:
+        return None
+    table, where = _table(data, "catalogue"), "catalogue"
+    names = table.get("routes")
+    if not isinstance(names, list) or not names or not all(isinstance(name, str) for name in names):
+        raise ScenarioError("catalogue.routes must be a non-empty list of route names")
+    tool, field_name = _text(table, "tool", where), _text(table, "field", where)
+    for name in names:
+        if name not in routes:
+            raise ScenarioError(f"catalogue.routes: unknown route '{name}'")
+        if field_name not in routes[name].fields:
+            raise ScenarioError(f"catalogue.field: route '{name}' has no field '{field_name}'")
+    return Catalogue(tool, tuple(names), field_name, _text(table, "instructions", where),
+                     _number(table, "confidence_threshold", where, 0.5, 0, 1))
+
+
 def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-locals
     """Read and validate a scenario file; raises ScenarioError with the offending key."""
     path = Path(path)
@@ -318,6 +347,7 @@ def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-loc
         tool_settings=tool_settings,
         clm_heads=path.parent / _text(clm, "heads", "clm") if "heads" in clm else None,
         synthesize_messages=_text(_table(data, "synthesize"), "messages", "synthesize", DEFAULT_SYNTHESIZE),
+        catalogue=_catalogue(data, routes),
     )
 
 
