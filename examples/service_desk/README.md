@@ -122,6 +122,7 @@ graph to answer; the assistant only reads the answers, once, at start-up.
 OpenMetadata's documentation; check them against your version first (older versions, for
 example, return `owner` rather than `owners`). Tables without a description are left out,
 because CLM chooses by description: the better your descriptions, the better it chooses.
+A table name used in more than one schema is shown by its full name (`database.schema.table`).
 
 For another catalogue, rewrite `openmetadata_catalogue.py`, or the two dataset tools.
 Nothing else depends on them.

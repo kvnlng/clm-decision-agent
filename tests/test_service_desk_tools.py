@@ -2,6 +2,7 @@
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,missing-class-docstring,redefined-outer-name,unused-argument
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -159,3 +160,9 @@ def test_get_ticket_refuses_anything_that_is_not_a_ticket_number(configured, tra
     with pytest.raises(ToolException, match="is not a ticket number"):
         desk.get_ticket.invoke({"number": number})
     assert tracker_server.last_authorization == "untouched"
+
+
+def test_list_datasets_says_which_setting_is_missing(tmp_path):
+    desk.configure({"queues_file": "queues.json"}, tmp_path)
+    with pytest.raises(ToolException, match=re.escape("openmetadata_url is not set in [tools.settings]")):
+        desk.list_datasets.invoke({})

@@ -355,7 +355,7 @@ def build_graph(scenario: Scenario, router, generator, registry: dict | None = N
         # Off-route tool calls are declined without a review pause, so the reviewer sees them here
         off_route = [check for check in state["tool_checks"] if check["source"] == "unknown_tool"]
         answer = interrupt({"kind": "reply", "route": decision["route"], "reply": reply,
-                            "tool_checks": off_route})
+                            "tool_checks": off_route, "catalogue": decision.get("catalogue")})
         record({"kind": "reply", "state_text": decision["state_text"], "route": decision["route"],
                 "reply": reply, "off_route_calls": [call for check in off_route for call in check["calls"]],
                 "human": {"acceptable": bool(answer["acceptable"]), "note": answer.get("note", "")}})

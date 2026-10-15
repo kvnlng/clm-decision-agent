@@ -4,7 +4,8 @@
 # pylint: disable=missing-function-docstring,missing-class-docstring,redefined-outer-name
 # pylint: disable=unused-argument,attribute-defined-outside-init,use-implicit-booleaness-not-comparison
 import pytest
-from conftest import BASE_TOML, CONFIRM_TOML, INTAKE_TOML, FakeGenerator, FakeRouter, decision, tool_call
+from conftest import (BASE_TOML, CATALOGUE_ENTRIES, CATALOGUE_TOML, CONFIRM_TOML, INTAKE_TOML, FakeGenerator,
+                      FakeRouter, decision, tool_call)
 from test_clm_router import ROUTE_ANSWER, URGENT_ANSWER, FakeEngine, VectorRouter
 
 import chat
@@ -459,3 +460,17 @@ def test_the_catalogue_pick_is_listed_with_the_decision(scenario, picked, shown)
 
 def test_without_a_pick_no_catalogue_line_is_shown(scenario):
     assert "catalogue" not in chat.format_decision(decision("Billing"), scenario)
+
+
+def test_review_mode_shows_the_catalogue_pick_with_the_reply(write_scenario):
+    scenario = load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML))
+    pick = {"catalogue": {"type": "choice", "choice": "INV-1", "confidence": 0.9,
+                          "probabilities": {"INV-1": 0.9, "INV-2": 0.1}}}
+    router = FakeRouter(decision("Billing"), asks=[pick, {"urgent": {"type": "noul", "noul": 0.1}}])
+    gen = FakeGenerator('{"invoice": null, "problem": null}', "What is wrong with it?")
+    written = []
+    graph = build_graph(scenario, router, gen, review=True, record=lambda entry: None, catalogue=CATALOGUE_ENTRIES)
+    # reads, in order: you>, route?, acceptable?, note, you>
+    chat_loop(graph, scenario, review=True, read=scripted(["my march invoice", "", "y", ""]), write=written.append)
+    output = "\n".join(written)
+    assert "  catalogue: INV-1 0.90 (used)\nagent> What is wrong with it?" in output

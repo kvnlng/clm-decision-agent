@@ -10,6 +10,7 @@ been run only against mock_openmetadata.py. Check them against your instance and
 from __future__ import annotations
 
 import re
+from collections import Counter
 from urllib.parse import quote
 
 import httpx
@@ -47,16 +48,21 @@ def upstream(response: dict) -> list[str]:
 
 
 def to_entries(tables: list[dict], lineage: dict[str, dict]) -> list[dict]:
-    """OpenMetadata tables and their lineage (by table name) -> catalogue entries.
-    Tables without a description are left out: CLM chooses by description."""
+    """OpenMetadata tables and their lineage (by fully qualified name) -> catalogue entries.
+    Tables without a description are left out: CLM chooses by description. A name used by
+    tables in two schemas is replaced by each one's fully qualified name, so entries stay distinct."""
+    counts = Counter(table["name"] for table in tables)
     entries = []
     for table in tables:
         name, description = table["name"], plain(table.get("description"))
+        if counts[name] > 1:
+            name = table.get("fullyQualifiedName") or name
         if not description:
             continue
         facts = [f"{owner.get('displayName') or owner['name']} owns {name}." for owner in table.get("owners") or []]
         facts += [_tag_fact(name, tag["tagFQN"]) for tag in table.get("tags") or []]
-        facts += [f"{name} is built from {source}." for source in upstream(lineage.get(name) or {})]
+        sources = upstream(lineage.get(table.get("fullyQualifiedName")) or {})
+        facts += [f"{name} is built from {source}." for source in sources]
         entries.append({"name": name, "description": description, "facts": facts})
     return entries
 
@@ -77,7 +83,8 @@ def _get(base: str, path: str, token: str | None, params: dict) -> dict:
 
 
 def fetch(url: str, token: str | None, domain: str | None = None, page: int = 100) -> tuple[list[dict], dict]:
-    """Tables with their owners, tags and domains, and each one's upstream lineage: -> (tables, lineage by name).
+    """Tables with their owners, tags and domains, and each one's upstream lineage:
+    -> (tables, lineage by fully qualified name).
     `domain` keeps the tables of one domain; it is applied here because the server's filter varies by version."""
     tables, after = [], None
     while True:
@@ -89,7 +96,9 @@ def fetch(url: str, token: str | None, domain: str | None = None, page: int = 10
             break
     if domain:
         tables = [table for table in tables if domain in [d.get("name") for d in table.get("domains") or []]]
-    lineage = {table["name"]: _get(url, "/api/v1/lineage/table/name/" + quote(table["fullyQualifiedName"], safe=""),
-                                   token, {"upstreamDepth": 1, "downstreamDepth": 0})
-               for table in tables}
+    lineage = {}
+    for table in tables:
+        fqn = table["fullyQualifiedName"]
+        lineage[fqn] = _get(url, "/api/v1/lineage/table/name/" + quote(fqn, safe=""), token,
+                            {"upstreamDepth": 1, "downstreamDepth": 0})
     return tables, lineage

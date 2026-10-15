@@ -22,7 +22,9 @@ def lineage(name, *sources):
 def test_facts_come_from_owners_tags_and_lineage():
     tables = [table("Readmissions Extract", owners=["Quality Improvement"], tags=["PII.NonSensitive", "Tier.Tier2"]),
               table("ED Attendances", tags=["Custom.Thing"])]
-    first, second = to_entries(tables, {"Readmissions Extract": lineage("Readmissions Extract", "ED Attendances")})
+    built_from = {"db.schema.Readmissions Extract": lineage("Readmissions Extract", "ED Attendances")}
+    entries = to_entries(tables, built_from)
+    first, second = entries[0], entries[1]
     assert first == {"name": "Readmissions Extract", "description": "A table", "facts": [
         "Quality Improvement owns Readmissions Extract.",
         "Readmissions Extract contains personal data that is not sensitive.",
@@ -33,7 +35,7 @@ def test_facts_come_from_owners_tags_and_lineage():
 
 def test_a_sensitive_tag_and_an_owner_s_display_name():
     owners = [{"name": "cancer-services", "displayName": "Cancer Services", "type": "team"}]
-    entry, = to_entries([dict(table("Oncology Registry", tags=["PII.Sensitive"]), owners=owners)], {})
+    entry = to_entries([dict(table("Oncology Registry", tags=["PII.Sensitive"]), owners=owners)], {})[0]
     assert entry["facts"] == ["Cancer Services owns Oncology Registry.",
                               "Oncology Registry contains sensitive personal data."]
 
@@ -45,7 +47,7 @@ def test_markdown_is_stripped_and_undescribed_tables_are_left_out():
 
 
 def test_missing_lists_are_treated_as_empty():
-    assert to_entries([{"name": "A", "description": "Admissions"}], {"A": {}}) == [
+    assert to_entries([{"name": "A", "description": "Admissions"}], {"db.schema.A": {}}) == [
         {"name": "A", "description": "Admissions", "facts": []}]
 
 
@@ -53,15 +55,15 @@ def test_fetch_pages_through_the_tables_and_reads_their_lineage(openmetadata_ser
     tables, lineage = fetch(openmetadata_url, None, page=3)
     assert len(tables) == 8
     assert "Oncology Registry" in [table["name"] for table in tables]
-    assert upstream(lineage["Readmissions Extract"]) == ["Emergency Department Attendances"]
-    assert upstream(lineage["Oncology Registry"]) == []
+    assert upstream(lineage["warehouse.clinical.readmissions_extract"]) == ["Emergency Department Attendances"]
+    assert upstream(lineage["warehouse.clinical.oncology_registry"]) == []
     assert sum(path.startswith("/api/v1/tables") for path in openmetadata_server.requests) == 3
 
 
 def test_fetch_keeps_only_the_named_domain(openmetadata_url):
     tables, lineage = fetch(openmetadata_url, None, domain="Workforce")
     assert [table["name"] for table in tables] == ["Staffing Rosters"]
-    assert list(lineage) == ["Staffing Rosters"]
+    assert list(lineage) == ["warehouse.clinical.staffing_rosters"]
 
 
 def test_fetch_sends_the_token(openmetadata_server, openmetadata_url):
@@ -86,3 +88,11 @@ def test_the_mock_s_tables_become_eight_entries_with_facts(openmetadata_url):
                                                      "Oncology Registry contains sensitive personal data."]
     assert "Readmissions Extract is built from Emergency Department Attendances." in \
         entries["Readmissions Extract"]["facts"]
+
+
+def test_a_table_name_used_in_two_schemas_is_given_its_full_name():
+    first = dict(table("admissions", owners=["Finance"]), fullyQualifiedName="warehouse.finance.admissions")
+    second = dict(table("admissions"), fullyQualifiedName="warehouse.clinical.admissions")
+    names = [entry["name"] for entry in to_entries([first, second, table("ward_list")], {})]
+    assert names == ["warehouse.finance.admissions", "warehouse.clinical.admissions", "ward_list"]
+    assert to_entries([first, second], {})[0]["facts"] == ["Finance owns warehouse.finance.admissions."]

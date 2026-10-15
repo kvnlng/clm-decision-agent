@@ -30,13 +30,17 @@ def format_decision(decision: dict, scenario) -> str:
     signals = signals_line(decision["answers"]).strip()
     if signals:
         lines.append(f"  {signals}")
-    pick = decision.get("catalogue")
-    if pick:
-        outcome = "used" if pick["picked"] else "not confident enough to use"
-        lines.append(f"  catalogue: {pick['choice']} {pick['confidence']:.2f} ({outcome})")
+    if decision.get("catalogue"):
+        lines.append(format_pick(decision["catalogue"]))
     if decision.get("rules"):
         lines.append("  rules applied: " + "; ".join(decision["rules"]))
     return "\n".join(lines)
+
+
+def format_pick(pick: dict) -> str:
+    """CLM's choice from the catalogue, and whether it was confident enough to use."""
+    outcome = "used" if pick["picked"] else "not confident enough to use"
+    return f"  catalogue: {pick['choice']} {pick['confidence']:.2f} ({outcome})"
 
 
 def format_outcome(decision: dict, scenario) -> str:
@@ -215,6 +219,9 @@ def ask_human(payload: dict, scenario, read, write) -> dict:
         return {"approved": _yes_no(read, "run this tool call? [y/n] ")}
     for check in payload.get("tool_checks", []):
         write(format_tool_check(check))
+    if payload.get("catalogue"):
+        # The pick is made after the route is reviewed, so this is the reviewer's first sight of it
+        write(format_pick(payload["catalogue"]))
     write(f"agent> {payload['reply'] or '(no reply)'}")
     acceptable = _yes_no(read, "acceptable? [y/n] ")
     return {"acceptable": acceptable, "note": read("note (optional): ").strip()}

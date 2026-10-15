@@ -54,6 +54,8 @@ def lookup_queue(request_type: str) -> dict:
 def _datasets() -> list[dict]:
     """The catalogue, read from OpenMetadata on first use and kept."""
     if not _DATASETS:
+        if not SETTINGS.get("openmetadata_url"):
+            raise ToolException("openmetadata_url is not set in [tools.settings]")
         token = os.environ.get(SETTINGS.get("openmetadata_token_env", ""), "") or None
         tables, lineage = openmetadata_catalogue.fetch(SETTINGS["openmetadata_url"], token,
                                                        SETTINGS.get("openmetadata_domain"))
