@@ -60,7 +60,7 @@ precision. The first start downloads about 16 GB.
 |---|---|
 | The torch backend on a Mac's GPU against the MLX 8-bit build, released heads, 81 requests from the example | Same route for 79; the largest difference in a route's probability was 0.06 |
 | Training the example with the torch backend on a Mac | 55% → 98% on held-back examples; 15 of 17 hand-written messages |
-| The torch backend on Linux, in Docker, on the CPU | See [serving.md](serving.md#where-clm-runs) |
+| The torch backend on Linux, in Docker, on the CPU | **Not yet** |
 | An NVIDIA GPU | **Not yet** |
 
 ### Heads belong to one backend

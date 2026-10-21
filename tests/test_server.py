@@ -12,6 +12,7 @@ from conftest import BASE_TOML, FakeRouter, decision
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
+import clm_router
 import server
 from decision import decide
 from record import load_records
@@ -172,3 +173,12 @@ async def test_a_slow_tool_does_not_hold_up_other_calls(write_scenario):
             fake_tools.GATE.set()
     assert checked.structured_content == {"p": 0.9, "approved": True}
     assert waited < 1
+
+
+def test_clm_that_cannot_load_is_one_line(write_scenario, monkeypatch, capsys):
+    def no_cuda(*args):
+        raise clm_router.ClmError("CLM was set to run on cuda, which this machine does not have (available: cpu)")
+    monkeypatch.setattr(clm_router, "load_engine", no_cuda)
+    assert server.main([str(write_scenario())]) == 2
+    assert capsys.readouterr().err.strip().splitlines()[-1] == \
+        "error: CLM was set to run on cuda, which this machine does not have (available: cpu)"

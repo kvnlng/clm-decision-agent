@@ -16,6 +16,7 @@ from mcp.types import ToolAnnotations
 from starlette.responses import JSONResponse
 
 import decision
+from clm_common import ClmError
 from evaluate import agreement as replay_agreement
 from record import load_records, record_key, save_correction
 from scenario import Scenario, ScenarioError, load_scenario
@@ -51,7 +52,6 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
     router = _OneAtATime(router, threading.Lock())
 
     def clm(work: Callable[[], dict]) -> dict:
-        from clm_router import ClmError  # pylint: disable=import-outside-toplevel
         try:
             return work()
         except ClmError as error:
@@ -154,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         scenario, router, tools = load(args.scenario)
-    except ScenarioError as error:
+    except (ScenarioError, ClmError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     server = build_server(scenario, router, tools, args.review)
