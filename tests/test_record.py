@@ -9,7 +9,7 @@ import stat
 import pytest
 from conftest import BASE_TOML
 
-from record import append_record, load_records, locked_lines, new_key, record_key, route_verdicts
+from record import append_record, load_records, locked_lines, new_key, record_key, route_verdicts, save_correction
 from record import main as record_main
 from scenario import ScenarioError, load_scenario
 
@@ -22,12 +22,11 @@ def route_record(state_text, clm, human):
 def test_append_then_load_round_trip(tmp_path):
     path = tmp_path / "scenario.record.jsonl"
     append_record(path, route_record("User: hi", "Billing", "Tech"))
-    append_record(path, {"kind": "tool", "state_text": "User: x", "calls": [],
-                         "clm": {"p": 0.9, "approved": True}, "human": False})
+    append_record(path, route_record("User: x", "Tech", "Tech"))
     records, skipped = load_records(path)
 
     assert skipped == 0
-    assert [r["kind"] for r in records] == ["route", "tool"]
+    assert [r["state_text"] for r in records] == ["User: hi", "User: x"]
     assert records[0]["human"] == "Tech"
     assert records[0]["time"].endswith("+00:00")
     assert len(path.read_text().splitlines()) == 2
@@ -201,3 +200,33 @@ def test_a_new_record_folder_is_private_and_newkey_explains_a_missing_folder(wri
     assert stat.S_IMODE((tmp_path / "private").stat().st_mode) == 0o700
     assert record_main(["newkey", str(tmp_path / "missing" / "record.key")]) == 2
     assert "does not exist" in capsys.readouterr().err
+
+
+def test_save_correction_round_trip(scenario):
+    save_correction(scenario, "my app crashes", "Tech", {"route": "Billing", "confidence": 0.7})
+    records, skipped = load_records(scenario.record_path)
+    assert skipped == 0
+    assert [(r["kind"], r["state_text"], r["human"], r["clm"]) for r in records] == \
+        [("route", "my app crashes", "Tech", {"route": "Billing", "confidence": 0.7})]
+
+
+def test_save_correction_is_encrypted_when_a_key_is_set(write_scenario, tmp_path):
+    (tmp_path / "r.key").write_bytes(new_key())
+    scenario = load_scenario(write_scenario(BASE_TOML + '\n[record]\nkey_file = "r.key"\n'))
+    save_correction(scenario, "my app crashes", "Tech", {"route": "Billing", "confidence": 0.7})
+    assert b"crashes" not in scenario.record_path.read_bytes()
+    records, _ = load_records(scenario.record_path, record_key(scenario))
+    assert records[0]["human"] == "Tech"
+
+
+def test_save_correction_unknown_route(scenario):
+    with pytest.raises(ValueError, match="unknown route 'Shipping'"):
+        save_correction(scenario, "where is my parcel", "Shipping", {"route": "Tech", "confidence": 0.5})
+    assert not scenario.record_path.exists()
+
+
+def test_old_kinds_are_skipped(tmp_path):
+    path = tmp_path / "old.jsonl"
+    append_record(path, {"kind": "tool", "state_text": "x", "calls": [], "clm": {}, "human": True})
+    append_record(path, {"kind": "reply", "state_text": "x", "route": "Tech", "human": {"acceptable": True}})
+    assert load_records(path) == ([], 2)

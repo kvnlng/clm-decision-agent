@@ -22,7 +22,8 @@ as released.
   with `[synthesize] messages` in the scenario; the example's is "messages that staff might send
   to a help desk". Read some of the results. The file is plain text, one example per line, and
   you can edit it or add your own: `{"text": "<a message>", "route": "<a route's name>"}`
-- Use the assistant in review mode. Every route you confirm or correct is a real example.
+- Correct decisions in the test chat's review mode (`chat.py <scenario> --review`). Every route
+  you correct is a real example.
 
 **2. Say where to save the result**, in the scenario:
 
@@ -41,11 +42,10 @@ It prints accuracy before and after on examples it held back, and how far the an
 other questions moved. If training did not improve on the held-back examples, nothing is
 saved.
 
-**4. Start the chat.** It says at start-up whether it is using the trained heads.
+**4. Start the server.** It says at start-up whether it is using the trained heads.
 
-Training is one step in a longer loop of writing, reviewing and adjusting:
-
-![The adaptation loop: write the scenario and tools, generate examples, train, chat in review mode, evaluate, adjust, and the three events that mean training again](diagrams/adaptation-loop.png)
+Training is one step in a loop: write the scenario, generate examples, train, try messages in
+the test chat and correct its decisions, evaluate, adjust, and train again.
 
 ## What it did on the example
 
@@ -75,10 +75,10 @@ Two earlier measurements on a similar problem (issue reports, 450 generated exam
 
 - **Whenever a route's description, a route's name or the routing question changes.** Trained
   heads fit the exact wording: in a test, rewording the options after training dropped
-  accuracy below the untrained model. The chat detects this, says so, and uses the released
+  accuracy below the untrained model. The server detects this, says so, and uses the released
   heads until you retrain.
 - When you change the CLM build.
-- When you have reviewed more real messages.
+- When you have corrected more real messages.
 
 ## Limits
 

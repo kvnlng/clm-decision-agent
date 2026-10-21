@@ -12,7 +12,7 @@ import pytest
 from conftest import BASE_TOML
 
 import clm_router
-from clm_router import ROUTE_QID, ClmError, LocalContrastiveRouter, RemoteEngine, last_turn, make_router, resolve_heads
+from clm_router import ROUTE_QID, ClmError, LocalContrastiveRouter, RemoteEngine, make_router, resolve_heads
 from scenario import load_scenario
 
 
@@ -144,20 +144,6 @@ def test_embed_state_projects_context_plus_routing_question(scenario):
     assert vector == pytest.approx([0.6, 0.8])
 
 
-def test_last_turn_is_the_final_user_message_with_its_continuation_lines():
-    assert last_turn("User: a\nAssistant: b\nUser: c\nd") == "User: c\nd"
-    assert last_turn("User: only") == "User: only"
-
-
-def test_a_repeated_message_later_in_a_conversation_matches_a_first_turn_correction(scenario):
-    later = "User: bill me\nAssistant: ok\nUser: bill me"
-    router = VectorRouter(routed_to_billing(), {**VECTORS, later: [0.0, 1.0]})
-    router.load_verdicts([correction("User: bill me", "Billing", "Tech")], scenario)
-    decision = router.decide(later, scenario)
-    assert (decision["route"], decision["source"]) == ("Tech", "reviewed")
-    assert decision["similarity"] == pytest.approx(1.0)
-
-
 def test_a_confirmed_route_is_reused_too(scenario):
     router = VectorRouter(routed_to_billing(), VECTORS)
     assert router.load_verdicts([correction("User: bill me", "Billing", "Billing")], scenario) == 1
@@ -282,8 +268,6 @@ def test_server_backend_reuses_a_reviewed_route_when_the_text_is_the_same(write_
     same = router.decide("User: my app crashes", scenario)
     assert (same["route"], same["source"]) == ("Tech", "reviewed")
     assert (same["clm_route"], same["similarity"]) == ("Billing", 1.0)
-    later = router.decide("User: hello\nAssistant: hi\nUser: my app crashes", scenario)
-    assert later["route"] == "Tech"
     assert router.decide("User: my app crashed", scenario)["source"] == "clm"
 
 

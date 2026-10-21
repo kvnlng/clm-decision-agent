@@ -74,24 +74,17 @@ def _replay_routing(route_records: list[dict], scenario, router) -> dict:
             "bands": confidence_bands(pairs), "suggested_threshold": suggest_threshold(pairs)}
 
 
+def agreement(records: list[dict], scenario, router) -> dict:
+    """How often CLM's route agrees with the owner's corrections: {"n", "agree"}."""
+    routing = _replay_routing(records, scenario, router)
+    return {"n": routing["n"], "agree": routing["correct"]}
+
+
 def evaluate(records: list[dict], scenario, router) -> dict:
-    """Ask CLM again about every reviewed case, with live corrections off, and compare with the human."""
+    """Ask CLM again about every corrected case, with live corrections off, and compare with the owner."""
     route_records = [r for r in records if r["kind"] == "route"]
-    tool_records = [r for r in records if r["kind"] == "tool"]
-    agree = sum((router.check_tool(r["state_text"], scenario) >= scenario.tool_check_threshold) == r["human"]
-                for r in tool_records)
-
-    replies: dict[str, dict] = {}
-    for r in records:
-        if r["kind"] == "reply":
-            stats = replies.setdefault(r["route"], {"n": 0, "acceptable": 0})
-            stats["n"] += 1
-            stats["acceptable"] += r["human"]["acceptable"]
-
     return {
         "routing": _replay_routing(route_records, scenario, router),
-        "tools": {"n": len(tool_records), "agree": agree},
-        "replies": replies,
         # A CLM server gives no vectors, so there is nothing to measure: reuse is then by exact text
         "matching": None if getattr(router, "exact_match", False)
         else match_report([r for r in route_records if r["human"] in scenario.routes], scenario, router),
@@ -138,22 +131,9 @@ def format_report(result: dict, scenario) -> str:
     """The evaluation result as text for the terminal."""
     lines = _routing_lines(result["routing"], scenario)
 
-    tools = result["tools"]
-    if tools["n"]:
-        lines.append(f"Tool checks: CLM agreed with the reviewer on {tools['agree']} of {tools['n']} "
-                     f"({_share(tools['agree'], tools['n'])})")
-    else:
-        lines.append("Tool checks: no reviewed tool calls")
-
-    if result["replies"]:
-        lines.append("Replies marked acceptable:")
-        for route, stats in result["replies"].items():
-            lines.append(f"  {route:<24}{stats['acceptable']:>4} / {stats['n']:<4} "
-                         f"{_share(stats['acceptable'], stats['n'])}")
-
     matching = result["matching"]
     if matching is None:
-        lines.append("Reuse of reviewed routes: with a CLM server, only when the conversation is the same exact text.")
+        lines.append("Reuse of reviewed routes: with a CLM server, only when the request is the same exact text.")
         return "\n".join(lines)
     lines.append(f"Reuse of reviewed routes at match_threshold {scenario.match_threshold:.2f}: "
                  f"{matching['matched']} of {matching['n']} reviewed cases match another reviewed case; "
@@ -177,8 +157,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
     if not records:
-        print(f"No reviewed cases in {scenario.record_path}. "
-              f"Run `python chat.py {args.scenario} --review` first.")
+        print(f"No corrections in {scenario.record_path}. "
+              f"Correct some decisions with `python chat.py {args.scenario} --review` first.")
         return 0
     if skipped:
         print(f"{skipped} unreadable lines skipped in {scenario.record_path.name}")

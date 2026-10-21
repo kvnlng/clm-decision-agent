@@ -37,13 +37,12 @@ def split_of(text: str) -> str:
 def training_rows(scenario: Scenario, examples: list[dict], records: list[dict]) -> tuple[list, list, list]:
     """-> (train, reviewed, test) lists of (state_text, route).
 
-    `reviewed` are the routes a person chose in review mode. They are real, so all of them are trained on,
+    `reviewed` are the routes the owner chose in review mode. They are real, so all of them are trained on,
     except one that repeats a held-back example."""
     train, test = [], []
     for example in examples:
         if example["route"] in scenario.routes:
-            # The same layout the chat gives CLM for a first message
-            row = (f"User: {example['text']}", example["route"])
+            row = (example["text"], example["route"])
             (test if split_of(example["text"]) == "test" else train).append(row)
     held_back = {state for state, _ in test}
     reviewed = [(verdict["state_text"], verdict["human"]) for verdict in route_verdicts(records, scenario)

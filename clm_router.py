@@ -115,13 +115,6 @@ def make_router(scenario: Scenario):
     return LocalContrastiveRouter(scenario.clm_model_id, heads_dir=heads_dir), f"its {note}"
 
 
-def last_turn(state_text: str) -> str:
-    """The final user message of a rendered conversation, with any continuation lines."""
-    lines = state_text.split("\n")
-    starts = [i for i, line in enumerate(lines) if line.startswith("User: ")]
-    return "\n".join(lines[starts[-1]:]) if starts else state_text
-
-
 class LocalContrastiveRouter:
     """CLM for one scenario: routing decisions, tool-call checks and reuse of reviewed routes."""
 
@@ -152,10 +145,6 @@ class LocalContrastiveRouter:
         }
         if self.verdicts and scenario.live_corrections:
             match = self._reviewed(state_text, scenario)
-            latest = last_turn(state_text)
-            if not match and latest != state_text:
-                # A question repeated later in a conversation should still meet its first-turn verdict
-                match = self._reviewed(latest, scenario)
             if match:
                 human_route, similarity = match
                 decision.update(route=human_route, source="reviewed", similarity=similarity,

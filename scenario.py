@@ -114,8 +114,8 @@ class Scenario:  # pylint: disable=too-many-instance-attributes
 
     @property
     def record_path(self) -> Path:
-        """The review record that belongs to this scenario file."""
-        return self.record_file or self.path.with_name(self.path.stem + ".record.jsonl")
+        """The record of route corrections that belongs to this scenario file."""
+        return self.record_file or self.path.with_name(self.path.stem + ".corrections.jsonl")
 
     @property
     def routing_sha(self) -> str:

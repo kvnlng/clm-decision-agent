@@ -26,7 +26,7 @@ def test_loads_values_and_defaults(write_scenario):
     assert s.tool_check_instructions == "Is this tool call appropriate for what the user asked?"
     assert s.tool_check_threshold == 0.5
     assert (s.live_corrections, s.match_threshold) == (True, 0.97)
-    assert s.record_path == path.with_name("scenario.record.jsonl")
+    assert s.record_path == path.with_name("scenario.corrections.jsonl")
     assert len(s.sha) == 64
 
 
