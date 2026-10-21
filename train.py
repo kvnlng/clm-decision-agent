@@ -70,6 +70,35 @@ class HeadsModel(nn.Module):  # pylint: disable=abstract-method
         return self.scale * (_unit(self.state_head(_unit(states))) @ _unit(self.action_head(_unit(actions))).T)
 
 
+class MlxAdamW:
+    """AdamW as MLX applies it, which the example's heads were first trained with: weight decay first, and
+    no bias correction, so early steps are larger than torch's AdamW takes."""
+
+    # pylint: disable-next=too-many-arguments
+    def __init__(self, parameters, learning_rate: float, weight_decay: float = 1e-2, betas=(0.9, 0.999),
+                 eps: float = 1e-8):
+        self.parameters = list(parameters)
+        self.learning_rate, self.weight_decay, self.betas, self.eps = learning_rate, weight_decay, betas, eps
+        self.state = [(torch.zeros_like(p), torch.zeros_like(p)) for p in self.parameters]
+
+    def zero_grad(self) -> None:
+        """Forget the last gradients."""
+        for parameter in self.parameters:
+            parameter.grad = None
+
+    @torch.no_grad()
+    def step(self) -> None:
+        """Move each parameter by its gradient."""
+        b1, b2 = self.betas
+        for parameter, (m, v) in zip(self.parameters, self.state):
+            if parameter.grad is None:
+                continue
+            parameter.mul_(1 - self.learning_rate * self.weight_decay)
+            m.mul_(b1).add_(parameter.grad, alpha=1 - b1)
+            v.mul_(b2).addcmul_(parameter.grad, parameter.grad, value=1 - b2)
+            parameter.addcdiv_(m, v.sqrt().add_(self.eps), value=-self.learning_rate)
+
+
 def accuracy(model: HeadsModel, states: torch.Tensor, labels: torch.Tensor, actions: torch.Tensor) -> float:
     """The share of states whose highest-scoring option is the labelled one."""
     with torch.no_grad():
@@ -88,7 +117,7 @@ def fit(model: HeadsModel, states: torch.Tensor, labels: torch.Tensor, actions: 
     held = max(1, len(order) // 5)
     validation = torch.tensor(order[:held])
     training = order[held:] + list(range(len(labels) - pinned, len(labels)))
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-2)
+    optimizer = MlxAdamW(model.parameters(), learning_rate=learning_rate, weight_decay=1e-2)
 
     best = accuracy(model, states[validation], labels[validation], actions)
     best_weights, best_epoch, epoch = copy.deepcopy(model.state_dict()), 0, 0
@@ -114,7 +143,7 @@ def probe_accuracy(train_states, train_labels, test_states, test_labels, classes
     torch.manual_seed(0)
     linear = nn.Linear(train_states.shape[1], classes)
     inputs = _unit(train_states) * 30.0
-    optimizer = torch.optim.AdamW(linear.parameters(), lr=3e-3, weight_decay=1e-2)
+    optimizer = MlxAdamW(linear.parameters(), learning_rate=3e-3, weight_decay=1e-2)
     for _ in range(steps):
         optimizer.zero_grad()
         nn.functional.cross_entropy(linear(inputs), train_labels).backward()

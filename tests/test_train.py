@@ -194,3 +194,19 @@ def test_main_trains_with_the_torch_backend(write_scenario, monkeypatch, tmp_pat
     assert seen == [("torch", "test/clm", None, None)]
     assert code == 0
     assert json.loads((tmp_path / "my.heads" / "training.json").read_text())["clm_backend"] == "torch"
+
+
+def test_the_optimizer_steps_as_mlx_adamw_does():
+    # MLX's AdamW, which the heads were first trained with, decays first and skips Adam's bias correction
+    param = nn.Parameter(torch.tensor([1.0, -2.0]))
+    optimizer = train.MlxAdamW([param], learning_rate=0.1, weight_decay=0.01)
+    grads = [torch.tensor([0.5, -1.0]), torch.tensor([0.2, 0.3])]
+    expected, m, v = np.array([1.0, -2.0]), np.zeros(2), np.zeros(2)
+    for grad in grads:
+        param.grad = grad.clone()
+        optimizer.step()
+        g = grad.numpy().astype(np.float64)
+        expected = expected * (1 - 0.1 * 0.01)
+        m, v = 0.9 * m + 0.1 * g, 0.999 * v + 0.001 * g * g
+        expected = expected - 0.1 * m / (np.sqrt(v) + 1e-8)
+    np.testing.assert_allclose(param.detach().numpy(), expected, rtol=1e-5)
