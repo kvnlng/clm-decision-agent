@@ -52,7 +52,8 @@ precision. The first start downloads about 16 GB.
 - **A GPU with 24 GB of memory or more.** The encoder takes about 17 GB. An A100 is plenty.
 - **It also runs on a Mac** (`device = "mps"`) **and on a plain CPU**, slowly. That is how it
   was checked, as described below.
-- `uv sync` installs PyTorch on every machine; on Linux the PyPI build includes CUDA.
+- `uv sync` installs PyTorch on every machine. On Linux the PyPI build includes CUDA 13, which
+  needs NVIDIA driver 580 or later; `nvidia-smi` shows the driver version.
 
 ### What has been checked
 
@@ -60,7 +61,8 @@ precision. The first start downloads about 16 GB.
 |---|---|
 | The torch backend on a Mac's GPU against the MLX 8-bit build, released heads, 81 requests from the example | Same route for 79; the largest difference in a route's probability was 0.06 |
 | Training the example with the torch backend on a Mac | 55% → 98% on held-back examples; 15 of 17 hand-written messages |
-| The torch backend on Linux, in Docker, on the CPU | **Not yet** |
+| The torch backend on Linux (arm64), in Docker, on the CPU: the slow test through the server, released heads | Passes: 11 of 17 hand-written messages, in about 5 minutes on 2 CPUs. On the Mac's GPU the same test got 12; the difference is a near tie |
+| An Intel Linux image (amd64) | Installs, with PyTorch's CUDA 13.0 build. CLM was not run in it |
 | An NVIDIA GPU | **Not yet** |
 
 ### Heads belong to one backend

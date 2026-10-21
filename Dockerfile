@@ -9,7 +9,8 @@
 FROM python:3.12-slim
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /usr/local/bin/uv
-ENV UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv HF_HOME=/cache
+# UV_NO_SYNC: the image is installed once, at build time; uv run then uses it as it is
+ENV UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv UV_NO_SYNC=1 HF_HOME=/cache
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./

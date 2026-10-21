@@ -80,7 +80,7 @@ docker run --rm --gpus all -v clm-hf:/cache -e CLM_TEST_BACKEND=torch clm-decisi
 ```
 
 - Models download into `/cache`; the volume keeps them between runs.
-- `--gpus all` needs the NVIDIA container toolkit. Without it, CLM runs on the CPU, which
+- `--gpus all` needs the NVIDIA container toolkit, and a driver of version 580 or later on the host. Without it, CLM runs on the CPU, which
   needs about 24 GB of memory for the container and is slow.
 - To serve from the container, run `uv run python server.py <scenario> --http --host 0.0.0.0`
   with the key variable set (`-e DECISION_SERVER_KEY=...`) and the port published (`-p 8000:8000`).
