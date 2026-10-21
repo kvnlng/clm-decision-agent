@@ -1,7 +1,7 @@
 """Tests for decision.py."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # Fakes mirror real interfaces (so some arguments go unused) and note what they were called with.
-# pylint: disable=missing-function-docstring,redefined-outer-name
+# pylint: disable=missing-function-docstring,redefined-outer-name,use-implicit-booleaness-not-comparison
 import fake_tools
 import pytest
 from conftest import BASE_TOML, FakeRouter, decision
@@ -130,7 +130,7 @@ def test_tool_receives_request_so_far(setup):
     scenario, tools = setup()
     router = FakeRouter(decision("Billing", answers=urgent(0.1)), asks=[urgent(0.8)])
     decide(TEXT, scenario, router, tools)
-    (_, informing), (_, acting) = fake_tools.CALLS
+    informing, acting = (request for _, request in fake_tools.CALLS)
     assert informing == {"text": TEXT, "route": "Billing", "answers": urgent(0.1), "rules": [], "facts": []}
     assert acting == {"text": TEXT, "route": "Billing", "answers": urgent(0.8),
                       "rules": [{"when": "urgent >= 0.5", "tell": "Hurry."}], "facts": ["The queue is A."]}
