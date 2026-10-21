@@ -42,6 +42,7 @@ def test_the_scenario_tools_check_passes(scenario):
 @pytest.mark.parametrize("change, message", [
     (('inform = ["lookup"]', 'inform = ["x"]'), "routes.Billing.inform: unknown tool 'x'"),
     (('tool = "act"', 'tool = "x"'), "actions[0].tool: unknown tool 'x'"),
+    (("confidence_threshold = 0.6", 'confidence_threshold = 0.6\ninform = ["x"]'), "routing.inform: unknown tool 'x'"),
     (('[tools.inform.lookup]', '[tools.inform.x]'), "tools.inform.x: unknown tool 'x'"),
     (('[tools]\nmodule = "fake_tools"\n', ""),
      "routes.Billing.inform: unknown tool 'lookup' (no [tools] module is set)"),

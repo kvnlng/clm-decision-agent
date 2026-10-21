@@ -211,3 +211,12 @@ def test_make_router_passes_backend_and_device_to_load_engine(write_scenario, mo
     assert seen == [("torch", "test/clm", None, "cpu")]
     assert isinstance(router, LocalContrastiveRouter)
     assert note == "its released heads"
+
+
+def test_route_asks_only_the_routing_question(scenario):
+    engine = FakeEngine({ROUTE_QID: ROUTE_ANSWER})
+    routed = LocalContrastiveRouter(engine=engine).route("User: charged twice\n\nKnown:\n- Fare A", scenario)
+    assert routed == {"route": "Billing", "confidence": 0.8, "probabilities": {"Billing": 0.9, "Tech": 0.1},
+                      "source": "clm"}
+    state, questions = engine.calls[0]
+    assert state.endswith("- Fare A") and list(questions) == [ROUTE_QID]

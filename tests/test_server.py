@@ -15,7 +15,7 @@ from mcp.client.streamable_http import streamable_http_client
 
 import clm_router
 import server
-from decision import decide
+from decision import decide, routed_text
 from record import load_records
 from scenario import load_scenario
 from tools import load_tools
@@ -194,3 +194,17 @@ def test_clm_that_cannot_load_is_one_line(write_scenario, monkeypatch, capsys):
     assert server.main([str(write_scenario())]) == 2
     assert capsys.readouterr().err.strip().splitlines()[-1] == \
         "error: CLM was set to run on cuda, which this machine does not have (available: cpu)"
+
+
+@pytest.mark.anyio
+async def test_correct_saves_the_text_the_route_saw(write_scenario):
+    scenario = load_scenario(write_scenario(BASE_TOML.replace(
+        "confidence_threshold = 0.6", 'confidence_threshold = 0.6\ninform = ["lookup"]')))
+    seen = routed_text(TEXT, ["The queue is A."])
+    router = FakeRouter({TEXT: decision("Tech"), seen: decision("Tech")})
+    async with Client(server.build_server(scenario, router, load_tools(scenario), review=True)) as client:
+        saved = await client.call_tool("correct", {"text": TEXT, "route": "Billing", "context": {"booking": "B"}})
+    assert not saved.is_error
+    records, _ = load_records(scenario.record_path)
+    assert [r["state_text"] for r in records] == [seen]
+    assert router.verdicts == {seen: "Billing"}

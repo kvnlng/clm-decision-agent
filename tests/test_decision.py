@@ -6,7 +6,7 @@ import fake_tools
 import pytest
 from conftest import BASE_TOML, FakeRouter, decision
 
-from decision import check_call, decide, describe
+from decision import check_call, decide, describe, routed_text
 from scenario import load_scenario
 from tools import load_tools
 
@@ -220,3 +220,61 @@ def test_context_is_not_in_the_text_clm_reads(setup):
     router = FakeRouter(decision("Tech"))
     decide(TEXT, scenario, router, tools, context={"booking": "PNR1"})
     assert router.states == [TEXT]
+
+
+ROUTING_LOOKUP = BASE_TOML.replace("confidence_threshold = 0.6", 'confidence_threshold = 0.6\ninform = ["lookup"]')
+FACTS = ["The queue is A."]
+REPLY_KEYS = {"route", "confidence", "probabilities", "answers", "source", "uncertain", "rules", "informed",
+              "actions"}
+
+
+def test_routed_text_adds_known_facts():
+    assert routed_text(TEXT, []) == TEXT
+    assert routed_text(TEXT, FACTS) == f"{TEXT}\n\nKnown:\n- The queue is A."
+
+
+def test_routing_facts_reach_the_route(setup):
+    scenario, tools = setup(ROUTING_LOOKUP.replace('inform = ["lookup"]\n\n[routes.Tech]', '\n[routes.Tech]'))
+    router = FakeRouter({TEXT: decision("Tech", 0.7), routed_text(TEXT, FACTS): decision("Billing", 0.95)},
+                        asks=[urgent(0.2)])
+    result = decide(TEXT, scenario, router, tools)
+    assert (result["route"], result["confidence"], result["uncertain"]) == ("Billing", 0.95, False)
+    assert result["before_facts"] == {"route": "Tech", "confidence": 0.7,
+                                      "probabilities": {"Tech": 0.9, "Billing": 0.1}}
+    assert result["informed"] == [{"tool": "lookup", "status": "done", "facts": FACTS}]
+    assert set(result) == REPLY_KEYS | {"before_facts"}
+
+
+def test_without_routing_inform_the_reply_is_unchanged(setup):
+    scenario, tools = setup()
+    assert set(decide(TEXT, scenario, FakeRouter(decision("Tech")), tools)) == REPLY_KEYS
+
+
+def test_routing_tool_facts_also_reach_the_questions_it_informs(setup):
+    scenario, tools = setup(ROUTING_LOOKUP)
+    router = FakeRouter({TEXT: decision("Billing", answers=urgent(0.1)),
+                         routed_text(TEXT, FACTS): decision("Billing", answers=urgent(0.1))}, asks=[urgent(0.8)])
+    result = decide(TEXT, scenario, router, tools)
+    assert [name for name, _ in fake_tools.CALLS].count("lookup") == 1
+    assert [entry["tool"] for entry in result["informed"]] == ["lookup"]
+    assert router.ask_calls[0][0] == routed_text(TEXT, FACTS)
+    assert result["answers"] == urgent(0.8)
+
+
+def test_a_failing_routing_tool_leaves_the_message_route(setup):
+    scenario, tools = setup(BASE_TOML.replace("confidence_threshold = 0.6",
+                                              'confidence_threshold = 0.6\ninform = ["broken"]'))
+    result = decide(TEXT, scenario, FakeRouter(decision("Tech")), tools)
+    assert result["route"] == "Tech" and "before_facts" not in result
+    assert result["informed"][0]["tool"] == "broken" and result["informed"][0]["status"] == "failed"
+
+
+def test_describe_names_the_facts_the_route_considers(setup):
+    assert "route_facts_from" not in describe(setup()[0])
+    assert describe(setup(ROUTING_LOOKUP)[0])["route_facts_from"] == ["lookup"]
+
+
+def test_a_routes_second_tool_sees_the_first_tools_facts(setup):
+    scenario, tools = setup(BASE_TOML.replace('inform = ["lookup"]', 'inform = ["lookup", "act"]'))
+    decide(TEXT, scenario, FakeRouter(decision("Billing"), asks=[urgent(0.2)]), tools)
+    assert fake_tools.CALLS[1][1]["facts"] == FACTS

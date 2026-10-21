@@ -53,11 +53,19 @@ match_threshold = 0.9
     ("confidence_threshold = 0.6", "confidence_threshold = 1.5", "routing.confidence_threshold"),
     ('instructions = "Which workflow?"\n', "", "routing: missing 'instructions'"),
     ('inform = ["lookup"]', 'inform = "lookup"', "routes.Billing.inform must be a list of tool names"),
+    ("confidence_threshold = 0.6", 'confidence_threshold = 0.6\ninform = "lookup"',
+     "routing.inform must be a list of tool names"),
 ])
 def test_invalid_scenarios_name_the_problem(write_scenario, old, new, message):
     assert old in BASE_TOML
     with pytest.raises(ScenarioError, match=re.escape(message)):
         load_scenario(write_scenario(BASE_TOML.replace(old, new)))
+
+
+def test_routing_inform_names_the_tools_the_route_hears(write_scenario):
+    assert load_scenario(write_scenario()).route_inform == ()
+    text = BASE_TOML.replace("confidence_threshold = 0.6", 'confidence_threshold = 0.6\ninform = ["lookup"]')
+    assert load_scenario(write_scenario(text)).route_inform == ("lookup",)
 
 
 def test_choice_question_needs_criteria(write_scenario):

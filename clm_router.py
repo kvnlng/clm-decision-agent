@@ -145,6 +145,11 @@ def make_router(scenario: Scenario):
     return LocalContrastiveRouter(engine=engine), f"its {note}"
 
 
+def _routing_question(scenario: Scenario) -> dict:
+    return {"type": "choice", "instructions": scenario.routing_instructions,
+            "criteria": {name: route.description for name, route in scenario.routes.items()}}
+
+
 class LocalContrastiveRouter:
     """CLM for one scenario: routing decisions, tool-call checks and reuse of reviewed routes."""
 
@@ -154,21 +159,21 @@ class LocalContrastiveRouter:
 
     def decide(self, state_text: str, scenario: Scenario) -> dict:
         """One CLM call: the routing question plus the scenario's extra questions."""
-        questions = {
-            ROUTE_QID: {
-                "type": "choice",
-                "instructions": scenario.routing_instructions,
-                "criteria": {name: route.description for name, route in scenario.routes.items()},
-            },
-            **scenario.questions,
-        }
+        questions = {ROUTE_QID: _routing_question(scenario), **scenario.questions}
         answers = self.engine.answer(state_text, questions)["answers"]
-        route = answers.pop(ROUTE_QID)
+        return {**self._routed(state_text, answers.pop(ROUTE_QID), scenario), "answers": answers}
+
+    def route(self, state_text: str, scenario: Scenario) -> dict:
+        """The routing question alone: {route, confidence, probabilities, source}, and the reviewed route if one
+        matches."""
+        answers = self.engine.answer(state_text, {ROUTE_QID: _routing_question(scenario)})["answers"]
+        return self._routed(state_text, answers[ROUTE_QID], scenario)
+
+    def _routed(self, state_text: str, route: dict, scenario: Scenario) -> dict:
         decision = {
             "route": route["choice"],
             "confidence": route["confidence"],
             "probabilities": route["probabilities"],
-            "answers": answers,
             "source": "clm",
         }
         if self.verdicts and scenario.live_corrections:

@@ -97,17 +97,20 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         return server
 
     @server.tool(annotations=CHANGES)
-    def correct(text: str, route: str) -> dict[str, Any]:
-        """Review mode: save the right route for a request, for training. Near-identical requests get it at once."""
+    def correct(text: str, route: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Review mode: save the right route for a request, for training. Near-identical requests get it at once.
+        Send the same `context` as with decide, so the route is saved with the facts it was decided on."""
         def work() -> dict:
-            made = router.decide(text, scenario)
+            # The route is saved and reused for the text it was decided on: the request and routing's facts
+            seen = decision.routed_text(text, decision.facts_of(decision.route_facts(text, scenario, tools, context)))
+            made = router.route(seen, scenario)
             try:
-                save_correction(scenario, text, route, {"route": made.get("clm_route", made["route"]),
+                save_correction(scenario, seen, route, {"route": made.get("clm_route", made["route"]),
                                                         "confidence": made["confidence"]})
             except ValueError as error:
                 raise ToolError(str(error)) from error
             if scenario.live_corrections:
-                router.add_verdict(text, route, scenario)
+                router.add_verdict(seen, route, scenario)
             return {"saved": True}
         with traced("correct", text):
             return clm(work)

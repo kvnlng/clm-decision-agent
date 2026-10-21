@@ -110,6 +110,8 @@ class Scenario:  # pylint: disable=too-many-instance-attributes
     synthesize_messages: str = DEFAULT_SYNTHESIZE
     informs: dict[str, Inform] = field(default_factory=dict)
     actions: tuple[Action, ...] = ()
+    # Informing tools run before routing, whose facts the route hears too
+    route_inform: tuple[str, ...] = ()
 
     @property
     def record_path(self) -> Path:
@@ -363,6 +365,7 @@ def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-loc
         max_tokens=_number(generator, "max_tokens", "generator", 400, 1, integer=True),
         routing_instructions=_text(routing, "instructions", "routing"),
         confidence_threshold=_number(routing, "confidence_threshold", "routing", 0.6, 0, 1),
+        route_inform=tuple(_names(routing, "inform", "routing", "tool names")),
         routes=routes,
         questions=questions,
         tool_check_instructions=_text(tool_check, "instructions", "tool_check", DEFAULT_TOOL_CHECK),

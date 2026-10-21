@@ -88,6 +88,11 @@ class FakeRouter:  # pylint: disable=too-many-instance-attributes
             found.update(route=self.verdicts[state_text], source="reviewed", clm_route=found["route"])
         return found
 
+    def route(self, state_text, scenario):
+        found = self.decide(state_text, scenario)
+        found.pop("answers")
+        return found
+
     def add_verdict(self, state_text, route, scenario):
         self.verdicts[state_text] = route
 
