@@ -32,17 +32,11 @@ def _rules(scenario: Scenario, answers: dict) -> list[dict]:
     return [{"when": rule.when, "tell": rule.tell} for rule in scenario.matching_rules(answers)]
 
 
-def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable]) -> dict:
-    """The scenario's decision on `text`, with what its tools found and did."""
-    result = router.decide(text, scenario)
-    route = result["route"]
-    result["uncertain"] = result["confidence"] < scenario.confidence_threshold
-    request = {"text": text, "route": route, "answers": result["answers"],
-               "rules": _rules(scenario, result["answers"]), "facts": []}
-
+def _inform(request: dict, scenario: Scenario, router, tools: dict[str, Callable]) -> list[dict]:
+    """Run the route's informing tools; their facts are added to `request` and its answers and rules updated."""
     # Facts come after routing, so they never change the route; they inform the questions they bear on
     informed, informs = [], set()
-    for name in scenario.routes[route].inform:
+    for name in scenario.routes[request["route"]].inform:
         outcome = _facts(_run(tools[name], dict(request)))
         informed.append({"tool": name, **outcome})
         if outcome["status"] == "done" and outcome["facts"]:
@@ -52,8 +46,20 @@ def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable]) ->
     asked = {name: question for name, question in scenario.questions.items() if name in informs}
     if asked:
         known = "\n".join(f"- {fact}" for fact in request["facts"])
-        answers = {**result["answers"], **router.ask(f"{text}\n\nKnown:\n{known}", asked)}
+        answers = {**request["answers"], **router.ask(f"{request['text']}\n\nKnown:\n{known}", asked)}
         request.update(answers=answers, rules=_rules(scenario, answers))
+    return informed
+
+
+def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable]) -> dict:
+    """The scenario's decision on `text`, with what its tools found and did."""
+    result = router.decide(text, scenario)
+    route = result["route"]
+    result["uncertain"] = result["confidence"] < scenario.confidence_threshold
+    request = {"text": text, "route": route, "answers": result["answers"],
+               "rules": _rules(scenario, result["answers"]), "facts": []}
+
+    informed = _inform(request, scenario, router, tools)
 
     actions = []
     for action in scenario.actions:

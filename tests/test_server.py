@@ -1,0 +1,148 @@
+"""Tests for server.py: the scenario's decisions over MCP, in process and over HTTP."""
+# Test names say what they check, and pytest fixtures are used by repeating their names.
+# pylint: disable=missing-function-docstring,redefined-outer-name
+import socket
+import threading
+import time
+
+import httpx2
+import pytest
+import uvicorn
+from conftest import BASE_TOML, FakeRouter, decision
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
+
+import server
+from decision import decide
+from record import load_records
+from scenario import load_scenario
+from tools import load_tools
+
+TEXT = "my app crashes"
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture
+def parts(write_scenario):
+    """-> (scenario, router, tools) for BASE_TOML, with CLM always answering Tech."""
+    scenario = load_scenario(write_scenario())
+    return scenario, FakeRouter(decision("Tech", answers={"urgent": {"type": "noul", "noul": 0.2}})), \
+        load_tools(scenario)
+
+
+async def tool_names(mcp_server):
+    async with Client(mcp_server) as client:
+        return sorted(tool.name for tool in (await client.list_tools()).tools)
+
+
+@pytest.mark.anyio
+async def test_lists_tools_without_review(parts):
+    assert await tool_names(server.build_server(*parts, review=False)) == ["check_call", "decide", "describe"]
+
+
+@pytest.mark.anyio
+async def test_lists_review_tools(parts):
+    assert await tool_names(server.build_server(*parts, review=True)) == \
+        ["agreement", "check_call", "correct", "decide", "describe"]
+
+
+@pytest.mark.anyio
+async def test_only_decide_can_change_anything(parts):
+    async with Client(server.build_server(*parts, review=True)) as client:
+        hints = {tool.name: tool.annotations.read_only_hint for tool in (await client.list_tools()).tools}
+    assert hints == {"decide": False, "check_call": True, "describe": True, "correct": False, "agreement": True}
+
+
+@pytest.mark.anyio
+async def test_decide_over_mcp(parts):
+    scenario, router, tools = parts
+    async with Client(server.build_server(scenario, router, tools, review=False)) as client:
+        result = await client.call_tool("decide", {"text": TEXT})
+    assert not result.is_error
+    assert result.structured_content == decide(TEXT, scenario, FakeRouter(router.decisions), tools)
+
+
+@pytest.mark.anyio
+async def test_correct_saves_and_is_reused(parts):
+    scenario, router, tools = parts
+    router.asks = [{"urgent": {"type": "noul", "noul": 0.2}}]     # Billing's informing tool has urgent asked again
+    async with Client(server.build_server(scenario, router, tools, review=True)) as client:
+        saved = await client.call_tool("correct", {"text": TEXT, "route": "Billing"})
+        again = await client.call_tool("decide", {"text": TEXT})
+        agreement = await client.call_tool("agreement", {})
+    assert saved.structured_content == {"saved": True}
+    records, _ = load_records(scenario.record_path)
+    assert [(r["state_text"], r["human"], r["clm"]["route"]) for r in records] == [(TEXT, "Billing", "Tech")]
+    assert (again.structured_content["route"], again.structured_content["source"]) == ("Billing", "reviewed")
+    # Agreement replays CLM without the reuse of corrections, so it shows CLM's own disagreement
+    assert agreement.structured_content == {"n": 1, "agree": 0}
+
+
+@pytest.mark.anyio
+async def test_correct_unknown_route_errors(parts):
+    scenario, router, tools = parts
+    async with Client(server.build_server(scenario, router, tools, review=True)) as client:
+        result = await client.call_tool("correct", {"text": TEXT, "route": "Shipping"})
+    assert result.is_error
+    assert "unknown route 'Shipping'" in result.content[0].text
+    assert not scenario.record_path.exists()
+
+
+@pytest.mark.anyio
+async def test_check_call_over_mcp(parts):
+    async with Client(server.build_server(*parts, review=False)) as client:
+        result = await client.call_tool("check_call", {"text": TEXT, "call": {"name": "restart", "args": {}}})
+    assert result.structured_content == {"p": 0.9, "approved": True}
+
+
+@pytest.mark.anyio
+async def test_describe_over_mcp(parts):
+    async with Client(server.build_server(*parts, review=False)) as client:
+        result = await client.call_tool("describe", {})
+    assert [route["name"] for route in result.structured_content["routes"]] == ["Billing", "Tech"]
+
+
+@pytest.fixture
+def http_url(parts):
+    """A server on a free port, behind the key "k1"; -> its MCP address."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    app = server.http_app(server.build_server(*parts, review=False), "k1")
+    runner = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=runner.run, daemon=True)
+    thread.start()
+    while not runner.started:
+        time.sleep(0.02)
+    yield f"http://127.0.0.1:{port}/mcp"
+    runner.should_exit = True
+    thread.join()
+
+
+@pytest.mark.anyio
+async def test_http_with_key_decides(http_url):
+    async with httpx2.AsyncClient(headers={"Authorization": "Bearer k1"}) as http:
+        async with Client(streamable_http_client(http_url, http_client=http)) as client:
+            result = await client.call_tool("decide", {"text": TEXT})
+    assert result.structured_content["route"] == "Tech"
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer k2"}, {"Authorization": "k1"}])
+def test_http_without_the_right_key_is_401(http_url, headers):
+    response = httpx2.post(http_url, headers=headers, json={})
+    assert (response.status_code, response.json()) == (401, {"error": "missing or wrong key"})
+
+
+def test_http_without_key_env_refuses_to_start(write_scenario, monkeypatch, capsys):
+    monkeypatch.delenv("DECISION_SERVER_KEY", raising=False)
+    assert server.main([str(write_scenario()), "--http"]) == 2
+    assert "set DECISION_SERVER_KEY to the key callers must send" in capsys.readouterr().err
+
+
+def test_a_broken_scenario_is_one_line(write_scenario, capsys):
+    assert server.main([str(write_scenario(BASE_TOML.replace('tool = "act"', 'tool = "x"')))]) == 2
+    assert capsys.readouterr().err.strip().startswith("error: actions[0].tool: unknown tool 'x'")

@@ -171,6 +171,10 @@ class LocalContrastiveRouter:
                           r["human"]) for r in route_verdicts(records, scenario)]
         return len(self.verdicts)
 
+    def add_verdict(self, state_text: str, route: str, scenario: Scenario) -> None:
+        """Reuse the owner's `route` for this state (and near-identical ones) from now on."""
+        self.verdicts.append((state_text if self.exact_match else self.embed_state(state_text, scenario), route))
+
     def match_verdict(self, vector: list[float], threshold: float) -> tuple[str, float] | None:
         """The closest stored verdict at or above the threshold; on a tie the later one wins."""
         best_route, best_similarity = None, threshold

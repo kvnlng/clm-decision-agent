@@ -73,19 +73,24 @@ def decision(route, confidence=0.9, answers=None, probabilities=None):
             "answers": answers or {}, "source": "clm"}
 
 
-class FakeRouter:
+class FakeRouter:  # pylint: disable=too-many-instance-attributes
     """`decisions` is one decision used for every state, or a dict of state_text -> decision."""
 
     def __init__(self, decisions, tool_p=0.9, vectors=None, asks=None):
         self.decisions, self.tool_p, self.vectors = decisions, tool_p, vectors or {}
-        self.states, self.tool_states = [], []
+        self.states, self.tool_states, self.verdicts = [], [], {}
         # Answers for ask(), returned in order
         self.asks, self.ask_calls = list(asks or []), []
 
     def decide(self, state_text, scenario):
         self.states.append(state_text)
-        found = self.decisions if "route" in self.decisions else self.decisions[state_text]
-        return dict(found)
+        found = dict(self.decisions if "route" in self.decisions else self.decisions[state_text])
+        if scenario.live_corrections and state_text in self.verdicts:
+            found.update(route=self.verdicts[state_text], source="reviewed", clm_route=found["route"])
+        return found
+
+    def add_verdict(self, state_text, route, scenario):
+        self.verdicts[state_text] = route
 
     def check_tool(self, state_text, scenario):
         self.tool_states.append(state_text)

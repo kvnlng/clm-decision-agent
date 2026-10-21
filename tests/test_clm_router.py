@@ -90,6 +90,13 @@ def routed_to_billing():
     return FakeEngine({ROUTE_QID: ROUTE_ANSWER, "urgent": URGENT_ANSWER})
 
 
+def test_an_added_verdict_is_reused_at_once(scenario):
+    router = VectorRouter(routed_to_billing(), VECTORS)
+    router.add_verdict("User: bill me", "Tech", scenario)
+    decision = router.decide("User: bill me please", scenario)
+    assert (decision["route"], decision["source"]) == ("Tech", "reviewed")
+
+
 def test_close_correction_overrides_clm(scenario):
     router = VectorRouter(routed_to_billing(), VECTORS)
     assert router.load_verdicts([correction("User: bill me", "Billing", "Tech")], scenario) == 1
