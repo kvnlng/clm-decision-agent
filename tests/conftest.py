@@ -17,7 +17,6 @@ sys.path.append(str(Path(__file__).parent.parent / "examples" / "service_desk"))
 BASE_TOML = '''
 [clm]
 model_id = "test/clm"
-history_turns = 2
 
 [generator]
 backend = "mlx"
@@ -31,18 +30,24 @@ confidence_threshold = 0.6
 [tools]
 module = "fake_tools"
 
+[tools.inform.lookup]
+questions = ["urgent"]
+
 [routes.Billing]
 description = "Charges and refunds"
-system_prompt = "You handle billing."
-tools = ["lookup_invoice"]
+inform = ["lookup"]
 
 [routes.Tech]
 description = "Bugs and outages"
-system_prompt = "You handle tech."
 
 [questions.urgent]
 type = "noul"
 instructions = "Is this urgent?"
+
+[[actions]]
+tool = "act"
+routes = ["Billing"]
+when = "urgent >= 0.5"
 '''
 
 
@@ -66,10 +71,6 @@ def decision(route, confidence=0.9, answers=None, probabilities=None):
     return {"route": route, "confidence": confidence,
             "probabilities": probabilities or {route: 0.9, other: 0.1},
             "answers": answers or {}, "source": "clm"}
-
-
-def tool_call(name, **args):
-    return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": "call_1"}])
 
 
 class FakeRouter:
@@ -111,23 +112,6 @@ class FakeGenerator:
         return reply if isinstance(reply, AIMessage) else AIMessage(content=reply)
 
 
-CONFIRM_TOML = (BASE_TOML
-                .replace('tools = ["lookup_invoice"]', 'tools = ["lookup_invoice", "issue_refund"]')
-                .replace('module = "fake_tools"', 'module = "fake_tools"\nconfirm = ["issue_refund"]'))
-
-
-INTAKE_TOML = (BASE_TOML
-               .replace('tools = ["lookup_invoice"]', 'tools = ["lookup_invoice", "submit_form", "broken_submit"]')
-               .replace('module = "fake_tools"', 'module = "fake_tools"\nconfirm = ["submit_form", "broken_submit"]')
-               + '\n[routes.Billing.fields]\ninvoice = "Which invoice"\nproblem = "What is wrong with it"\n')
-
-
-# A catalogue on the intake route: CLM picks an invoice and the pick fills the `invoice` field
-CATALOGUE_TOML = ('\n[catalogue]\ntool = "list_invoices"\nroutes = ["Billing"]\nfield = "invoice"\n'
-                  'instructions = "Which invoice?"\n')
-CATALOGUE_ENTRIES = [{"name": "INV-1", "description": "March invoice", "facts": ["INV-1 was paid."]},
-                     {"name": "INV-2", "description": "April invoice", "facts": []}]
-
 @pytest.fixture
 def tracker_server():
     from mock_tracker import make_server  # pylint: disable=import-outside-toplevel
@@ -142,19 +126,3 @@ def tracker_server():
 @pytest.fixture
 def tracker_url(tracker_server):
     return f"http://127.0.0.1:{tracker_server.server_address[1]}"
-
-
-@pytest.fixture
-def openmetadata_server():
-    from mock_openmetadata import make_server  # pylint: disable=import-outside-toplevel
-    server = make_server(port=0)
-    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
-    thread.start()
-    yield server
-    server.shutdown()
-    server.server_close()
-
-
-@pytest.fixture
-def openmetadata_url(openmetadata_server):
-    return f"http://127.0.0.1:{openmetadata_server.server_address[1]}"

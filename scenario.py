@@ -13,11 +13,8 @@ QUESTION_TYPES = ("noul", "choice", "score")
 BACKENDS = ("mlx", "ollama", "openai")
 CLM_BACKENDS = ("mlx", "server")
 DEFAULT_SERVER_MODEL = "clm-latest"
-# Routes become graph node names, so they cannot collide with the built-in nodes
-RESERVED_ROUTE_NAMES = frozenset({
-    "assess", "clarify", "tools", "verify_tool", "decline_tool",
-    "review_route", "review_tool", "review_reply", "settle", "confirm_tool", "__start__", "__end__",
-})
+# Settings of the chat assistant this framework used to be; a scenario that still has them is out of date
+RETIRED_ROUTE_KEYS = ("system_prompt", "tools", "fields")
 DEFAULT_CLM = "mlx-community/CLM-v0.1-8B-MLX-4bit"
 DEFAULT_GENERATOR = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
 DEFAULT_TOOL_CHECK = "Is this tool call appropriate for what the user asked?"
@@ -34,7 +31,7 @@ _RULE = re.compile(r"\s*(\w+)\s*(>=|<=|==)\s*(.+?)\s*")
 
 @dataclass(frozen=True)
 class Rule:
-    """Guidance for the generator that applies when one of CLM's answers meets a condition."""
+    """Guidance for the caller that applies when one of CLM's answers meets a condition."""
 
     when: str
     question: str
@@ -55,26 +52,30 @@ class Rule:
 
 @dataclass(frozen=True)
 class Route:
-    """One destination: what it means to CLM (description) and how the generator should answer."""
+    """One kind of request: what it means to CLM (description) and the tools that inform its decisions."""
 
     name: str
     description: str
-    system_prompt: str
-    tools: tuple[str, ...] = ()
     examples: tuple[str, ...] = ()
-    fields: dict[str, str] = field(default_factory=dict)
+    inform: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
-class Catalogue:
-    """A context tool whose entries CLM chooses between on some routes, filling one intake field."""
+class Inform:
+    """An informing tool's settings: the questions its facts are given to (None: all of them)."""
+
+    tool: str
+    questions: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True)
+class Action:
+    """An acting tool, run after a decision on one of `routes` when `when` holds (always, if None)."""
 
     tool: str
     routes: tuple[str, ...]
-    field: str
-    instructions: str
-    confidence_threshold: float
-    questions: tuple[str, ...] = ()    # the scenario's questions asked again with the picked entry's facts
+    when: Rule | None = None
+    confirm: bool = False
 
 
 @dataclass(frozen=True)
@@ -84,7 +85,6 @@ class Scenario:  # pylint: disable=too-many-instance-attributes
     path: Path
     sha: str
     clm_model_id: str
-    history_turns: int
     generator_backend: str
     generator_model: str
     max_tokens: int
@@ -94,12 +94,10 @@ class Scenario:  # pylint: disable=too-many-instance-attributes
     questions: dict[str, dict]
     tool_check_instructions: str
     tool_check_threshold: float
-    max_tool_rounds: int
     live_corrections: bool
     match_threshold: float
     rules: tuple[Rule, ...] = ()
     tools_module: str | None = None
-    confirm_tools: tuple[str, ...] = ()
     tool_settings: dict = field(default_factory=dict)
     clm_heads: Path | None = None
     clm_backend: str = "mlx"
@@ -111,7 +109,8 @@ class Scenario:  # pylint: disable=too-many-instance-attributes
     record_key_env: str | None = None
     record_key_file: Path | None = None
     synthesize_messages: str = DEFAULT_SYNTHESIZE
-    catalogue: Catalogue | None = None
+    informs: dict[str, Inform] = field(default_factory=dict)
+    actions: tuple[Action, ...] = ()
 
     @property
     def record_path(self) -> Path:
@@ -182,25 +181,23 @@ def _number(table: dict, key: str, where: str, default, low, high=None, integer:
     return value
 
 
+def _names(table: dict, key: str, where: str, what: str) -> list[str]:
+    value = table.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ScenarioError(f"{where}.{key} must be a list of {what}")
+    return value
+
+
 def _route(name: str, table) -> Route:
     where = f"routes.{name}"
-    if name in RESERVED_ROUTE_NAMES:
-        raise ScenarioError(f"route name '{name}' is reserved; choose another name")
     if not isinstance(table, dict):
         raise ScenarioError(f"[{where}] must be a table")
-    tools = table.get("tools", [])
-    if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
-        raise ScenarioError(f"{where}.tools must be a list of tool names")
-    examples = table.get("examples", [])
-    if not isinstance(examples, list) or not all(isinstance(e, str) for e in examples):
-        raise ScenarioError(f"{where}.examples must be a list of example messages")
-    fields = table.get("fields", {})
-    if not isinstance(fields, dict):
-        raise ScenarioError(f"[{where}.fields] must be a table")
-    for key in fields:
-        _text(fields, key, f"{where}.fields")
-    return Route(name, _text(table, "description", where), _text(table, "system_prompt", where),
-                 tuple(tools), tuple(examples), dict(fields))
+    for key in RETIRED_ROUTE_KEYS:
+        if key in table:
+            raise ScenarioError(f"{where}.{key} is no longer used; see docs/scenario.md")
+    return Route(name, _text(table, "description", where),
+                 tuple(_names(table, "examples", where, "example messages")),
+                 tuple(_names(table, "inform", where, "tool names")))
 
 
 def _question(name: str, table) -> dict:
@@ -222,7 +219,11 @@ def _rule(index: int, table, questions: dict[str, dict]) -> Rule:
     where = f"rules[{index}]"
     if not isinstance(table, dict):
         raise ScenarioError(f"{where} must be a table")
-    when, tell = _text(table, "when", where), _text(table, "tell", where)
+    return _condition(_text(table, "when", where), where, questions, _text(table, "tell", where))
+
+
+def _condition(when: str, where: str, questions: dict[str, dict], tell: str = "") -> Rule:
+    """A `when` condition, as a Rule (whose `tell` is empty when the condition belongs to an action)."""
     match = _RULE.fullmatch(when)
     if not match:
         raise ScenarioError(f"{where}.when must look like '<question> >= <number>' or '<question> == <option>'")
@@ -245,40 +246,49 @@ def _rule(index: int, table, questions: dict[str, dict]) -> Rule:
     return Rule(when, name, operator, number, tell)
 
 
-def _tools(table: dict) -> tuple[str | None, tuple[str, ...], dict]:
+def _tools(table: dict, questions: dict[str, dict]) -> tuple[str | None, dict, dict[str, Inform]]:
     module = table.get("module")
     if module is not None and (not isinstance(module, str) or not module.strip()):
         raise ScenarioError("tools.module must be a non-empty string")
-    confirm = table.get("confirm", [])
-    if not isinstance(confirm, list) or not all(isinstance(name, str) for name in confirm):
-        raise ScenarioError("tools.confirm must be a list of tool names")
+    if "confirm" in table:
+        raise ScenarioError("tools.confirm is no longer used; an action's confirm setting replaces it")
     settings = table.get("settings", {})
     if not isinstance(settings, dict):
         raise ScenarioError("[tools.settings] must be a table")
-    return module, tuple(confirm), dict(settings)
+    informs = {}
+    for name, inform in _table(table, "inform").items():
+        where = f"tools.inform.{name}"
+        if not isinstance(inform, dict):
+            raise ScenarioError(f"[{where}] must be a table")
+        if "questions" not in inform:
+            informs[name] = Inform(name)
+            continue
+        names = _names(inform, "questions", where, "question names")
+        for question in names:
+            if question not in questions:
+                raise ScenarioError(f"{where}.questions: unknown question '{question}'")
+        informs[name] = Inform(name, tuple(names))
+    return module, dict(settings), informs
 
 
-def _catalogue(data: dict, routes: dict[str, Route], questions: dict[str, dict]) -> Catalogue | None:
-    if "catalogue" not in data:
-        return None
-    table, where = _table(data, "catalogue"), "catalogue"
+def _action(index: int, table, routes: dict[str, Route], questions: dict[str, dict]) -> Action:
+    where = f"actions[{index}]"
+    if not isinstance(table, dict):
+        raise ScenarioError(f"{where} must be a table")
+    tool = _text(table, "tool", where)
     names = table.get("routes")
     if not isinstance(names, list) or not names or not all(isinstance(name, str) for name in names):
-        raise ScenarioError("catalogue.routes must be a non-empty list of route names")
-    tool, field_name = _text(table, "tool", where), _text(table, "field", where)
+        raise ScenarioError(f"{where}.routes must be a non-empty list of route names")
     for name in names:
         if name not in routes:
-            raise ScenarioError(f"catalogue.routes: unknown route '{name}'")
-        if field_name not in routes[name].fields:
-            raise ScenarioError(f"catalogue.field: route '{name}' has no field '{field_name}'")
-    informed = table.get("questions", list(questions))
-    if not isinstance(informed, list) or not all(isinstance(name, str) for name in informed):
-        raise ScenarioError("catalogue.questions must be a list of question names")
-    for name in informed:
-        if name not in questions:
-            raise ScenarioError(f"catalogue.questions: unknown question '{name}'")
-    return Catalogue(tool, tuple(names), field_name, _text(table, "instructions", where),
-                     _number(table, "confidence_threshold", where, 0.5, 0, 1), tuple(informed))
+            raise ScenarioError(f"{where}.routes: unknown route '{name}'")
+    when = _condition(_text(table, "when", where), where, questions) if "when" in table else None
+    confirm = table.get("confirm", False)
+    if not isinstance(confirm, bool):
+        raise ScenarioError(f"{where}.confirm must be true or false")
+    if confirm:
+        raise ScenarioError(f"{where}.confirm: only false is supported for now")
+    return Action(tool, tuple(names), when, confirm)
 
 
 def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-locals
@@ -315,12 +325,12 @@ def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-loc
     rule_tables = data.get("rules", [])
     if not isinstance(rule_tables, list):
         raise ScenarioError("rules must be written as [[rules]] tables")
-    tools_module, confirm_tools, tool_settings = _tools(_table(data, "tools"))
-    for name, route in routes.items():
-        # A confirm tool succeeding is what completes an intake; without one it would never close
-        if route.fields and not set(route.tools) & set(confirm_tools):
-            raise ScenarioError(f"routes.{name}: a route with fields needs one of its tools listed in "
-                                f"tools.confirm, to submit the completed request")
+    if "catalogue" in data:
+        raise ScenarioError("[catalogue] is no longer used; an informing tool takes its place")
+    tools_module, tool_settings, informs = _tools(_table(data, "tools"), questions)
+    action_tables = data.get("actions", [])
+    if not isinstance(action_tables, list):
+        raise ScenarioError("actions must be written as [[actions]] tables")
 
     return Scenario(
         path=path,
@@ -335,7 +345,6 @@ def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-loc
         record_file=_beside(path, record, "path", "record"),
         record_key_env=_optional(record, "key_env", "record"),
         record_key_file=_beside(path, record, "key_file", "record"),
-        history_turns=_number(clm, "history_turns", "clm", 6, 1, integer=True),
         generator_backend=backend,
         generator_model=_text(generator, "model", "generator", DEFAULT_GENERATOR),
         max_tokens=_number(generator, "max_tokens", "generator", 400, 1, integer=True),
@@ -345,16 +354,15 @@ def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-loc
         questions=questions,
         tool_check_instructions=_text(tool_check, "instructions", "tool_check", DEFAULT_TOOL_CHECK),
         tool_check_threshold=_number(tool_check, "threshold", "tool_check", 0.5, 0, 1),
-        max_tool_rounds=_number(tool_check, "max_tool_rounds", "tool_check", 3, 0, integer=True),
         live_corrections=live,
         match_threshold=_number(record, "match_threshold", "record", 0.97, 0, 1),
         rules=tuple(_rule(index, table, questions) for index, table in enumerate(rule_tables)),
         tools_module=tools_module,
-        confirm_tools=confirm_tools,
         tool_settings=tool_settings,
         clm_heads=path.parent / _text(clm, "heads", "clm") if "heads" in clm else None,
         synthesize_messages=_text(_table(data, "synthesize"), "messages", "synthesize", DEFAULT_SYNTHESIZE),
-        catalogue=_catalogue(data, routes, questions),
+        informs=informs,
+        actions=tuple(_action(index, table, routes, questions) for index, table in enumerate(action_tables)),
     )
 
 

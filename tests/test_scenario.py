@@ -7,25 +7,24 @@ import re
 
 import pytest
 
-from conftest import BASE_TOML, CATALOGUE_TOML, INTAKE_TOML
-from scenario import Catalogue, Rule, ScenarioError, load_scenario
+from conftest import BASE_TOML
+from scenario import Action, Inform, Rule, ScenarioError, load_scenario
 
 
 def test_loads_values_and_defaults(write_scenario):
     path = write_scenario()
     s = load_scenario(path)
     assert s.clm_model_id == "test/clm"
-    assert s.history_turns == 2
     assert (s.generator_backend, s.generator_model, s.max_tokens) == ("mlx", "test/gen", 50)
     assert s.routing_instructions == "Which workflow?"
     assert s.confidence_threshold == 0.6
     assert list(s.routes) == ["Billing", "Tech"]
     assert s.routes["Billing"].description == "Charges and refunds"
-    assert s.routes["Billing"].tools == ("lookup_invoice",)
-    assert s.routes["Tech"].tools == ()
+    assert s.routes["Billing"].inform == ("lookup",)
+    assert s.routes["Tech"].inform == ()
     assert s.questions == {"urgent": {"type": "noul", "instructions": "Is this urgent?"}}
     assert s.tool_check_instructions == "Is this tool call appropriate for what the user asked?"
-    assert (s.tool_check_threshold, s.max_tool_rounds) == (0.5, 3)
+    assert s.tool_check_threshold == 0.5
     assert (s.live_corrections, s.match_threshold) == (True, 0.97)
     assert s.record_path == path.with_name("scenario.record.jsonl")
     assert len(s.sha) == 64
@@ -36,28 +35,24 @@ def test_optional_sections_are_read(write_scenario):
 [tool_check]
 instructions = "OK to run?"
 threshold = 0.7
-max_tool_rounds = 1
 
 [record]
 live_corrections = false
 match_threshold = 0.9
 '''
     s = load_scenario(write_scenario(text))
-    assert (s.tool_check_instructions, s.tool_check_threshold, s.max_tool_rounds) == ("OK to run?", 0.7, 1)
+    assert (s.tool_check_instructions, s.tool_check_threshold) == ("OK to run?", 0.7)
     assert (s.live_corrections, s.match_threshold) == (False, 0.9)
 
 
 @pytest.mark.parametrize("old, new, message", [
-    ('[routes.Tech]\ndescription = "Bugs and outages"\nsystem_prompt = "You handle tech."\n', "",
-     "at least two routes"),
-    ('system_prompt = "You handle tech."\n', "", "routes.Tech: missing 'system_prompt'"),
+    ('[routes.Tech]\ndescription = "Bugs and outages"\n', "", "at least two routes"),
+    ('description = "Bugs and outages"\n', "", "routes.Tech: missing 'description'"),
     ('backend = "mlx"', 'backend = "cloud"', "generator.backend must be one of mlx, ollama, openai"),
     ('type = "noul"', 'type = "bool"', "questions.urgent.type must be one of noul, choice, score"),
     ("confidence_threshold = 0.6", "confidence_threshold = 1.5", "routing.confidence_threshold"),
-    ("[routes.Tech]", "[routes.assess]", "route name 'assess' is reserved"),
     ('instructions = "Which workflow?"\n', "", "routing: missing 'instructions'"),
-    ('tools = ["lookup_invoice"]', 'tools = "lookup_invoice"', "routes.Billing.tools must be a list of tool names"),
-    ("history_turns = 2", "history_turns = 0", "clm.history_turns"),
+    ('inform = ["lookup"]', 'inform = "lookup"', "routes.Billing.inform must be a list of tool names"),
 ])
 def test_invalid_scenarios_name_the_problem(write_scenario, old, new, message):
     assert old in BASE_TOML
@@ -82,15 +77,15 @@ def test_invalid_toml(write_scenario):
 
 
 def test_route_examples_are_optional_and_loaded(write_scenario):
-    text = BASE_TOML.replace('system_prompt = "You handle tech."',
-                             'system_prompt = "You handle tech."\nexamples = ["The app crashes", "I cannot log in"]')
+    text = BASE_TOML.replace('description = "Bugs and outages"',
+                             'description = "Bugs and outages"\nexamples = ["The app crashes", "I cannot log in"]')
     s = load_scenario(write_scenario(text))
     assert s.routes["Tech"].examples == ("The app crashes", "I cannot log in")
     assert s.routes["Billing"].examples == ()
 
 
 def test_route_examples_must_be_a_list_of_strings(write_scenario):
-    text = BASE_TOML.replace('system_prompt = "You handle tech."', 'system_prompt = "You handle tech."\nexamples = "x"')
+    text = BASE_TOML.replace('description = "Bugs and outages"', 'description = "Bugs and outages"\nexamples = "x"')
     with pytest.raises(ScenarioError, match="routes.Tech.examples must be a list of example messages"):
         load_scenario(write_scenario(text))
 
@@ -105,21 +100,6 @@ type = "choice"
 instructions = "Which team?"
 criteria = { a = "Team A", b = "Team B" }
 '''
-
-
-def test_route_fields_keep_file_order(write_scenario):
-    text = (INTAKE_TOML.replace("[routes.Billing.fields]", "[routes.Unused.fields]")
-            + '\n[routes.Billing.fields]\nsummary = "What is wrong"\nsteps = "How to reproduce it"\n')
-    text = text.replace('[routes.Unused.fields]\ninvoice = "Which invoice"\nproblem = "What is wrong with it"\n', "")
-    s = load_scenario(write_scenario(text))
-    assert list(s.routes["Billing"].fields.items()) == [("summary", "What is wrong"), ("steps", "How to reproduce it")]
-    assert s.routes["Tech"].fields == {}
-
-
-def test_route_fields_must_be_text(write_scenario):
-    text = INTAKE_TOML + "summary = 3\n"
-    with pytest.raises(ScenarioError, match=re.escape("routes.Billing.fields.summary must be a non-empty string")):
-        load_scenario(write_scenario(text))
 
 
 def test_rules_are_parsed_for_each_question_type(write_scenario):
@@ -185,49 +165,16 @@ def test_matching_rules_returns_those_that_apply(write_scenario):
 
 def test_tools_section_is_read(write_scenario):
     text = BASE_TOML.replace('module = "fake_tools"',
-                             'module = "fake_tools"\nconfirm = ["issue_refund"]\n\n'
-                             '[tools.settings]\nurl = "http://x"\nlimit = 3')
+                             'module = "fake_tools"\n\n[tools.settings]\nurl = "http://x"\nlimit = 3')
     s = load_scenario(write_scenario(text))
-    assert (s.tools_module, s.confirm_tools) == ("fake_tools", ("issue_refund",))
+    assert s.tools_module == "fake_tools"
     assert s.tool_settings == {"url": "http://x", "limit": 3}
 
 
 def test_tools_section_is_optional(write_scenario):
     text = BASE_TOML.replace('[tools]\nmodule = "fake_tools"\n', "")
     s = load_scenario(write_scenario(text))
-    assert (s.tools_module, s.confirm_tools, s.tool_settings, s.rules) == (None, (), {}, ())
-
-
-def test_tools_confirm_must_be_a_list_of_names(write_scenario):
-    text = BASE_TOML.replace('module = "fake_tools"', 'module = "fake_tools"\nconfirm = "issue_refund"')
-    with pytest.raises(ScenarioError, match=re.escape("tools.confirm must be a list of tool names")):
-        load_scenario(write_scenario(text))
-
-
-def test_the_demo_scenario_loads_and_its_tools_resolve(tmp_path):
-    import shutil                              # pylint: disable=import-outside-toplevel
-    from pathlib import Path                   # pylint: disable=import-outside-toplevel
-    from tools import resolve_tools            # pylint: disable=import-outside-toplevel
-    # A copy, so a test cannot change the example's files
-    example = Path(__file__).parent.parent / "examples" / "service_desk"
-    for name in ("scenario.toml", "queues.json"):
-        shutil.copy(example / name, tmp_path / name)
-    demo = load_scenario(tmp_path / "scenario.toml")
-    assert list(demo.routes) == ["Data_Access", "Research_Support", "Information_Request", "Ticket_Status",
-                                 "Out_Of_Scope"]
-    assert list(demo.routes["Data_Access"].fields) == ["dataset", "purpose", "detail_level", "duration"]
-    assert demo.confirm_tools == ("create_ticket",)
-    assert [rule.question for rule in demo.rules] == ["urgency", "identifiable"]
-    assert [t.name for t in resolve_tools(demo)["Ticket_Status"]] == ["get_ticket", "search_tickets"]
-    assert demo.catalogue.tool == "list_datasets" and demo.catalogue.routes == ("Data_Access",)
-    assert demo.catalogue.field == "dataset"
-
-
-def test_a_route_with_fields_needs_a_confirm_tool_to_submit_with(write_scenario):
-    text = BASE_TOML + '\n[routes.Billing.fields]\ninvoice = "Which invoice"\n'
-    with pytest.raises(ScenarioError, match=re.escape(
-            "routes.Billing: a route with fields needs one of its tools listed in tools.confirm")):
-        load_scenario(write_scenario(text))
+    assert (s.tools_module, s.tool_settings, s.rules) == (None, {}, ())
 
 
 def test_heads_folder_is_resolved_beside_the_scenario(write_scenario):
@@ -275,12 +222,6 @@ def test_unknown_clm_backend_is_an_error(write_scenario):
         load_scenario(write_scenario(text))
 
 
-@pytest.mark.parametrize("name", ["settle", "confirm_tool"])
-def test_names_of_newer_internal_steps_are_reserved_too(write_scenario, name):
-    with pytest.raises(ScenarioError, match=re.escape(f"route name '{name}' is reserved")):
-        load_scenario(write_scenario(BASE_TOML.replace("routes.Tech", f"routes.{name}")))
-
-
 @pytest.mark.parametrize("old, new, message", [
     ('model_id = "test/clm"', 'backend = "server"\nurl = "localhost:8700"',
      "clm.url must start with http:// or https://"),
@@ -297,34 +238,53 @@ def test_addresses_and_key_settings_are_checked(write_scenario, old, new, messag
         load_scenario(write_scenario(BASE_TOML.replace(old, new)))
 
 
-def test_catalogue_is_optional(scenario):
-    assert scenario.catalogue is None
+def test_route_inform_and_actions_load(scenario):
+    assert scenario.informs == {"lookup": Inform("lookup", ("urgent",))}
+    assert scenario.actions == (Action("act", ("Billing",), Rule("urgent >= 0.5", "urgent", ">=", 0.5, ""), False),)
 
 
-def test_catalogue_loads_with_a_default_threshold(write_scenario):
-    loaded = load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML))
-    assert loaded.catalogue == Catalogue("list_invoices", ("Billing",), "invoice", "Which invoice?", 0.5, ("urgent",))
+def test_inform_questions_default_to_all(write_scenario):
+    s = load_scenario(write_scenario(BASE_TOML.replace('[tools.inform.lookup]\nquestions = ["urgent"]\n', "")))
+    assert s.informs == {} and s.routes["Billing"].inform == ("lookup",)
+    s = load_scenario(write_scenario(BASE_TOML.replace('questions = ["urgent"]', "")))
+    assert s.informs == {"lookup": Inform("lookup", None)}
 
 
-@pytest.mark.parametrize("change, message", [
-    (('routes = ["Billing"]', 'routes = ["Nope"]'), "catalogue.routes: unknown route 'Nope'"),
-    (('routes = ["Billing"]', 'routes = ["Tech"]'), "catalogue.field: route 'Tech' has no field 'invoice'"),
-    (('routes = ["Billing"]', 'routes = []'), "catalogue.routes must be a non-empty list of route names"),
-    (('field = "invoice"', 'field = "colour"'), "catalogue.field: route 'Billing' has no field 'colour'"),
-    (('tool = "list_invoices"\n', ''), "catalogue: missing 'tool'"),
+def test_inform_questions_can_be_none(write_scenario):
+    s = load_scenario(write_scenario(BASE_TOML.replace('questions = ["urgent"]', "questions = []")))
+    assert s.informs == {"lookup": Inform("lookup", ())}
+
+
+def test_an_action_without_a_condition_always_applies(write_scenario):
+    s = load_scenario(write_scenario(BASE_TOML.replace('when = "urgent >= 0.5"\n', "")))
+    assert s.actions[0].when is None
+
+
+@pytest.mark.parametrize("old, new, message", [
+    ('when = "urgent >= 0.5"', 'when = "urgent >= 0.5"\nconfirm = true',
+     "actions[0].confirm: only false is supported for now"),
+    ('routes = ["Billing"]', 'routes = ["X"]', "actions[0].routes: unknown route 'X'"),
+    ('routes = ["Billing"]', 'routes = []', "actions[0].routes must be a non-empty list of route names"),
+    ('tool = "act"\n', "", "actions[0]: missing 'tool'"),
+    ('when = "urgent >= 0.5"', 'when = "missing >= 1"', "actions[0].when: unknown question 'missing'"),
+    ('questions = ["urgent"]', 'questions = ["X"]', "tools.inform.lookup.questions: unknown question 'X'"),
+    ('[[actions]]', '[[rules]]\nwhen = "urgent >= 0.5"\ntell = "x"\n\n[actions]', "actions must be written as"),
 ])
-def test_catalogue_errors_name_the_setting(write_scenario, change, message):
+def test_actions_and_informs_name_the_problem(write_scenario, old, new, message):
     with pytest.raises(ScenarioError, match=re.escape(message)):
-        load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML.replace(*change)))
+        load_scenario(write_scenario(BASE_TOML.replace(old, new)))
 
 
-def test_catalogue_threshold_must_be_from_0_to_1(write_scenario):
-    with pytest.raises(ScenarioError, match=re.escape("catalogue.confidence_threshold must be a number from 0 to 1")):
-        load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML + "confidence_threshold = 2\n"))
-
-
-def test_catalogue_questions_name_the_questions_the_facts_inform(write_scenario):
-    loaded = load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML + "questions = []\n"))
-    assert loaded.catalogue.questions == ()
-    with pytest.raises(ScenarioError, match=re.escape("catalogue.questions: unknown question 'mood'")):
-        load_scenario(write_scenario(INTAKE_TOML + CATALOGUE_TOML + 'questions = ["mood"]\n'))
+@pytest.mark.parametrize("old, new, message", [
+    ('description = "Bugs and outages"', 'description = "Bugs and outages"\nsystem_prompt = "x"',
+     "routes.Tech.system_prompt is no longer used"),
+    ('description = "Bugs and outages"', 'description = "Bugs and outages"\ntools = ["act"]',
+     "routes.Tech.tools is no longer used"),
+    ('description = "Bugs and outages"', 'description = "Bugs and outages"\n\n[routes.Tech.fields]\nx = "y"',
+     "routes.Tech.fields is no longer used"),
+    ('module = "fake_tools"', 'module = "fake_tools"\nconfirm = ["act"]', "tools.confirm is no longer used"),
+    ('[routing]', '[catalogue]\ntool = "x"\n\n[routing]', "[catalogue] is no longer used"),
+])
+def test_old_keys_are_refused(write_scenario, old, new, message):
+    with pytest.raises(ScenarioError, match=re.escape(message)):
+        load_scenario(write_scenario(BASE_TOML.replace(old, new)))

@@ -8,13 +8,19 @@ import ollama
 import openai
 import pytest
 from conftest import BASE_TOML
-from fake_tools import lookup_invoice
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.tools import tool
 
 import generator
 from generator import (NO_TOOL_REPLY, GeneratorError, MLXGenerator, OllamaGenerator, OpenAIGenerator, finish_reply,
                        make_generator, parse_reply, to_chat_dicts)
 from scenario import load_scenario
+
+
+@tool
+def lookup_invoice(invoice_number: str) -> dict:
+    """Look up an invoice and its charges by invoice number."""
+    return {"invoice_number": invoice_number}
 
 
 class FakeTokenizer:
