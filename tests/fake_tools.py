@@ -2,7 +2,10 @@
 # Tools take the request whether or not they use it
 # pylint: disable=unused-argument
 
+import threading
+
 SETTINGS = {}
+GATE = threading.Event()  # slow() waits until a test sets it
 CALLS = []          # (tool name, request) for each call, so a test can check what a tool was given
 
 
@@ -34,4 +37,10 @@ def unserialisable(request):
     return {"when": object()}
 
 
-TOOLS = [lookup, act, broken, unserialisable]
+def slow(request):
+    """An acting tool whose service takes its time: it waits for the test to open the gate."""
+    GATE.wait(timeout=5)
+    return {"slow": True}
+
+
+TOOLS = [lookup, act, broken, unserialisable, slow]

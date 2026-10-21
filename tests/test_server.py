@@ -151,3 +151,24 @@ def test_a_broken_scenario_is_one_line(write_scenario, capsys):
 def test_the_server_logs_only_warnings(parts):
     # Every request a tool makes would otherwise be logged to the chat's terminal
     assert server.build_server(*parts, review=False).settings.log_level == "WARNING"
+
+
+@pytest.mark.anyio
+async def test_a_slow_tool_does_not_hold_up_other_calls(write_scenario):
+    import anyio  # pylint: disable=import-outside-toplevel
+    import fake_tools  # pylint: disable=import-outside-toplevel
+    text = (BASE_TOML.replace('tool = "act"', 'tool = "slow"').replace('when = "urgent >= 0.5"\n', "")
+            .replace('routes = ["Billing"]', 'routes = ["Tech"]'))
+    scenario = load_scenario(write_scenario(text))
+    router = FakeRouter(decision("Tech", answers={"urgent": {"type": "noul", "noul": 0.2}}))
+    fake_tools.GATE.clear()
+    async with Client(server.build_server(scenario, router, load_tools(scenario), review=False)) as client:
+        async with anyio.create_task_group() as group:
+            group.start_soon(client.call_tool, "decide", {"text": TEXT})
+            await anyio.sleep(0.2)                       # decide is now waiting inside the slow tool
+            started = time.monotonic()
+            checked = await client.call_tool("check_call", {"text": TEXT, "call": {"name": "x"}})
+            waited = time.monotonic() - started
+            fake_tools.GATE.set()
+    assert checked.structured_content == {"p": 0.9, "approved": True}
+    assert waited < 1

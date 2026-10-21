@@ -10,7 +10,7 @@ from typing import Callable
 
 import anyio
 import httpx2
-from mcp import Client, StdioServerParameters
+from mcp import Client, MCPError, StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
 
 from server import KEY_ENV
@@ -110,6 +110,23 @@ async def run_chat(session: Client, read: Callable[[str], str] = input, write: C
                 write(out)
 
 
+async def _session(client: Client, ready: str | None = None) -> bool:
+    """Chat over one connection; -> False if the connection could not be made."""
+    connected = False
+    try:
+        async with client as session:
+            connected = True
+            if ready:
+                print(ready)
+            await run_chat(session)
+    except (MCPError, httpx2.HTTPError, ExceptionGroup):
+        # A failure to connect surfaces as one of these; a failure once connected is shown in full
+        if connected:
+            raise
+        return False
+    return True
+
+
 async def _chat(args) -> int:
     if args.url:
         key = os.environ.get(args.key_env, "").strip()
@@ -117,16 +134,17 @@ async def _chat(args) -> int:
             print(f"error: set {args.key_env} to the server's key", file=sys.stderr)
             return 2
         async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {key}"}, timeout=300) as http:
-            async with Client(streamable_http_client(args.url, http_client=http)) as session:
-                await run_chat(session)
+            if not await _session(Client(streamable_http_client(args.url, http_client=http))):
+                print(f"error: could not reach the decision server at {args.url}", file=sys.stderr)
+                return 2
         return 0
     server = Path(__file__).with_name("server.py")
     params = StdioServerParameters(command=sys.executable,
                                    args=[str(server), args.scenario] + (["--review"] if args.review else []))
     print("Starting the decision server; loading CLM can take a minute.")
-    async with Client(params) as session:
-        print(f"Ready. Type a request. {COMMANDS}")
-        await run_chat(session)
+    if not await _session(Client(params), f"Ready. Type a request. {COMMANDS}"):
+        print("error: the decision server stopped; see the message above", file=sys.stderr)
+        return 2
     return 0
 
 

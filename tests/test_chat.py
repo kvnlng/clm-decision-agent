@@ -2,7 +2,7 @@
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import pytest
-from conftest import FakeRouter, decision
+from conftest import BASE_TOML, FakeRouter, decision
 from mcp import Client
 
 import server
@@ -134,3 +134,28 @@ def test_format_a_correction_that_confirms_clm():
                  "rules": [], "actions": []}
     assert format_decision(confirmed) == [
         "  route: Data_Access 0.91 (next: Information_Request 0.05) as you confirmed"]
+
+
+def test_a_server_that_cannot_start_is_one_line(write_scenario):
+    import subprocess  # pylint: disable=import-outside-toplevel
+    import sys  # pylint: disable=import-outside-toplevel
+    from pathlib import Path  # pylint: disable=import-outside-toplevel
+    # The server runs in its own process, so the scenario must not need the tests' tools module
+    bad = write_scenario(BASE_TOML.replace('[tools]\nmodule = "fake_tools"\n', ""))
+    chat_py = Path(__file__).parent.parent / "chat.py"
+    done = subprocess.run([sys.executable, str(chat_py), str(bad)], capture_output=True, text=True, timeout=60,
+                          check=False)
+    assert done.returncode == 2
+    assert "Traceback" not in done.stderr
+    assert done.stderr.strip().splitlines() == [
+        "error: routes.Billing.inform: unknown tool 'lookup' (no [tools] module is set)",
+        "error: the decision server stopped; see the message above"]
+
+
+def test_an_unreachable_url_is_one_line(monkeypatch, capfd):
+    from chat import main  # pylint: disable=import-outside-toplevel
+    monkeypatch.setenv("DECISION_SERVER_KEY", "k1")
+    assert main(["--url", "http://127.0.0.1:9/mcp"]) == 2
+    err = capfd.readouterr().err
+    assert "Traceback" not in err
+    assert err.strip() == "error: could not reach the decision server at http://127.0.0.1:9/mcp"

@@ -26,22 +26,36 @@ READ_ONLY = ToolAnnotations(read_only_hint=True)
 CHANGES = ToolAnnotations(read_only_hint=False)
 
 
+class _OneAtATime:
+    """The router, with each call to CLM taking its turn. Tools run outside the lock, so a slow one holds up no one."""
+
+    def __init__(self, router, lock: threading.Lock):
+        self._router, self._lock = router, lock
+
+    def __getattr__(self, name: str):
+        method = getattr(self._router, name)
+
+        def locked(*args, **kwargs):
+            with self._lock:
+                return method(*args, **kwargs)
+        return locked
+
+
 def build_server(scenario: Scenario, router, tools: dict[str, Callable], review: bool) -> MCPServer:
     """The MCP server for one scenario. Review mode adds `correct` and `agreement`, which write and read the record."""
     server = MCPServer("decision-server", instructions=(
         f"Decisions for the scenario '{scenario.path.stem}'. Call describe to see the routes and questions, "
         "then decide with the text of a request. decide may run the scenario's acting tools."),
         log_level="WARNING")
-    # CLM runs on one model; calls arrive on worker threads, so they take turns
-    lock = threading.Lock()
+    # CLM runs on one model and calls arrive on worker threads, so its calls take turns
+    router = _OneAtATime(router, threading.Lock())
 
     def clm(work: Callable[[], dict]) -> dict:
         from clm_router import ClmError  # pylint: disable=import-outside-toplevel
-        with lock:
-            try:
-                return work()
-            except ClmError as error:
-                raise ToolError(str(error)) from error
+        try:
+            return work()
+        except ClmError as error:
+            raise ToolError(str(error)) from error
 
     @server.tool(annotations=CHANGES)
     def decide(text: str) -> dict[str, Any]:

@@ -34,19 +34,26 @@ def _rules(scenario: Scenario, answers: dict) -> list[dict]:
 
 def _inform(request: dict, scenario: Scenario, router, tools: dict[str, Callable]) -> list[dict]:
     """Run the route's informing tools; their facts are added to `request` and its answers and rules updated."""
-    # Facts come after routing, so they never change the route; they inform the questions they bear on
-    informed, informs = [], set()
+    # Facts come after routing, so they never change the route. Each question hears only the facts of
+    # the tools that inform it, since facts sway questions they have nothing to do with
+    informed, heard = [], {name: [] for name in scenario.questions}
     for name in scenario.routes[request["route"]].inform:
         outcome = _facts(_run(tools[name], dict(request)))
         informed.append({"tool": name, **outcome})
         if outcome["status"] == "done" and outcome["facts"]:
             request["facts"] = request["facts"] + outcome["facts"]
             chosen = scenario.informs[name].questions if name in scenario.informs else None
-            informs.update(scenario.questions if chosen is None else chosen)
-    asked = {name: question for name, question in scenario.questions.items() if name in informs}
-    if asked:
-        known = "\n".join(f"- {fact}" for fact in request["facts"])
-        answers = {**request["answers"], **router.ask(f"{request['text']}\n\nKnown:\n{known}", asked)}
+            for question in scenario.questions if chosen is None else chosen:
+                heard[question] += outcome["facts"]
+    groups: dict[tuple, dict] = {}
+    for name, facts in heard.items():
+        if facts:
+            groups.setdefault(tuple(facts), {})[name] = scenario.questions[name]
+    answers = dict(request["answers"])
+    for facts, asked in groups.items():
+        known = "\n".join(f"- {fact}" for fact in facts)
+        answers.update(router.ask(f"{request['text']}\n\nKnown:\n{known}", asked))
+    if groups:
         request.update(answers=answers, rules=_rules(scenario, answers))
     return informed
 
@@ -55,7 +62,8 @@ def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable]) ->
     """The scenario's decision on `text`, with what its tools found and did."""
     result = router.decide(text, scenario)
     route = result["route"]
-    result["uncertain"] = result["confidence"] < scenario.confidence_threshold
+    # A route the owner chose is not second-guessed: the confidence is CLM's, in its own route
+    result["uncertain"] = result.get("source") == "clm" and result["confidence"] < scenario.confidence_threshold
     request = {"text": text, "route": route, "answers": result["answers"],
                "rules": _rules(scenario, result["answers"]), "facts": []}
 

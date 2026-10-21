@@ -159,3 +159,43 @@ def test_describe(setup):
         "questions": [{"name": "urgent", "type": "noul", "instructions": "Is this urgent?"}],
         "rules": [{"when": "urgent >= 0.5", "tell": "Hurry."}],
     }
+
+
+def test_a_reviewed_route_is_not_uncertain(setup):
+    scenario, tools = setup()
+    reviewed = {**decision("Billing", confidence=0.4, answers=urgent(0.1)), "source": "reviewed",
+                "clm_route": "Tech"}
+    result = decide(TEXT, scenario, FakeRouter(reviewed, asks=[urgent(0.8)]), tools)
+    assert result["uncertain"] is False
+    assert result["actions"] == [{"tool": "act", "status": "done", "result": {"id": 1}}]
+
+
+def test_each_question_hears_only_the_facts_given_to_it(setup, tmp_path):
+    (tmp_path / "two_tools.py").write_text(
+        'def quiet(request):\n    return {"facts": ["QUIET FACT"]}\n\n'
+        'def lookup(request):\n    return {"facts": ["urgent fact"]}\n\n'
+        'def act(request):\n    return {}\n\nTOOLS = [quiet, lookup, act]\n')
+    text = (BASE_TOML.replace('"fake_tools"', '"two_tools"')
+            .replace('inform = ["lookup"]', 'inform = ["quiet", "lookup"]')
+            .replace("[tools.inform.lookup]", "[tools.inform.quiet]\nquestions = []\n\n[tools.inform.lookup]"))
+    scenario, tools = setup(text)
+    router = FakeRouter(decision("Billing", answers=urgent(0.1)), asks=[urgent(0.8)])
+    result = decide(TEXT, scenario, router, tools)
+    assert router.ask_calls == [(f"{TEXT}\n\nKnown:\n- urgent fact", {"urgent": scenario.questions["urgent"]})]
+    assert result["informed"][0]["facts"] == ["QUIET FACT"]
+
+
+def test_questions_with_different_facts_are_asked_apart(setup, tmp_path):
+    (tmp_path / "split_tools.py").write_text(
+        'def a(request):\n    return {"facts": ["fact A"]}\n\n'
+        'def lookup(request):\n    return {"facts": ["fact B"]}\n\n'
+        'def act(request):\n    return {}\n\nTOOLS = [a, lookup, act]\n')
+    text = (BASE_TOML.replace('"fake_tools"', '"split_tools"').replace('inform = ["lookup"]', 'inform = ["a", "lookup"]')
+            .replace("[tools.inform.lookup]", '[tools.inform.a]\nquestions = ["other"]\n\n[tools.inform.lookup]')
+            .replace("[[actions]]", '[questions.other]\ntype = "noul"\ninstructions = "Other?"\n\n[[actions]]'))
+    scenario, tools = setup(text)
+    other = {"other": {"type": "noul", "noul": 0.6}}
+    router = FakeRouter(decision("Billing", answers={**urgent(0.1), **other}), asks=[other, urgent(0.8)])
+    decide(TEXT, scenario, router, tools)
+    assert sorted((state, list(questions)) for state, questions in router.ask_calls) == [
+        (f"{TEXT}\n\nKnown:\n- fact A", ["other"]), (f"{TEXT}\n\nKnown:\n- fact B", ["urgent"])]

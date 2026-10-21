@@ -38,7 +38,8 @@ inform = ["lookup_queue"]                              # optional: informing too
   "out of scope" route an unrelated request lands on a real one.
 - **An uncertain decision is still returned**, with `uncertain: true`. Its informing tools and
   questions run, so the agent sees everything, but no acting tool runs. The agent can ask its
-  own user and call `decide` again with a clearer request.
+  own user and call `decide` again with a clearer request. A route reused from the owner's
+  correction is never uncertain.
 
 ## Questions for CLM
 
@@ -114,7 +115,8 @@ An informing tool returns `{"facts": ["a plain sentence", ...]}`. Facts are adde
 reads before it answers the questions; they never reach the routing decision, so trained heads
 and corrections are unaffected.
 
-Facts can sway questions they have nothing to do with, so say which questions they bear on:
+Facts can sway questions they have nothing to do with, so say which questions they bear on.
+Each question hears only the facts of the tools that inform it:
 
 ```toml
 [tools.inform.lookup_queue]
