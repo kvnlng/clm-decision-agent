@@ -13,7 +13,7 @@ ENV UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv HF_HOME=/cache
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen
+RUN UV_NO_CACHE=1 uv sync --frozen
 COPY . .
 
 CMD ["uv", "run", "pytest", "-q"]
