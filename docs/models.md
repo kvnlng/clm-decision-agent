@@ -72,16 +72,7 @@ model = "gemma4:26b"
 api_key_env = "MODEL_API_KEY"                         # optional
 ```
 
-All three have been run with the example. What we saw:
-
-| | Qwen3-4B (in process) | Gemma 26B (Ollama) |
-|---|---|---|
-| Extracting collected details, 20 fields | 18 right | 19 right |
-| Time for five extractions | 1.3 s | 18 s, including loading |
-| Size on disk | 2 to 3 GB | 18 GB |
-
-The small model is the default because extraction runs on every turn. A larger one is more
-likely to matter for the wording of what is finally submitted. Both fit beside the 8-bit CLM (about
-9 GB in use) on a 64 GB machine.
+All three have been used to write the example's training messages. A larger model writes more
+varied examples but takes longer; the small one is the default because it runs in this process.
 
 `base_url` can point at a machine other than yours; see [data-handling.md](data-handling.md).

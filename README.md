@@ -1,123 +1,152 @@
-# CLM decision agent
+# CLM decision server
 
-A small framework for building a chat assistant that makes **narrow, checkable decisions**
-with a Contrastive Language Model (CLM) and uses a language model only to write. Everything
-runs on one machine.
+A small framework for building a **decision server**: a program that makes narrow, checkable
+decisions with a Contrastive Language Model (CLM) and offers them to other agents over
+[MCP](https://modelcontextprotocol.io). You describe the decisions in one file, train CLM on
+them, and run the server. An agent, for example one your colleagues build on Databricks, then
+calls it whenever it needs that decision made.
 
 It is a prototype, built to learn how CLM behaves and to show the pattern to people who want
 to adapt it. It has not been used in production.
 
 **It is not for clinical decisions.** The example is a data service desk in a clinical
-setting; it declines questions about patient care.
+setting; it routes questions about patient care out of scope.
 
 ## The idea
 
 A language model generates text. A CLM does not: it reads a situation and a list of options
-and says which option fits, with a probability. That makes its decisions cheap, fast, and
-easy to log, test and train.
-
-This framework gives each model the job it is suited to:
+and says which option fits, with a probability. That makes its decisions cheap, fast, and easy
+to log, test and train. The calling agent keeps doing what a language model is good at, such as
+talking and writing, and leans on the decision server for the choices.
 
 | Job | Done by |
 |---|---|
-| Which kind of request is this? Which catalogue entry does it mean? What are the answers to the scenario's other questions? Is this tool call appropriate? | CLM |
-| Asking questions, writing replies, wording what a tool submits, choosing tool arguments | The language model |
-| Is every required detail collected? | Plain code |
-| Should this action, which changes something, go ahead? | The user |
-| Was CLM's decision right? | A reviewer, whose answers are saved and reused |
+| Which kind of request is this? How urgent? Does it involve identifiable data? Is this tool call appropriate? | CLM, in the decision server |
+| Facts that bear on a decision, such as who handles the request | The scenario's informing tools |
+| Acting on a decision, such as opening a ticket | The scenario's acting tools |
+| Talking to the person, asking follow-up questions, writing replies | The calling agent |
+| Was CLM's decision right? | The owner, whose corrections are saved and trained on |
 
-All of it is driven by one file, the **scenario**, which lists the kinds of request, what to
-collect for each, the questions to ask CLM, and the tools. Information from outside, such as a
-data catalogue, comes in only through those tools.
+All of it is driven by one file, the **scenario**: the kinds of request (routes), the questions
+CLM answers, the rules that follow from the answers, and the tools. Information from outside
+reaches a decision only through those tools. There is no language model in the server.
 
-![Architecture: the scenario file configures the turn, which exchanges information with CLM, the language model and the tools; reviews and generated examples retrain CLM's routing](docs/diagrams/architecture.png)
+```
+test chat  ──MCP──▶  decision server ──▶ CLM (in this process, or a CLM server on a GPU machine)
+(or any agent)            ├──▶ informing tools (facts)
+                          └──▶ acting tools (do things)
+```
 
-## Quick start
+## Getting started
 
-You need an Apple Silicon Mac, Python 3.12 or later, and [uv](https://docs.astral.sh/uv/).
-The first run downloads about 11 GB of models.
+You need an Apple Silicon Mac, Python 3.12 or later, and [uv](https://docs.astral.sh/uv/). The
+first run downloads CLM, about 8 GB.
+
+**1. Install.**
 
 ```bash
 uv sync
-uv run python examples/service_desk/mock_tracker.py                     # terminal 1
-uv run python examples/service_desk/mock_openmetadata.py                # terminal 2
-uv run python train.py examples/service_desk/scenario.toml              # terminal 3, once
-uv run python chat.py examples/service_desk/scenario.toml --review      # terminal 3
 ```
 
-Then type, for example, `I need access to the oncology registry`.
-[examples/service_desk/README.md](examples/service_desk/README.md) walks through the demo.
+**2. Run the example.** It is a small finished scenario: a data service desk.
 
-## How a turn works
+```bash
+uv run python examples/service_desk/mock_tracker.py                          # terminal 1: a stand-in issue tracker
+uv run python chat.py examples/service_desk/scenario.toml --review           # terminal 2: the test chat
+```
 
-1. **Assess.** CLM reads the conversation and picks a route, and answers the scenario's other
-   questions. If a reviewer has seen a near-identical message before, their route is used.
-2. **Clarify or continue.** If CLM is not confident, the language model asks the user a
-   question that would tell the two likeliest routes apart.
-3. **Collect.** If the route lists details to collect, the language model extracts what the
-   user has given and asks for the rest. Code decides when nothing is missing.
-4. **Act.** The language model proposes tool calls. CLM gives an opinion on each. A tool that
-   changes something waits for the user's yes.
-5. **Reply.** The language model writes the answer.
+The test chat starts the decision server and talks to it over MCP, as an outside agent would.
+Type a request and it shows the decision:
 
-![One turn, drawn as lanes for CLM, the language model, plain code and a person](docs/diagrams/one-turn.png)
+```
+you> I need access to the oncology registry for an audit, needed this week
+  route: Data_Access 0.65 (next: Information_Request 0.23)
+  answers: urgency 1.61   identifiable 0.54
+  facts: lookup_queue: Data Governance handles this kind of request. ...
+  rules: urgency >= 1.5: Set the ticket's priority to High and state the deadline in the summary.
+  rules: identifiable >= 0.5: Add the label governance-review and say that data governance ...
+  actions: create_ticket done: {"number": 5, "url": "http://127.0.0.1:8765/..."}
+```
 
-In **review mode** (`--review`) the assistant pauses at each decision for your verdict and
-saves it. In **run mode** it does not pause, except before a tool that changes something.
+`/routes` shows the scenario's routes and questions, and `/quit` ends the chat.
+[examples/service_desk/README.md](examples/service_desk/README.md) walks through it.
 
-## Commands
+**3. Write your own scenario.** Copy `examples/service_desk/` to a folder of your own and edit
+`scenario.toml` and the tools file beside it: [docs/scenario.md](docs/scenario.md) explains
+every part.
 
-| Command | What it does |
+**4. Check it.** Start the chat with your scenario. A mistake in the file stops start-up with
+one line naming the setting.
+
+**5. Correct decisions.** In review mode (`--review`), type `/correct <route>` after a wrong
+decision. The correction is saved, and a near-identical request gets your route straight away.
+`/agreement` shows how often CLM's own route agrees with your corrections.
+
+**6. Train.** Optionally have a language model write example messages for each route, then
+train CLM on them and on your corrections, and see agreement rise:
+
+```bash
+uv run python synthesize.py my_scenario.toml      # optional; needs a language model
+uv run python train.py my_scenario.toml
+uv run python evaluate.py my_scenario.toml
+```
+
+[docs/fine-tuning.md](docs/fine-tuning.md) has the details.
+
+**7. Connect an agent.** Serve over HTTP with a key, and point an MCP client at it:
+[docs/serving.md](docs/serving.md).
+
+```bash
+export DECISION_SERVER_KEY=<a long random key>
+uv run python server.py my_scenario.toml --http
+```
+
+**The server acts without asking.** When a decision calls for an acting tool, the tool runs
+at once, unless the route is uncertain. Calling `decide` twice with the same request acts twice.
+Point acting tools at real systems with care. Confirmation before acting is planned; the
+scenario and the server's replies are already shaped for it.
+
+Read [docs/data-handling.md](docs/data-handling.md) before any real text goes in.
+
+## The server's tools
+
+| MCP tool | What it does |
 |---|---|
-| `chat.py <scenario> [--review]` | Talk to the assistant |
-| `serve.py <scenario> [--port N]` | Answer HTTP requests instead, for one user: [docs/serving.md](docs/serving.md) |
-| `synthesize.py <scenario>` | Have the language model write labelled example messages |
-| `train.py <scenario>` | Fit CLM to the scenario using those examples and your reviews |
-| `evaluate.py <scenario>` | Replay your reviews: how often does CLM agree with you? |
-| `record.py purge <scenario>` / `newkey <file>` | Delete the review record / make an encryption key |
-
-Run each with `uv run python`.
-
-## Adapting it
-
-1. Copy `examples/service_desk/` and edit `scenario.toml`: [docs/scenario.md](docs/scenario.md).
-2. Write your tools in a Python file beside it (same guide).
-3. Choose where the models run: [docs/models.md](docs/models.md).
-4. Train CLM on your routes: [docs/fine-tuning.md](docs/fine-tuning.md).
-5. Read [docs/data-handling.md](docs/data-handling.md) before any real text goes in.
+| `decide(text)` | The route with its confidence and probabilities, `uncertain` below the threshold, each question's answer, the rules that apply, the facts the informing tools found, and what the acting tools did |
+| `check_call(text, call)` | CLM's opinion of a tool call the caller proposes: a probability and approved yes or no |
+| `describe()` | The scenario's routes, questions and rules |
+| `correct(text, route)` | Review mode only: save the right route for a request |
+| `agreement()` | Review mode only: how often CLM's own route agrees with the saved corrections |
 
 ## What to expect
 
 Measured on the example scenario, on an M5 Max with 64 GB:
 
-- **Untrained, CLM routes poorly**: 8 of 20 hand-written test messages. Trained on 318
-  generated examples it gets 16 of 20, and its wrong answers come with low confidence. Twenty
-  messages is a small test.
-- **Choosing from a catalogue is weaker than routing**, because CLM was trained on the routes,
-  not on your catalogue's entries: 2 of 4 test messages found the right dataset. The two misses
-  were below the confidence threshold, so they were not used and the language model asked.
+- **Untrained, CLM routes poorly.** On held-back generated examples the released heads got
+  51%; trained on 199 generated examples, 98%. Through the server, the trained heads routed 15
+  of 17 hand-written test messages correctly. Seventeen messages is a small test.
 - **CLM's probabilities are relative, not calibrated.** Treat the confidence threshold as a
   setting to tune with `evaluate.py`, not as a probability of being right.
-- **The language model makes mistakes too**: it can mis-extract a detail or word a
-  submission badly. That is why a tool that changes something needs a yes.
-- **A turn takes a few seconds** with the default 4-billion-parameter language model.
+- **The questions are not trained.** Only routing is. Check the answers to your questions by
+  eye before relying on them.
+- **Decisions are quick.** The slow test loads CLM and makes those 17 decisions, with their
+  tool calls, in under 3 seconds.
 
 ## Layout
 
 | File | Purpose |
 |---|---|
 | `scenario.py` | Reads and checks a scenario file |
-| `clm_router.py` | CLM decisions, local or from a server |
-| `generator.py` | The language model backends |
-| `graph.py` | The turn, as a LangGraph graph |
-| `chat.py` | The terminal |
-| `serve.py` | The same turn over HTTP, as a demonstration |
+| `decision.py` | One decision: route, informing tools, questions, rules, acting tools |
+| `server.py` | The decision server: MCP over stdio or HTTP |
+| `chat.py` | The test chat, an MCP client |
+| `clm_router.py` | CLM, local or on a server, and the reuse of corrections |
 | `tools.py` | Loads a scenario's tools |
-| `record.py`, `evaluate.py` | The review record and its replay |
-| `dataset.py`, `synthesize.py`, `train.py` | Training |
-| `examples/service_desk/` | The worked example, with mock stand-ins for an issue tracker and OpenMetadata |
+| `record.py`, `evaluate.py` | The corrections record and its replay |
+| `dataset.py`, `synthesize.py`, `train.py`, `generator.py` | Training, and the language model that writes examples |
+| `examples/service_desk/` | The worked example, with a stand-in issue tracker |
 | `mlx_clm_triage.py` | A single CLM call, the smallest possible example |
-| `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads the models) |
+| `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads CLM) |
 
 CLM is described in Kwok et al. (2026) and published at
 [Contrastive-LM/CLM](https://github.com/Contrastive-LM/CLM). This project uses the community

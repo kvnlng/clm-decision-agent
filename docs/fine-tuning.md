@@ -51,8 +51,8 @@ the test chat and correct its decisions, evaluate, adjust, and train again.
 
 | | Released | Trained |
 |---|---|---|
-| Held-back generated examples (61) | 31% | 98% |
-| Hand-written test messages (20) | 8 | 16 |
+| Held-back generated examples (55) | 51% | 98% |
+| Hand-written test messages (17), through the server | | 15 |
 
 Two earlier measurements on a similar problem (issue reports, 450 generated examples):
 
@@ -66,10 +66,11 @@ Two earlier measurements on a similar problem (issue reports, 450 generated exam
 - **Generated examples flatter the result.** The held-back examples were written by the same
   model in the same styles as the training examples. Believe a test on real or hand-written
   messages; keep such a set aside and never train on it.
-- **Small tests move.** On 20 messages the trained result was 16 or 17 depending on the run.
-- **Look at confidence as well as accuracy.** On the example, every wrong answer after
-  training fell below the confidence threshold, so the assistant asked instead of acting. Run
-  `evaluate.py` on your reviews to choose the threshold.
+- **Small tests move.** With the earlier five-route example, the trained result on 20 messages
+  was 16 or 17 depending on the run.
+- **Look at confidence as well as accuracy.** A wrong route below the confidence threshold is
+  marked uncertain and runs no action; a confident wrong one acts. Run `evaluate.py` on your
+  corrections to choose the threshold.
 
 ## When to train again
 
@@ -86,8 +87,8 @@ Two earlier measurements on a similar problem (issue reports, 450 generated exam
   their own training script for GPU servers; this project does not use it.
 - One example in five of the generated set is held back, chosen by a hash of its text, so the
   same examples are held back on every run. Reviewed routes are always trained on.
-- After training, the "near-identical message" matching used to reuse reviews works on
+- After training, the "near-identical message" matching used to reuse corrections works on
   different vectors. A spot check looked fine at the default `match_threshold`; it has not
   been measured properly.
-- Trained heads are made from your examples and reviews. Treat the folder with the same care
+- Trained heads are made from your examples and corrections. Treat the folder with the same care
   as that text: see [data-handling.md](data-handling.md).
