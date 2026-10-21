@@ -209,4 +209,4 @@ def test_the_optimizer_steps_as_mlx_adamw_does():
         expected = expected * (1 - 0.1 * 0.01)
         m, v = 0.9 * m + 0.1 * g, 0.999 * v + 0.001 * g * g
         expected = expected - 0.1 * m / (np.sqrt(v) + 1e-8)
-    np.testing.assert_allclose(param.detach().numpy(), expected, rtol=1e-5)
+    np.testing.assert_allclose(param.data.numpy(), expected, rtol=1e-5)

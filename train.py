@@ -47,15 +47,13 @@ class HeadsModel(nn.Module):  # pylint: disable=abstract-method
     @classmethod
     def from_weights(cls, weights: dict[str, np.ndarray], config: dict) -> "HeadsModel":
         """The heads an engine is using, from its head_weights() and head_config."""
-        heads = []
-        for prefix in ("state_head", "action_head"):
-            head = Head.from_config(config)
-            head.load_state_dict({name[len(prefix) + 1:]: torch.as_tensor(np.asarray(value, dtype=np.float32))
+        def head(prefix: str) -> Head:
+            made = Head.from_config(config)
+            made.load_state_dict({name[len(prefix) + 1:]: torch.as_tensor(np.asarray(value, dtype=np.float32))
                                   for name, value in weights.items() if name.startswith(prefix + ".")}, strict=True)
-            heads.append(head)
-        state_head, action_head = heads
-        return cls(state_head, action_head, min(math.exp(float(np.asarray(weights["logit_scale"]).reshape(-1)[0])),
-                                                100.0))
+            return made
+        scale = min(math.exp(float(np.asarray(weights["logit_scale"]).reshape(-1)[0])), 100.0)
+        return cls(head("state_head"), head("action_head"), scale)
 
     def weights(self) -> dict[str, np.ndarray]:
         """The weights in the layout of a heads file."""
