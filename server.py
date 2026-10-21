@@ -69,12 +69,12 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         return trace.call(tool, text) if trace else contextlib.nullcontext({})
 
     @server.tool(annotations=CHANGES)
-    def decide(text: str) -> dict[str, Any]:
+    def decide(text: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
         """Decide on a request: its route and confidence, the answers to the scenario's questions, the rules
         that apply, facts the informing tools found, and what the acting tools did. An uncertain route runs no
-        acting tool."""
+        acting tool. `context` (such as a booking or user ID) is given to the scenario's tools, not to CLM."""
         with traced("decide", text) as record:
-            result = clm(lambda: decision.decide(text, scenario, router, tools))
+            result = clm(lambda: decision.decide(text, scenario, router, tools, context))
             if trace:
                 record["outcome"] = {key: result.get(key) for key in ("route", "confidence", "uncertain", "source")}
             return result

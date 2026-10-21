@@ -200,3 +200,23 @@ def test_questions_with_different_facts_are_asked_apart(setup, tmp_path):
     decide(TEXT, scenario, router, tools)
     assert sorted((state, list(questions)) for state, questions in router.ask_calls) == [
         (f"{TEXT}\n\nKnown:\n- fact A", ["other"]), (f"{TEXT}\n\nKnown:\n- fact B", ["urgent"])]
+
+
+def test_tools_receive_context_when_given(setup):
+    scenario, tools = setup()
+    decide(TEXT, scenario, FakeRouter(decision("Billing", answers=urgent(0.9)), asks=[urgent(0.9)]), tools,
+           context={"booking": "PNR1"})
+    assert [request["context"] for _, request in fake_tools.CALLS] == [{"booking": "PNR1"}] * 2
+
+
+def test_tools_get_no_context_key_without_one(setup):
+    scenario, tools = setup()
+    decide(TEXT, scenario, FakeRouter(decision("Billing", answers=urgent(0.9)), asks=[urgent(0.9)]), tools)
+    assert fake_tools.CALLS and all("context" not in request for _, request in fake_tools.CALLS)
+
+
+def test_context_is_not_in_the_text_clm_reads(setup):
+    scenario, tools = setup()
+    router = FakeRouter(decision("Tech"))
+    decide(TEXT, scenario, router, tools, context={"booking": "PNR1"})
+    assert router.states == [TEXT]

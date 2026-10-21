@@ -102,8 +102,12 @@ Every tool takes one argument, the **request**, filled in as far as the decision
  "route": "Data_Access",
  "answers": {...},                 # CLM's answers to the questions
  "rules": [{"when": ..., "tell": ...}],
- "facts": ["...", ...]}            # what the informing tools have found so far
+ "facts": ["...", ...],            # what the informing tools have found so far
+ "context": {...}}                 # only if the caller sent one
 ```
+
+A caller can send `context` with `decide`: anything your tools need to find their records, such
+as a user, ticket or booking ID. The tools get it as it was sent; CLM never reads it.
 
 It returns anything JSON can hold. To report a failure, raise an exception with a message a
 person can act on: the reply lists that tool as `failed` with the message, and the decision is

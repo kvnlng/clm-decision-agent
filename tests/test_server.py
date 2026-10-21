@@ -13,6 +13,7 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
 import clm_router
+import fake_tools
 import server
 from decision import decide
 from record import load_records
@@ -65,6 +66,18 @@ async def test_decide_over_mcp(parts):
         result = await client.call_tool("decide", {"text": TEXT})
     assert not result.is_error
     assert result.structured_content == decide(TEXT, scenario, FakeRouter(router.decisions), tools)
+
+
+@pytest.mark.anyio
+async def test_decide_over_mcp_accepts_context(write_scenario):
+    scenario = load_scenario(write_scenario())
+    urgent = {"urgent": {"type": "noul", "noul": 0.9}}
+    router = FakeRouter(decision("Billing", answers=urgent), asks=[urgent])
+    fake_tools.CALLS.clear()
+    async with Client(server.build_server(scenario, router, load_tools(scenario), review=False)) as client:
+        result = await client.call_tool("decide", {"text": TEXT, "context": {"booking": "PNR1"}})
+    assert not result.is_error
+    assert fake_tools.CALLS[0][1]["context"] == {"booking": "PNR1"}
 
 
 @pytest.mark.anyio

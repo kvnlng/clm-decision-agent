@@ -64,14 +64,17 @@ def _inform(request: dict, scenario: Scenario, router, tools: dict[str, Callable
     return informed
 
 
-def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable]) -> dict:
-    """The scenario's decision on `text`, with what its tools found and did."""
+def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable], context: dict | None = None) -> dict:
+    """The scenario's decision on `text`, with what its tools found and did. `context` (such as a booking or
+    user ID) is passed to the tools; CLM never reads it."""
     result = router.decide(text, scenario)
     route = result["route"]
     # A route the owner chose is not second-guessed: the confidence is CLM's, in its own route
     result["uncertain"] = result.get("source") == "clm" and result["confidence"] < scenario.confidence_threshold
     request = {"text": text, "route": route, "answers": result["answers"],
                "rules": _rules(scenario, result["answers"]), "facts": []}
+    if context is not None:
+        request["context"] = context
 
     informed = _inform(request, scenario, router, tools)
 
