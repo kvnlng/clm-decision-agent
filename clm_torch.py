@@ -224,7 +224,8 @@ class TorchEngine:
 
     def _vectors(self, texts: list[str], which: str) -> np.ndarray:
         missing = list(dict.fromkeys(text for text in texts if (which, text) not in self.cache))
-        tracing.add("cache_hits", len(texts) - sum((which, text) not in self.cache for text in texts))
+        # A text repeated in one call is encoded once, so its repeats count as hits
+        tracing.add("cache_hits", len(texts) - len(missing))
         tracing.add("cache_misses", len(missing))
         if missing:
             for text, vector in zip(missing, self.project(self.embed(missing), which)):

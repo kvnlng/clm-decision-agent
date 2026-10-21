@@ -14,9 +14,16 @@ STAGES = {"waiting for CLM": "lock_wait_ms", "encode": "encode_ms", "heads": "he
 
 
 def load(path: str) -> list[dict]:
-    """The trace's lines, one dict per call."""
+    """The trace's lines, one dict per call. A last line cut off mid-write, when the server was stopped, is left
+    out."""
     with open(path, encoding="utf-8") as file:
-        return [json.loads(line) for line in file if line.strip()]
+        lines = [line for line in file if line.strip()]
+    records = [json.loads(line) for line in lines[:-1]]
+    try:
+        records.extend(json.loads(line) for line in lines[-1:])
+    except ValueError:
+        pass
+    return records
 
 
 def _stages(record: dict) -> dict[str, float]:

@@ -2,13 +2,18 @@
 
 Each line says how long the call took and where the time went: waiting for CLM, encoding text, the
 heads, the scenario's tools, and matching stored corrections. The engines and the decision report into
-the call being traced; outside a traced call, reporting does nothing. trace_report.py summarises a file.
+the call being traced; outside a traced call, reporting does nothing. A background thread writes the
+lines, so writing costs a call nothing and a trace that cannot be written never fails one.
+trace_report.py summarises a file.
 """
 from __future__ import annotations
 
+import atexit
 import contextlib
 import contextvars
 import json
+import queue
+import sys
 import threading
 import time
 from pathlib import Path
@@ -16,6 +21,11 @@ from typing import Generator
 
 # The record of the call being traced on this thread, or None
 _CURRENT: contextvars.ContextVar[dict | None] = contextvars.ContextVar("trace", default=None)
+
+
+def active() -> bool:
+    """Whether a call is being traced, for counts that cost something to work out."""
+    return _CURRENT.get() is not None
 
 
 def add(key: str, amount: float = 1) -> None:
@@ -50,7 +60,36 @@ class TraceWriter:
 
     def __init__(self, path, text: bool = False):
         self.path, self.text = Path(path), text
-        self._lock = threading.Lock()
+        self._records: queue.SimpleQueue = queue.SimpleQueue()
+        self._stopped = False
+        self._thread = threading.Thread(target=self._write, name="trace-writer", daemon=True)
+        self._thread.start()
+        atexit.register(self.close)
+
+    def _write(self) -> None:
+        """Write records as they come until close() sends None. On a failure, say so once and stop tracing."""
+        file = None
+        while (record := self._records.get()) is not None:
+            if self._stopped:
+                continue
+            try:
+                line = json.dumps(record) + "\n"
+                # Opened once and kept open for the writer's life, so it is closed below, not by a with
+                file = file or self.path.open("a", encoding="utf-8")  # pylint: disable=consider-using-with
+                file.write(line)
+                if self._records.empty():
+                    file.flush()
+            except (OSError, TypeError, ValueError) as error:
+                self._stopped = True
+                print(f"warning: tracing stopped: cannot write to {self.path}: {error}", file=sys.stderr)
+        if file:
+            file.close()
+
+    def close(self) -> None:
+        """Write what is left and stop. Called at exit too."""
+        if self._thread.is_alive():
+            self._records.put(None)
+            self._thread.join()
 
     @contextlib.contextmanager
     def call(self, tool: str, request_text: str | None = None) -> Generator[dict]:
@@ -68,6 +107,5 @@ class TraceWriter:
         finally:
             _CURRENT.reset(token)
             record["ms"] = (time.perf_counter() - start) * 1000
-            line = json.dumps(record) + "\n"
-            with self._lock, self.path.open("a", encoding="utf-8") as file:
-                file.write(line)
+            if not self._stopped:
+                self._records.put(record)

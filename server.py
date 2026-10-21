@@ -75,7 +75,8 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         acting tool."""
         with traced("decide", text) as record:
             result = clm(lambda: decision.decide(text, scenario, router, tools))
-            record["outcome"] = {key: result[key] for key in ("route", "confidence", "uncertain", "source")}
+            if trace:
+                record["outcome"] = {key: result.get(key) for key in ("route", "confidence", "uncertain", "source")}
             return result
 
     @server.tool(annotations=READ_ONLY)

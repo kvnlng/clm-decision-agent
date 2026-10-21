@@ -29,14 +29,15 @@ class MlxEngine:
 
     def answer(self, state, questions: dict[str, dict]) -> dict:
         """CLM's answers to typed questions about a state."""
-        tracing.add("clm_calls")
-        # The build encodes and projects inside answer(), so its cache is checked here for the trace
-        pairs = clm_schema.build_pairs(state, questions).values()
-        texts = [("state", pair[0]) for pair in pairs] + [("action", text) for pair in pairs for text in pair[2]]
-        missing = {key for key in texts if key not in self.engine.cache}
-        tracing.add("cache_hits", sum(key not in missing for key in texts))
-        tracing.add("cache_misses", len(missing))
-        tracing.add("texts_encoded", len(missing))
+        if tracing.active():
+            # The build encodes and projects inside answer(), so its cache is checked here for the trace
+            pairs = clm_schema.build_pairs(state, questions).values()
+            texts = [("state", pair[0]) for pair in pairs] + [("action", text) for pair in pairs for text in pair[2]]
+            missing = {key for key in texts if key not in self.engine.cache}
+            tracing.add("clm_calls")
+            tracing.add("cache_hits", len(texts) - len(missing))
+            tracing.add("cache_misses", len(missing))
+            tracing.add("texts_encoded", len(missing))
         before = self.engine.tokens_spent
         with tracing.timed("encode_ms"):
             reply = self.engine.answer(state, questions)

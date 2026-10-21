@@ -10,9 +10,11 @@ from conftest import BASE_TOML, FakeRouter, decision
 from mcp import Client
 from test_clm_torch import CONFIG, FakeEncoder, StubTokenizer, TinyModel, tiny_weights
 
+import clm_router
 import server
 import trace_report
 import tracing
+from clm_common import ClmError
 from clm_router import LocalContrastiveRouter, MlxEngine
 from clm_torch import TorchEncoder, TorchEngine, TorchHeads
 from scenario import load_scenario
@@ -27,7 +29,10 @@ def anyio_backend():
     return "asyncio"
 
 
-def lines(path):
+def lines(path, writer=None):
+    """The trace's records; `writer` is closed first, so its background thread has written everything."""
+    if writer is not None:
+        writer.close()
     return [json.loads(line) for line in path.read_text().splitlines()]
 
 
@@ -38,7 +43,7 @@ def test_a_traced_call_writes_one_line_with_its_counts(tmp_path):
         tracing.add("cache_hits")
         with tracing.timed("encode_ms"):
             pass
-    [record] = lines(tmp_path / "trace.jsonl")
+    [record] = lines(tmp_path / "trace.jsonl", writer)
     assert record["tool"] == "decide"
     assert record["counts"]["cache_hits"] == 3
     assert record["counts"]["encode_ms"] >= 0
@@ -47,26 +52,51 @@ def test_a_traced_call_writes_one_line_with_its_counts(tmp_path):
 
 
 def test_a_trace_leaves_out_the_text_unless_asked(tmp_path):
-    with tracing.TraceWriter(tmp_path / "plain.jsonl").call("decide", TEXT):
-        pass
-    with tracing.TraceWriter(tmp_path / "text.jsonl", text=True).call("decide", TEXT):
-        pass
-    assert TEXT not in (tmp_path / "plain.jsonl").read_text()
-    assert lines(tmp_path / "text.jsonl")[0]["text"] == TEXT
+    plain, with_text = tracing.TraceWriter(tmp_path / "plain.jsonl"), tracing.TraceWriter(tmp_path / "text.jsonl",
+                                                                                          text=True)
+    for writer in (plain, with_text):
+        with writer.call("decide", TEXT):
+            pass
+    assert "text" not in lines(tmp_path / "plain.jsonl", plain)[0]
+    assert lines(tmp_path / "text.jsonl", with_text)[0]["text"] == TEXT
 
 
-def test_counting_outside_a_traced_call_does_nothing():
+def test_counting_outside_a_traced_call_does_nothing(tmp_path):
+    assert not tracing.active()
     tracing.add("cache_hits")
     with tracing.timed("encode_ms"):
         pass
     tracing.note_tool("lookup", "inform", 1.0, "done")
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
+    with writer.call("decide"):
+        assert tracing.active()
+    assert lines(tmp_path / "trace.jsonl", writer)[0]["counts"] == {}
+
+
+def test_a_trace_that_cannot_be_written_leaves_calls_working(tmp_path, capsys):
+    writer = tracing.TraceWriter(tmp_path / "missing" / "trace.jsonl")
+    for _ in range(3):
+        with writer.call("decide"):
+            pass
+    writer.close()
+    assert capsys.readouterr().err.count("tracing stopped") == 1
+
+
+def test_a_count_json_cannot_hold_stops_tracing_not_the_call(tmp_path, capsys):
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
+    with writer.call("decide"):
+        tracing.add("odd", np.float16(1))
+    with writer.call("decide"):
+        pass
+    writer.close()
+    assert "tracing stopped" in capsys.readouterr().err
 
 
 def test_a_failed_call_is_still_written(tmp_path):
     writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
     with pytest.raises(ValueError), writer.call("decide"):
         raise ValueError("no")
-    assert lines(tmp_path / "trace.jsonl")[0]["outcome"] == {"error": "ValueError"}
+    assert lines(tmp_path / "trace.jsonl", writer)[0]["outcome"] == {"error": "ValueError"}
 
 
 def test_calls_on_threads_are_traced_separately(tmp_path):
@@ -82,7 +112,7 @@ def test_calls_on_threads_are_traced_separately(tmp_path):
         thread.start()
     for thread in threads:
         thread.join()
-    assert {r["tool"]: r["counts"]["cache_hits"] for r in lines(tmp_path / "trace.jsonl")} == \
+    assert {r["tool"]: r["counts"]["cache_hits"] for r in lines(tmp_path / "trace.jsonl", writer)} == \
         {"call1": 1, "call2": 2}
 
 
@@ -92,17 +122,16 @@ def traced_server(write_scenario, tmp_path):
     scenario = load_scenario(write_scenario(BASE_TOML))
     urgent = {"urgent": {"type": "noul", "noul": 0.9}}
     router = FakeRouter(decision("Billing", answers=urgent), asks=[urgent])
-    path = tmp_path / "trace.jsonl"
-    return server.build_server(scenario, router, load_tools(scenario), review=False,
-                               trace=tracing.TraceWriter(path)), path
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
+    return server.build_server(scenario, router, load_tools(scenario), review=False, trace=writer), writer
 
 
 @pytest.mark.anyio
 async def test_decide_is_traced_with_its_tools_and_outcome(traced_server):
-    mcp_server, path = traced_server
+    mcp_server, writer = traced_server
     async with Client(mcp_server) as client:
         await client.call_tool("decide", {"text": TEXT})
-    [record] = lines(path)
+    [record] = lines(writer.path, writer)
     assert record["tool"] == "decide"
     assert [(t["tool"], t["kind"], t["status"]) for t in record["tools"]] == \
         [("lookup", "inform", "done"), ("act", "act", "done")]
@@ -114,11 +143,11 @@ async def test_decide_is_traced_with_its_tools_and_outcome(traced_server):
 
 @pytest.mark.anyio
 async def test_check_call_and_describe_are_traced(traced_server):
-    mcp_server, path = traced_server
+    mcp_server, writer = traced_server
     async with Client(mcp_server) as client:
         await client.call_tool("check_call", {"text": TEXT, "call": {"tool": "refund"}})
         await client.call_tool("describe", {})
-    check, describe = lines(path)
+    check, describe = lines(writer.path, writer)
     assert (check["tool"], check["outcome"]) == ("check_call", {"p": 0.9, "approved": True})
     assert describe["tool"] == "describe"
 
@@ -130,16 +159,21 @@ def test_the_torch_engine_counts_cache_texts_tokens_and_padding(tmp_path):
         engine.answer("a", URGENT)
     with writer.call("second"):
         engine.answer("a", URGENT)
-    first, second = (r["counts"] for r in lines(tmp_path / "trace.jsonl"))
+    with writer.call("duplicates"):
+        engine._vectors(["new", "new"], "state")  # pylint: disable=protected-access
+    first, second, duplicates = (r["counts"] for r in lines(tmp_path / "trace.jsonl", writer))
     # One state text and the noul question's two option texts
     assert (first["clm_calls"], first["cache_hits"], first["cache_misses"]) == (1, 0, 3)
     assert (second["cache_hits"], second["cache_misses"]) == (3, 0)
     assert first["head_ms"] >= 0 and "head_ms" not in second
+    # The second "new" is served by the first one's encoding
+    assert (duplicates["cache_hits"], duplicates["cache_misses"]) == (1, 1)
 
     encoder = TorchEncoder("test/encoder", None, "cpu", loaded=(TinyModel(), StubTokenizer()))
+    writer = tracing.TraceWriter(tmp_path / "encode.jsonl")
     with writer.call("encode"):
         encoder.embed(["ab", "abcd"])
-    counts = lines(tmp_path / "trace.jsonl")[2]["counts"]
+    counts = lines(tmp_path / "encode.jsonl", writer)[0]["counts"]
     assert (counts["encoder_batches"], counts["texts_encoded"], counts["tokens"], counts["padded_tokens"]) == \
         (1, 2, 6, 8)
     assert counts["encode_ms"] >= 0
@@ -172,18 +206,26 @@ def test_the_mlx_engine_counts_cache_texts_and_tokens(tmp_path):
         engine.answer("a", URGENT)
     with writer.call("embed"):
         engine.embed(["a", "b"])
-    first, second, embed = (r["counts"] for r in lines(tmp_path / "trace.jsonl"))
+    first, second, embed = (r["counts"] for r in lines(tmp_path / "trace.jsonl", writer))
     assert (first["clm_calls"], first["cache_misses"], first["tokens"]) == (1, 3, 7)
     assert (second["cache_hits"], second["cache_misses"]) == (1, 2)
     assert (embed["texts_encoded"], embed["tokens"]) == (2, 10)
 
 
+def test_the_mlx_engine_skips_the_cache_check_when_not_tracing(monkeypatch):
+    engine = MlxEngine.__new__(MlxEngine)
+    engine.engine = FakeMlxEngine()
+    monkeypatch.setattr(clm_router.clm_schema, "build_pairs", None)
+    engine.answer("a", URGENT)
+
+
 def test_matching_corrections_is_timed(tmp_path):
     router = LocalContrastiveRouter(engine=None)
     router.verdicts = [([1.0, 0.0], "Billing")]
-    with tracing.TraceWriter(tmp_path / "trace.jsonl").call("decide"):
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
+    with writer.call("decide"):
         assert router.match_verdict([1.0, 0.0], 0.9) == ("Billing", 1.0)
-    assert lines(tmp_path / "trace.jsonl")[0]["counts"]["match_ms"] >= 0
+    assert lines(tmp_path / "trace.jsonl", writer)[0]["counts"]["match_ms"] >= 0
 
 
 def record(started, ms, tool="decide", tools=(), **counts):
@@ -220,6 +262,13 @@ def test_the_report_prints_a_table(tmp_path, capsys):
     assert "decide: 3 calls" in out and "encode" in out
 
 
+def test_the_report_skips_a_last_line_cut_off_mid_write(tmp_path, capsys):
+    path = tmp_path / "trace.jsonl"
+    path.write_text(json.dumps(record(100.0, 10.0)) + "\n" + '{"tool": "dec')
+    assert trace_report.main([str(path)]) == 0
+    assert "decide: 1 calls" in capsys.readouterr().out
+
+
 def test_the_report_explains_a_missing_file(tmp_path, capsys):
     assert trace_report.main([str(tmp_path / "missing.jsonl")]) == 2
     assert "error:" in capsys.readouterr().err
@@ -236,3 +285,32 @@ def test_the_server_takes_trace_options(write_scenario, monkeypatch, tmp_path):
 class FakeServer:
     def run(self, transport):
         pass
+
+
+@pytest.mark.anyio
+async def test_a_failing_clm_or_tool_is_traced_and_reported(write_scenario, tmp_path):
+    scenario = load_scenario(write_scenario(BASE_TOML.replace('tool = "act"', 'tool = "broken"')))
+    urgent = {"urgent": {"type": "noul", "noul": 0.9}}
+    router = FakeRouter(decision("Billing", answers=urgent), asks=[urgent])
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
+    mcp_server = server.build_server(scenario, router, load_tools(scenario), review=False, trace=writer)
+
+    def no_clm(*args):
+        raise ClmError("CLM is not loaded")
+    async with Client(mcp_server) as client:
+        await client.call_tool("decide", {"text": TEXT})
+        router.check_tool = no_clm
+        failed = await client.call_tool("check_call", {"text": TEXT, "call": {}})
+    assert failed.is_error
+    decided, checked = lines(writer.path, writer)
+    assert decided["tools"][-1]["status"] == "failed"
+    assert checked["outcome"] == {"error": "ToolError"}
+
+
+@pytest.mark.anyio
+async def test_without_tracing_decide_reads_only_what_it_returns(write_scenario):
+    scenario = load_scenario(write_scenario())
+    found = decision("Tech")
+    del found["source"]
+    async with Client(server.build_server(scenario, FakeRouter(found), {}, review=False)) as client:
+        assert not (await client.call_tool("decide", {"text": TEXT})).is_error

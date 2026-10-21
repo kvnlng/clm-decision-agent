@@ -76,7 +76,9 @@ the cache hit rate, texts and tokens per call, and how much of what was encoded 
 
 - The trace leaves out the requests' text. `--trace-text` adds it; the trace then needs the same
   care as the corrections record ([data-handling.md](data-handling.md)).
-- Tracing is off unless asked for. When on, it adds little: a few clock readings per call.
+- Tracing is off unless asked for. When on, it adds little: a few clock readings and counts per
+  call. A background thread writes the file; if it cannot, the server says so once and stops
+  tracing, and decisions carry on.
 - On a Mac, the MLX build encodes and applies the heads inside its own code, so its trace counts
   the heads' time as encoding and has no batch or padding counts.
 - A request seen before is found in CLM's cache, so repeating the same requests shows a higher
