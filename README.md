@@ -46,7 +46,8 @@ You need Python 3.12 or later, [uv](https://docs.astral.sh/uv/), and one of:
 - **Linux with an NVIDIA GPU of 24 GB or more**, such as an A100. CLM runs with PyTorch; the
   first run downloads about 16 GB. Before step 2, switch the example to the torch backend: in
   `examples/service_desk/scenario.toml`, comment out the MLX lines under `[clm]` and uncomment
-  the torch ones. A plain CPU works too, slowly. There is a `Dockerfile`:
+  the torch ones. Install a C compiler and Python's headers first (on Ubuntu,
+  `sudo apt install build-essential python3.12-dev`). A plain CPU works too, slowly. There is a `Dockerfile`:
   [docs/serving.md](docs/serving.md#in-docker).
 
 **1. Install.** The same command on both machines.
@@ -149,8 +150,8 @@ Measured on the example scenario, on an M5 Max with 64 GB:
   tool calls, in under 3 seconds.
 - **The two backends agree.** With the released heads, the torch backend (on the Mac's GPU)
   and the MLX build chose the same route for 79 of 81 requests from the example. Trained with
-  the torch backend, the example also reached 98% and 15 of 17. CLM has not yet been run on an
-  NVIDIA GPU: see [docs/models.md](docs/models.md#what-has-been-checked).
+  the torch backend, the example also reached 98% and 15 of 17, on the Mac and on an NVIDIA
+  A100 alike: see [docs/models.md](docs/models.md#what-has-been-checked).
 
 ## Layout
 
