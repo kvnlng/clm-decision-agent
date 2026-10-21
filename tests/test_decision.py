@@ -278,3 +278,66 @@ def test_a_routes_second_tool_sees_the_first_tools_facts(setup):
     scenario, tools = setup(BASE_TOML.replace('inform = ["lookup"]', 'inform = ["lookup", "act"]'))
     decide(TEXT, scenario, FakeRouter(decision("Billing"), asks=[urgent(0.2)]), tools)
     assert fake_tools.CALLS[1][1]["facts"] == FACTS
+
+
+OPTIONS_TOML = BASE_TOML.replace('inform = ["lookup"]\n', '''inform = ["lookup", "alternatives"]
+
+[routes.Billing.options]
+tool = "alternatives"
+instructions = "Which refund suits them?"
+''')
+FLIGHTS = [{"id": "a", "text": "Flight A tonight"}, {"id": "b", "text": "Flight B tomorrow"}]
+
+
+@pytest.fixture
+def options():
+    def _set(value):
+        fake_tools.OPTIONS["value"] = value
+    yield _set
+    fake_tools.OPTIONS["value"] = []
+
+
+def test_the_chosen_option_reaches_the_acting_tool(setup, options):
+    options(FLIGHTS)
+    scenario, tools = setup(OPTIONS_TOML)
+    router = FakeRouter(decision("Billing", answers=urgent(0.9)), asks=[urgent(0.9)], ranked=("b", 0.8))
+    result = decide(TEXT, scenario, router, tools)
+    assert result["option"] == {"id": "b", "text": "Flight B tomorrow", "confidence": 0.8,
+                                "probabilities": {"a": pytest.approx(0.2), "b": 0.8}, "uncertain": False}
+    assert router.rank_calls == [(routed_text(TEXT, FACTS), {"a": "Flight A tonight", "b": "Flight B tomorrow"},
+                                  "Which refund suits them?")]
+    acted = [request for name, request in fake_tools.CALLS if name == "act"]
+    assert acted[0]["option"] == {"id": "b", "text": "Flight B tomorrow"}
+    assert result["actions"][0]["status"] == "done"
+
+
+def test_an_uncertain_option_skips_the_routes_actions(setup, options):
+    options(FLIGHTS)
+    scenario, tools = setup(OPTIONS_TOML)
+    router = FakeRouter(decision("Billing", answers=urgent(0.9)), asks=[urgent(0.9)], ranked=("a", 0.4))
+    result = decide(TEXT, scenario, router, tools)
+    assert result["option"]["uncertain"] is True
+    assert result["actions"] == [{"tool": "act", "status": "skipped", "reason": "option uncertain"}]
+
+
+@pytest.mark.parametrize("value", [[], "x", [{"id": "a"}], [{"id": "a", "text": "A"}, {"id": "a", "text": "B"}]])
+def test_no_or_malformed_options_skip_the_routes_actions(setup, options, value):
+    options(value)
+    scenario, tools = setup(OPTIONS_TOML)
+    result = decide(TEXT, scenario, FakeRouter(decision("Billing", answers=urgent(0.9)), asks=[urgent(0.9)]), tools)
+    assert result["option"] is None
+    assert result["actions"] == [{"tool": "act", "status": "skipped", "reason": "no option"}]
+    found = next(entry for entry in result["informed"] if entry["tool"] == "alternatives")
+    assert (found["status"] == "failed") == (value != [])
+
+
+def test_routes_without_options_have_no_option_key(setup, options):
+    options(FLIGHTS)
+    scenario, tools = setup(OPTIONS_TOML)
+    assert "option" not in decide(TEXT, scenario, FakeRouter(decision("Tech")), tools)
+
+
+def test_describe_lists_a_routes_options(setup):
+    routes = {route["name"]: route for route in describe(setup(OPTIONS_TOML)[0])["routes"]}
+    assert routes["Billing"]["options"] == {"tool": "alternatives", "instructions": "Which refund suits them?"}
+    assert "options" not in routes["Tech"]

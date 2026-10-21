@@ -51,6 +51,15 @@ class Rule:
 
 
 @dataclass(frozen=True)
+class Options:
+    """A route's options fetched at decision time: the informing tool that finds them, and the question CLM is
+    asked to choose among them."""
+
+    tool: str
+    instructions: str
+
+
+@dataclass(frozen=True)
 class Route:
     """One kind of request: what it means to CLM (description) and the tools that inform its decisions."""
 
@@ -58,6 +67,7 @@ class Route:
     description: str
     examples: tuple[str, ...] = ()
     inform: tuple[str, ...] = ()
+    options: Options | None = None
 
 
 @dataclass(frozen=True)
@@ -196,9 +206,15 @@ def _route(name: str, table) -> Route:
     for key in RETIRED_ROUTE_KEYS:
         if key in table:
             raise ScenarioError(f"{where}.{key} is no longer used; see docs/scenario.md")
-    return Route(name, _text(table, "description", where),
-                 tuple(_names(table, "examples", where, "example messages")),
-                 tuple(_names(table, "inform", where, "tool names")))
+    inform = tuple(_names(table, "inform", where, "tool names"))
+    options = None
+    if "options" in table:
+        found = _table(table, "options")
+        options = Options(_text(found, "tool", f"{where}.options"), _text(found, "instructions", f"{where}.options"))
+        if options.tool not in inform:
+            raise ScenarioError(f"{where}.options.tool must be one of the route's informing tools ({where}.inform)")
+    return Route(name, _text(table, "description", where), tuple(_names(table, "examples", where, "example messages")),
+                 inform, options)
 
 
 def _question(name: str, table) -> dict:

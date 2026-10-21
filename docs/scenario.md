@@ -152,6 +152,34 @@ inform = ["table_tags"]            # run first; the route hears their facts
   `correct` the same `context` as `decide`, so the tools find the same facts.
 - `describe` lists these tools as `route_facts_from`.
 
+### Options fetched at decision time
+
+Some decisions are a choice among things that only exist at that moment: which on-call engineer,
+which runbook, which knowledge-base article. A route can have an informing tool find the
+candidates and CLM choose among them:
+
+```toml
+[routes.Page_On_Call]
+description = "Someone needs to look at this now."
+inform = ["on_call_now"]
+
+[routes.Page_On_Call.options]
+tool = "on_call_now"               # one of the route's informing tools
+instructions = "Who is best placed to handle this?"
+```
+
+The tool returns `{"options": [{"id": "...", "text": "..."}, ...]}`, and may return `"facts"`
+too. The tool decides what is possible, such as who is on call and free; CLM judges which fits,
+reading each option's text against the request and the facts. So describe each option in plain
+words, with what the tool worked out: "Sam, database team, on call until 18:00, two open pages".
+
+- The reply gains `option`: `id`, `text`, `confidence`, `probabilities` and `uncertain` (below
+  `[routing] confidence_threshold`), or `null` when the tool found none or returned something
+  else. `informed` says which.
+- The acting tools get the chosen option as `request["option"]` (`id` and `text`).
+- On that route, actions are skipped with the reason `no option` or `option uncertain`.
+- Routes without `options` have no `option` in their reply.
+
 ### Acting tools
 
 An acting tool runs after the decision, on the routes you list and, optionally, only when a

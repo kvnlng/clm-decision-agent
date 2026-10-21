@@ -169,6 +169,12 @@ class LocalContrastiveRouter:
         answers = self.engine.answer(state_text, {ROUTE_QID: _routing_question(scenario)})["answers"]
         return self._routed(state_text, answers[ROUTE_QID], scenario)
 
+    def rank(self, state_text: str, options: dict[str, str], instructions: str) -> dict:
+        """Which of `options` ({id: description}) fits the state: {choice, confidence, probabilities}."""
+        question = {"type": "choice", "instructions": instructions, "criteria": options}
+        answer = self.engine.answer(state_text, {"option": question})["answers"]["option"]
+        return {key: answer[key] for key in ("choice", "confidence", "probabilities")}
+
     def _routed(self, state_text: str, route: dict, scenario: Scenario) -> dict:
         decision = {
             "route": route["choice"],

@@ -220,3 +220,19 @@ def test_route_asks_only_the_routing_question(scenario):
                       "source": "clm"}
     state, questions = engine.calls[0]
     assert state.endswith("- Fare A") and list(questions) == [ROUTE_QID]
+
+
+def test_rank_asks_one_choice_question_over_the_options():
+    engine = FakeEngine({"option": {"type": "choice", "choice": "b", "confidence": 0.7,
+                                    "probabilities": {"a": 0.3, "b": 0.7}}})
+    ranked = LocalContrastiveRouter(engine=engine).rank("Late again", {"a": "Flight A", "b": "Flight B"}, "Which?")
+    assert ranked == {"choice": "b", "confidence": 0.7, "probabilities": {"a": 0.3, "b": 0.7}}
+    assert engine.calls == [("Late again", {"option": {"type": "choice", "instructions": "Which?",
+                                                       "criteria": {"a": "Flight A", "b": "Flight B"}}})]
+
+
+def test_a_single_option_is_chosen_with_full_confidence():
+    from test_clm_torch import CONFIG, FakeEncoder, tiny_weights  # pylint: disable=import-outside-toplevel
+    from clm_torch import TorchEngine, TorchHeads  # pylint: disable=import-outside-toplevel
+    router = LocalContrastiveRouter(engine=TorchEngine(FakeEncoder(), TorchHeads(tiny_weights(), CONFIG, "cpu")))
+    assert router.rank("Late again", {"a": "Flight A"}, "Which?")["confidence"] == pytest.approx(1.0)

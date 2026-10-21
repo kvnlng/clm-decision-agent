@@ -37,6 +37,21 @@ def _facts(outcome: dict) -> dict:
     return {"status": "done", "facts": facts}
 
 
+def _options(outcome: dict) -> dict:
+    """An options tool's outcome, checked: {"status", "facts", "options"} or {"status", "error"}."""
+    if outcome["status"] == "failed":
+        return outcome
+    result = outcome["result"] if isinstance(outcome["result"], dict) else {}
+    found = result.get("options")
+    if not (isinstance(found, list) and all(isinstance(option, dict) and isinstance(option.get("id"), str)
+                                            and isinstance(option.get("text"), str) for option in found)
+            and len({option["id"] for option in found}) == len(found)):
+        return {"status": "failed",
+                "error": "an options tool must return {'options': [{'id': ..., 'text': ...}, ...]} with distinct ids"}
+    checked = _facts({"status": "done", "result": {"facts": result.get("facts", [])}})
+    return checked if checked["status"] == "failed" else {**checked, "options": found}
+
+
 def _rules(scenario: Scenario, answers: dict) -> list[dict]:
     return [{"when": rule.when, "tell": rule.tell} for rule in scenario.matching_rules(answers)]
 
@@ -83,10 +98,12 @@ def _inform(request: dict, scenario: Scenario, router, tools: dict[str, Callable
     `request` and given to the questions they inform. A tool that already ran for routing is not run again."""
     informed = list(earlier)
     request["facts"] = facts_of(informed)
-    for name in scenario.routes[request["route"]].inform:
+    route = scenario.routes[request["route"]]
+    for name in route.inform:
         if name not in {outcome["tool"] for outcome in earlier}:
             # Each tool sees the facts found before it
-            informed.append({"tool": name, **_facts(_run(tools[name], dict(request), "inform"))})
+            check = _options if route.options and name == route.options.tool else _facts
+            informed.append({"tool": name, **check(_run(tools[name], dict(request), "inform"))})
             request["facts"] = facts_of(informed)
     groups = _heard(scenario, informed)
     answers = dict(request["answers"])
@@ -97,36 +114,79 @@ def _inform(request: dict, scenario: Scenario, router, tools: dict[str, Callable
     return informed
 
 
-def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable], context: dict | None = None) -> dict:
-    """The scenario's decision on `text`, with what its tools found and did. `context` (such as a booking or
-    user ID) is passed to the tools; CLM never reads it."""
-    earlier = route_facts(text, scenario, tools, context)
+def _choose(request: dict, scenario: Scenario, router, informed: list[dict]) -> dict | None:
+    """CLM's choice among the options the route's options tool fetched, or None if there are none. The
+    acting tools get it as request["option"]."""
+    spec = scenario.routes[request["route"]].options
+    if spec is None:
+        return None
+    found = next((outcome for outcome in informed if outcome["tool"] == spec.tool), {})
+    offered = found.get("options") if found.get("status") == "done" else None
+    request["option"] = None
+    if not offered:
+        return None
+    ranked = router.rank(routed_text(request["text"], request["facts"]),
+                         {option["id"]: option["text"] for option in offered}, spec.instructions)
+    chosen = next(option for option in offered if option["id"] == ranked["choice"])
+    request["option"] = {"id": chosen["id"], "text": chosen["text"]}
+    return {**request["option"], "confidence": ranked["confidence"], "probabilities": ranked["probabilities"],
+            "uncertain": ranked["confidence"] < scenario.confidence_threshold}
+
+
+def _option_problem(scenario: Scenario, route: str, option: dict | None) -> str | None:
+    """Why a route with options cannot act: no option, or an uncertain one. None if it can."""
+    if not scenario.routes[route].options:
+        return None
+    if option is None:
+        return "no option"
+    return "option uncertain" if option["uncertain"] else None
+
+
+def _route(text: str, scenario: Scenario, router, earlier: list[dict]) -> dict:
+    """The route and the answers to the questions, decided again with routing's facts if it has any."""
     result = router.decide(text, scenario)
     if facts_of(earlier):
         before = result
         result = {key: value for key, value in before.items() if key not in ROUTE_KEYS}
         result.update(router.route(routed_text(text, facts_of(earlier)), scenario),
                       before_facts={key: before[key] for key in ("route", "confidence", "probabilities")})
-    route = result["route"]
     # A route the owner chose is not second-guessed: the confidence is CLM's, in its own route
     result["uncertain"] = result.get("source") == "clm" and result["confidence"] < scenario.confidence_threshold
-    request = {"text": text, "route": route, "answers": result["answers"],
+    return result
+
+
+def _act(result: dict, request: dict, option: dict | None, scenario: Scenario,
+         tools: dict[str, Callable]) -> list[dict]:
+    """Run the acting tools the route and the answers call for, or say why each was skipped."""
+    actions = []
+    for action in scenario.actions:
+        if result["route"] not in action.routes or (action.when and not action.when.applies(request["answers"])):
+            continue
+        skip = "route uncertain" if result["uncertain"] else _option_problem(scenario, result["route"], option)
+        if skip:
+            actions.append({"tool": action.tool, "status": "skipped", "reason": skip})
+        else:
+            actions.append({"tool": action.tool, **_run(tools[action.tool], dict(request), "act")})
+    return actions
+
+
+def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable], context: dict | None = None) -> dict:
+    """The scenario's decision on `text`, with what its tools found and did. `context` (such as a booking or
+    user ID) is passed to the tools; CLM never reads it."""
+    earlier = route_facts(text, scenario, tools, context)
+    result = _route(text, scenario, router, earlier)
+    request = {"text": text, "route": result["route"], "answers": result["answers"],
                "rules": _rules(scenario, result["answers"]), "facts": []}
     if context is not None:
         request["context"] = context
-
     informed = _inform(request, scenario, router, tools, earlier)
-
-    actions = []
-    for action in scenario.actions:
-        if route not in action.routes or (action.when and not action.when.applies(request["answers"])):
-            continue
-        if result["uncertain"]:
-            actions.append({"tool": action.tool, "status": "skipped", "reason": "route uncertain"})
-        else:
-            actions.append({"tool": action.tool, **_run(tools[action.tool], dict(request), "act")})
-    return {**result, "answers": request["answers"], "rules": request["rules"], "informed": informed,
-            "actions": actions}
+    option = _choose(request, scenario, router, informed)
+    actions = _act(result, request, option, scenario, tools)
+    reply = {**result, "answers": request["answers"], "rules": request["rules"], "informed": informed,
+             "actions": actions}
+    if scenario.routes[result["route"]].options:
+        reply["option"] = option
+    return reply
 
 
 def check_call(text: str, call: dict, scenario: Scenario, router) -> dict:
@@ -138,7 +198,9 @@ def check_call(text: str, call: dict, scenario: Scenario, router) -> dict:
 def describe(scenario: Scenario) -> dict:
     """The decisions the scenario makes: its routes, questions and rules, and the facts the route considers."""
     described = {
-        "routes": [{"name": route.name, "description": route.description} for route in scenario.routes.values()],
+        "routes": [{"name": route.name, "description": route.description,
+                    **({"options": {"tool": route.options.tool, "instructions": route.options.instructions}}
+                       if route.options else {})} for route in scenario.routes.values()],
         "questions": [{"name": name, "type": question["type"], "instructions": question["instructions"]}
                       for name, question in scenario.questions.items()],
         "rules": [{"when": rule.when, "tell": rule.tell} for rule in scenario.rules],

@@ -43,4 +43,13 @@ def slow(request):
     return {"slow": True}
 
 
-TOOLS = [lookup, act, broken, unserialisable, slow]
+OPTIONS = {"value": []}   # what alternatives() returns as its options; a test sets it
+
+
+def alternatives(request):
+    """An informing tool that fetches options."""
+    CALLS.append(("alternatives", request))
+    return {"options": OPTIONS["value"]}
+
+
+TOOLS = [lookup, act, broken, unserialisable, slow, alternatives]
