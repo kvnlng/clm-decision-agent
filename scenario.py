@@ -11,11 +11,11 @@ from pathlib import Path
 
 QUESTION_TYPES = ("noul", "choice", "score")
 BACKENDS = ("mlx", "ollama", "openai")
-CLM_BACKENDS = ("mlx", "server")
-DEFAULT_SERVER_MODEL = "clm-latest"
+CLM_BACKENDS = ("mlx", "torch")
+CLM_DEVICES = ("cuda", "mps", "cpu")
 # Settings of the chat assistant this framework used to be; a scenario that still has them is out of date
 RETIRED_ROUTE_KEYS = ("system_prompt", "tools", "fields")
-DEFAULT_CLM = "mlx-community/CLM-v0.1-8B-MLX-4bit"
+DEFAULT_CLM = {"mlx": "mlx-community/CLM-v0.1-8B-MLX-8bit", "torch": "Contrastive-LM/CLM-v0.1-8B"}
 DEFAULT_GENERATOR = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
 DEFAULT_TOOL_CHECK = "Is this tool call appropriate for what the user asked?"
 # Completes "Write N different ..." in synthesize.py's request to the generator
@@ -101,8 +101,7 @@ class Scenario:  # pylint: disable=too-many-instance-attributes
     tool_settings: dict = field(default_factory=dict)
     clm_heads: Path | None = None
     clm_backend: str = "mlx"
-    clm_url: str | None = None
-    clm_key_env: str | None = None
+    clm_device: str | None = None
     generator_base_url: str | None = None
     generator_key_env: str | None = None
     record_file: Path | None = None
@@ -291,6 +290,25 @@ def _action(index: int, table, routes: dict[str, Route], questions: dict[str, di
     return Action(tool, tuple(names), when, confirm)
 
 
+def _clm_backend(clm: dict) -> tuple[str, str | None]:
+    """-> (backend, device) from [clm]; the settings of the retired clm-serve backend are errors."""
+    backend = clm.get("backend", "mlx")
+    if backend == "server":
+        raise ScenarioError('clm.backend "server" is no longer supported; see docs/models.md')
+    for key in ("url", "api_key_env"):
+        if key in clm:
+            raise ScenarioError(f"clm.{key} is no longer used; see docs/models.md")
+    if backend not in CLM_BACKENDS:
+        raise ScenarioError(f"clm.backend must be one of {', '.join(CLM_BACKENDS)}")
+    device = clm.get("device")
+    if device is not None:
+        if backend != "torch":
+            raise ScenarioError("clm.device applies to the torch backend only")
+        if device not in CLM_DEVICES:
+            raise ScenarioError(f"clm.device must be one of {', '.join(CLM_DEVICES)}")
+    return backend, device
+
+
 def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-locals
     """Read and validate a scenario file; raises ScenarioError with the offending key."""
     path = Path(path)
@@ -309,10 +327,7 @@ def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-loc
     backend = generator.get("backend", "mlx")
     if backend not in BACKENDS:
         raise ScenarioError(f"generator.backend must be one of {', '.join(BACKENDS)}")
-    clm_backend = clm.get("backend", "mlx")
-    if clm_backend not in CLM_BACKENDS:
-        raise ScenarioError(f"clm.backend must be one of {', '.join(CLM_BACKENDS)}")
-    served = clm_backend == "server"
+    clm_backend, clm_device = _clm_backend(clm)
     if "key_env" in record and "key_file" in record:
         raise ScenarioError("record: set key_env or key_file, not both")
     routes = {name: _route(name, table) for name, table in _table(data, "routes").items()}
@@ -335,11 +350,9 @@ def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-loc
     return Scenario(
         path=path,
         sha=hashlib.sha256(raw).hexdigest(),
-        clm_model_id=_text(clm, "model", "clm", DEFAULT_SERVER_MODEL) if served
-        else _text(clm, "model_id", "clm", DEFAULT_CLM),
+        clm_model_id=_text(clm, "model_id", "clm", DEFAULT_CLM[clm_backend]),
         clm_backend=clm_backend,
-        clm_url=_address(clm, "url", "clm").rstrip("/") if served else None,
-        clm_key_env=_optional(clm, "api_key_env", "clm"),
+        clm_device=clm_device,
         generator_base_url=_address(generator, "base_url", "generator") if backend == "openai" else None,
         generator_key_env=_optional(generator, "api_key_env", "generator"),
         record_file=_beside(path, record, "path", "record"),
