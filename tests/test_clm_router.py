@@ -23,6 +23,9 @@ class FakeEngine:
         self.calls.append((state, questions))
         return {"answers": dict(self.answers)}
 
+    def prefetch(self, states, questions):
+        self.prefetched = (list(states), questions)
+
 
 ROUTE_ANSWER = {"type": "choice", "choice": "Billing", "confidence": 0.8,
                 "probabilities": {"Billing": 0.9, "Tech": 0.1}}
@@ -236,3 +239,28 @@ def test_a_single_option_is_chosen_with_full_confidence():
     from clm_torch import TorchEngine, TorchHeads  # pylint: disable=import-outside-toplevel
     router = LocalContrastiveRouter(engine=TorchEngine(FakeEncoder(), TorchHeads(tiny_weights(), CONFIG, "cpu")))
     assert router.rank("Late again", {"a": "Flight A"}, "Which?")["confidence"] == pytest.approx(1.0)
+
+
+def test_decide_batch_matches_decide_one_by_one(scenario):
+    engine = FakeEngine({ROUTE_QID: ROUTE_ANSWER, "urgent": URGENT_ANSWER})
+    router = LocalContrastiveRouter(engine=engine)
+    batch = router.decide_batch(["one", "two"], scenario)
+    assert engine.prefetched[0] == ["one", "two"] and set(engine.prefetched[1]) == {ROUTE_QID, "urgent"}
+    assert batch == [router.decide("one", scenario), router.decide("two", scenario)]
+
+
+class FakeMlxBuild:
+    """The MLX build's Engine as far as prefetch uses it."""
+
+    def __init__(self):
+        self.vectors, self.cache, self.tokens_spent = [], {}, 0
+
+    def _vectors(self, texts, which):
+        self.vectors.append((which, list(texts)))
+
+
+def test_mlx_prefetch_uses_the_builds_vectors():
+    engine = clm_router.MlxEngine.__new__(clm_router.MlxEngine)
+    engine.engine = FakeMlxBuild()
+    engine.prefetch(["a", "b"], {"q": {"type": "noul", "instructions": "Urgent?"}})
+    assert ("state", ["a\n\nUrgent?", "b\n\nUrgent?"]) in engine.engine.vectors

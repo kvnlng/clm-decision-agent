@@ -196,6 +196,14 @@ class FakeMlxEngine:
         return {"answers": {}}
 
 
+class FakeMlxBuild(FakeMlxEngine):
+    """Also encodes in batches, at four tokens a text, as prefetch uses the build."""
+
+    def _vectors(self, texts, which):
+        self.tokens_spent += 4 * len({text for text in texts if (which, text) not in self.cache})
+        self.cache.update({(which, text): 1 for text in texts})
+
+
 def test_the_mlx_engine_counts_cache_texts_and_tokens(tmp_path):
     engine = MlxEngine.__new__(MlxEngine)
     engine.engine = FakeMlxEngine()
@@ -314,3 +322,14 @@ async def test_without_tracing_decide_reads_only_what_it_returns(write_scenario)
     del found["source"]
     async with Client(server.build_server(scenario, FakeRouter(found), {}, review=False)) as client:
         assert not (await client.call_tool("decide", {"text": TEXT})).is_error
+
+
+def test_the_mlx_prefetch_is_counted(tmp_path):
+    engine = MlxEngine.__new__(MlxEngine)
+    engine.engine = FakeMlxBuild()
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
+    with writer.call("decide_many"):
+        engine.prefetch(["a", "b"], URGENT)
+    counts = lines(tmp_path / "trace.jsonl", writer)[0]["counts"]
+    # Two state texts and the question's two option texts, at four tokens each
+    assert (counts["texts_encoded"], counts["tokens"]) == (4, 16)

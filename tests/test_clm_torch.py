@@ -207,3 +207,27 @@ def test_a_mlx_trained_heads_file_loads_in_torch(tmp_path):
     vectors = np.random.default_rng(4).normal(size=(2, HIDDEN)).astype(np.float32)
     in_mlx = np.array(HeadPair(str(tmp_path)).project(mx.array(vectors), "state"))
     np.testing.assert_allclose(TorchHeads.trained(tmp_path, "cpu").project(vectors, "state"), in_mlx, atol=1e-3)
+
+
+class BatchCountingEncoder(FakeEncoder):
+    """Notes each batch of texts it is asked to embed."""
+
+    def __init__(self):
+        super().__init__()
+        self.batches = []
+
+    def embed(self, texts):
+        self.batches.append(list(texts))
+        return super().embed(texts)
+
+
+def test_prefetch_encodes_states_in_one_call():
+    encoder = BatchCountingEncoder()
+    engine = TorchEngine(encoder, TorchHeads(tiny_weights(), CONFIG, "cpu"))
+    question = {"q": {"type": "noul", "instructions": "Urgent?"}}
+    engine.prefetch(["a", "b", "c"], question)
+    assert ["a\n\nUrgent?", "b\n\nUrgent?", "c\n\nUrgent?"] in encoder.batches
+    asked = len(encoder.asked)
+    for state in ("a", "b", "c"):
+        engine.answer(state, question)
+    assert len(encoder.asked) == asked
