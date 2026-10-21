@@ -2,20 +2,26 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Callable
 
+import tracing
 from scenario import Scenario
 
 
-def _run(tool: Callable, request: dict) -> dict:
-    """Call one tool with the request: {"status": "done", "result": ...} or {"status": "failed", "error": ...}."""
+def _run(tool: Callable, request: dict, kind: str) -> dict:
+    """Call one tool with the request: {"status": "done", "result": ...} or {"status": "failed", "error": ...}.
+    `kind` ("inform" or "act") is for the trace."""
+    start = time.perf_counter()
     # An owner's tool can fail in any way; the decision must still reach the caller
     try:
         result = tool(request)
         json.dumps(result)
+        outcome = {"status": "done", "result": result}
     except Exception as error:  # pylint: disable=broad-exception-caught
-        return {"status": "failed", "error": f"{type(error).__name__}: {error}"}
-    return {"status": "done", "result": result}
+        outcome = {"status": "failed", "error": f"{type(error).__name__}: {error}"}
+    tracing.note_tool(tool.__name__, kind, (time.perf_counter() - start) * 1000, outcome["status"])
+    return outcome
 
 
 def _facts(outcome: dict) -> dict:
@@ -38,7 +44,7 @@ def _inform(request: dict, scenario: Scenario, router, tools: dict[str, Callable
     # the tools that inform it, since facts sway questions they have nothing to do with
     informed, heard = [], {name: [] for name in scenario.questions}
     for name in scenario.routes[request["route"]].inform:
-        outcome = _facts(_run(tools[name], dict(request)))
+        outcome = _facts(_run(tools[name], dict(request), "inform"))
         informed.append({"tool": name, **outcome})
         if outcome["status"] == "done" and outcome["facts"]:
             request["facts"] = request["facts"] + outcome["facts"]
@@ -76,7 +82,7 @@ def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable]) ->
         if result["uncertain"]:
             actions.append({"tool": action.tool, "status": "skipped", "reason": "route uncertain"})
         else:
-            actions.append({"tool": action.tool, **_run(tools[action.tool], dict(request))})
+            actions.append({"tool": action.tool, **_run(tools[action.tool], dict(request), "act")})
     return {**result, "answers": request["answers"], "rules": request["rules"], "informed": informed,
             "actions": actions}
 

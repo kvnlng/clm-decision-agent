@@ -19,6 +19,7 @@ from huggingface_hub import snapshot_download
 from safetensors.numpy import load_file
 
 import clm_schema
+import tracing
 from clm_common import HEADS_FILE, ClmError
 
 RELEASED_HEADS_FILE = "CLM_v0.1-8B.pt"
@@ -166,11 +167,19 @@ class TorchEncoder:
 
     def embed(self, texts: list[str]) -> np.ndarray:
         """[n, hidden] float32 unit vectors, in the order of `texts`."""
-        id_lists = [self.ids(text) for text in texts]
+        with tracing.timed("encode_ms"):
+            return self._embed([self.ids(text) for text in texts])
+
+    def _embed(self, id_lists: list[list[int]]) -> np.ndarray:
+        """The vectors for lists of token ids, encoded in batches of similar length."""
         out: list = [None] * len(id_lists)
         for batch in self._batches(id_lists):
             rows = [id_lists[k] for k in batch]
             longest = len(rows[-1])
+            tracing.add("encoder_batches")
+            tracing.add("texts_encoded", len(rows))
+            tracing.add("tokens", sum(map(len, rows)))
+            tracing.add("padded_tokens", len(rows) * longest)
             # Padding goes after each text: attention is causal, so it cannot change a text's last token
             ids = torch.tensor([row + [0] * (longest - len(row)) for row in rows], device=self.device)
             mask = torch.tensor([[1] * len(row) + [0] * (longest - len(row)) for row in rows], device=self.device)
@@ -201,7 +210,8 @@ class TorchEngine:
 
     def project(self, vectors: np.ndarray, which: str) -> np.ndarray:
         """Encoder vectors through the "state" or "action" head."""
-        return self.heads.project(vectors, which)
+        with tracing.timed("head_ms"):
+            return self.heads.project(vectors, which)
 
     def head_weights(self) -> dict[str, np.ndarray]:
         """The current heads' weights, in the layout of a heads file."""
@@ -214,6 +224,9 @@ class TorchEngine:
 
     def _vectors(self, texts: list[str], which: str) -> np.ndarray:
         missing = list(dict.fromkeys(text for text in texts if (which, text) not in self.cache))
+        # A text repeated in one call is encoded once, so its repeats count as hits
+        tracing.add("cache_hits", len(texts) - len(missing))
+        tracing.add("cache_misses", len(missing))
         if missing:
             for text, vector in zip(missing, self.project(self.embed(missing), which)):
                 self.cache[(which, text)] = vector
@@ -227,6 +240,7 @@ class TorchEngine:
         """{"answers": {question id: answer}} in the authors' format."""
         if not questions:
             raise ValueError("questions must not be empty")
+        tracing.add("clm_calls")
         pairs = clm_schema.build_pairs(state, questions)
         states = self._vectors([pair[0] for pair in pairs.values()], "state")
         actions = self._vectors([text for pair in pairs.values() for text in pair[2]], "action")

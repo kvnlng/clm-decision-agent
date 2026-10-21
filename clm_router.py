@@ -11,6 +11,8 @@ from pathlib import Path
 import numpy as np
 from huggingface_hub import snapshot_download
 
+import clm_schema
+import tracing
 from clm_common import HEADS_FILE, ClmError
 from record import route_verdicts
 from scenario import Scenario
@@ -27,16 +29,35 @@ class MlxEngine:
 
     def answer(self, state, questions: dict[str, dict]) -> dict:
         """CLM's answers to typed questions about a state."""
-        return self.engine.answer(state, questions)
+        if tracing.active():
+            # The build encodes and projects inside answer(), so its cache is checked here for the trace
+            pairs = clm_schema.build_pairs(state, questions).values()
+            texts = [("state", pair[0]) for pair in pairs] + [("action", text) for pair in pairs for text in pair[2]]
+            missing = {key for key in texts if key not in self.engine.cache}
+            tracing.add("clm_calls")
+            tracing.add("cache_hits", len(texts) - len(missing))
+            tracing.add("cache_misses", len(missing))
+            tracing.add("texts_encoded", len(missing))
+        before = self.engine.tokens_spent
+        with tracing.timed("encode_ms"):
+            reply = self.engine.answer(state, questions)
+        tracing.add("tokens", self.engine.tokens_spent - before)
+        return reply
 
     def embed(self, texts: list[str]) -> np.ndarray:
         """[n, hidden] encoder vectors, unit length."""
-        return np.array(self.engine.encoder.embed(texts)[0])
+        with tracing.timed("encode_ms"):
+            vectors, tokens = self.engine.encoder.embed(texts)
+            vectors = np.array(vectors)
+        tracing.add("texts_encoded", len(texts))
+        tracing.add("tokens", tokens)
+        return vectors
 
     def project(self, vectors: np.ndarray, which: str) -> np.ndarray:
         """Encoder vectors through the "state" or "action" head."""
         import mlx.core as mx  # pylint: disable=import-outside-toplevel,import-error
-        return np.array(self.engine.heads.project(mx.array(np.asarray(vectors, dtype=np.float32)), which))
+        with tracing.timed("head_ms"):
+            return np.array(self.engine.heads.project(mx.array(np.asarray(vectors, dtype=np.float32)), which))
 
     def head_weights(self) -> dict[str, np.ndarray]:
         """The current heads' weights, in the layout of a heads file."""
@@ -181,10 +202,11 @@ class LocalContrastiveRouter:
     def match_verdict(self, vector: list[float], threshold: float) -> tuple[str, float] | None:
         """The closest stored verdict at or above the threshold; on a tie the later one wins."""
         best_route, best_similarity = None, threshold
-        for stored, human_route in self.verdicts:
-            similarity = sum(a * b for a, b in zip(vector, stored))
-            if similarity >= best_similarity:
-                best_route, best_similarity = human_route, similarity
+        with tracing.timed("match_ms"):
+            for stored, human_route in self.verdicts:
+                similarity = sum(a * b for a, b in zip(vector, stored))
+                if similarity >= best_similarity:
+                    best_route, best_similarity = human_route, similarity
         return None if best_route is None else (best_route, best_similarity)
 
     def check_tool(self, state_text: str, scenario: Scenario) -> float:
