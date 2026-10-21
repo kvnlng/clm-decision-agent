@@ -120,10 +120,17 @@ async def test_correct_unknown_route_says_so(chat):
 @pytest.mark.anyio
 async def test_review_commands_absent_outside_review(chat):
     written = await chat(["my app crashes", "/correct Billing", "/agreement", "/quit"])
-    assert written.count("That needs review mode: start the chat with --review.") == 2
+    assert written.count("That needs review mode: start the chat, or the server it connects to, with --review.") == 2
 
 
 @pytest.mark.anyio
 async def test_unknown_command_lists_the_commands(chat):
     written = await chat(["/help", "/quit"])
     assert "Commands: /routes, /correct <route>, /agreement, /quit" in written
+
+
+def test_format_a_correction_that_confirms_clm():
+    confirmed = {**DECISION, "source": "reviewed", "clm_route": "Data_Access", "answers": {}, "informed": [],
+                 "rules": [], "actions": []}
+    assert format_decision(confirmed) == [
+        "  route: Data_Access 0.91 (next: Information_Request 0.05) as you confirmed"]

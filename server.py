@@ -30,7 +30,8 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
     """The MCP server for one scenario. Review mode adds `correct` and `agreement`, which write and read the record."""
     server = MCPServer("decision-server", instructions=(
         f"Decisions for the scenario '{scenario.path.stem}'. Call describe to see the routes and questions, "
-        "then decide with the text of a request. decide may run the scenario's acting tools."))
+        "then decide with the text of a request. decide may run the scenario's acting tools."),
+        log_level="WARNING")
     # CLM runs on one model; calls arrive on worker threads, so they take turns
     lock = threading.Lock()
 

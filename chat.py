@@ -16,7 +16,7 @@ from mcp.client.streamable_http import streamable_http_client
 from server import KEY_ENV
 
 COMMANDS = "Commands: /routes, /correct <route>, /agreement, /quit"
-NEEDS_REVIEW = "That needs review mode: start the chat with --review."
+NEEDS_REVIEW = "That needs review mode: start the chat, or the server it connects to, with --review."
 
 
 def _answer(name: str, answer: dict) -> str:
@@ -32,7 +32,8 @@ def format_decision(d: dict) -> list[str]:
     if others:
         route += f" (next: {others[0][1]} {others[0][0]:.2f})"
     if d.get("source") == "reviewed":
-        route += f" from your correction; CLM said {d['clm_route']}"
+        same = d["clm_route"] == d["route"]
+        route += " as you confirmed" if same else f" from your correction; CLM said {d['clm_route']}"
     elif d["uncertain"]:
         route += " uncertain"
     lines = [route]

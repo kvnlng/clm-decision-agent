@@ -146,3 +146,8 @@ def test_http_without_key_env_refuses_to_start(write_scenario, monkeypatch, caps
 def test_a_broken_scenario_is_one_line(write_scenario, capsys):
     assert server.main([str(write_scenario(BASE_TOML.replace('tool = "act"', 'tool = "x"')))]) == 2
     assert capsys.readouterr().err.strip().startswith("error: actions[0].tool: unknown tool 'x'")
+
+
+def test_the_server_logs_only_warnings(parts):
+    # Every request a tool makes would otherwise be logged to the chat's terminal
+    assert server.build_server(*parts, review=False).settings.log_level == "WARNING"

@@ -112,7 +112,7 @@ def save_heads(model: HeadsModel, released_dir, out_dir, facts: dict) -> None:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     # training.json is what marks the folder as usable, so it goes first and comes back last:
-    # an interrupted save then leaves heads the chat will not try to load
+    # an interrupted save then leaves heads the server will not try to load
     (out_dir / "training.json").unlink(missing_ok=True)
     weights = {"logit_scale": mx.array([math.log(model.scale)])}
     for prefix, head in (("state_head", model.state_head), ("action_head", model.action_head)):
@@ -177,7 +177,7 @@ def train(scenario, engine, train_rows: list, reviewed: list, test_rows: list, w
     write(f"  released heads      {before:.0%}")
     write(f"  trained heads       {after:.0%}   "
           f"(kept after pass {info['best_epoch']} of {info['epochs']} over the training examples)")
-    write(f"  simple classifier   {baseline:.0%}   (a baseline on the encoder's vectors; not used by the chat)")
+    write(f"  simple classifier   {baseline:.0%}   (a baseline on the encoder's vectors; not used by the server)")
     correct = mx.argmax(model.logits(test_states, actions), axis=1) == test_labels
     for index, name in enumerate(names):
         mine = test_labels == index
@@ -238,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-retu
     released = Path(sys.modules["clm_mlx"].__file__).parent.parent / "heads"
     save_heads(HeadsModel(engine.heads.state, engine.heads.action, engine.heads.scale), released,
                scenario.clm_heads, facts)
-    print(f"Trained heads saved to {scenario.clm_heads}. The chat uses them from its next start.")
+    print(f"Trained heads saved to {scenario.clm_heads}. The server uses them from its next start.")
     return 0
 
 
