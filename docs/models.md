@@ -49,11 +49,18 @@ This runs the CLM authors' own release with PyTorch: their heads (`Contrastive-L
 and the encoder they were made for (`Qwen/Qwen3-8B`, at the revision the authors used), at full
 precision. The first start downloads about 16 GB.
 
-- **A GPU with 24 GB of memory or more.** The encoder takes about 17 GB. An A100 is plenty.
+- **A GPU with 24 GB of memory or more.** On an A100, CLM used at most 14.4 GB while deciding
+  and 15.2 GB while training. An A100 is plenty.
 - **It also runs on a Mac** (`device = "mps"`) **and on a plain CPU**, slowly. That is how it
   was checked, as described below.
 - `uv sync` installs PyTorch on every machine. On Linux the PyPI build includes CUDA 13, which
-  needs NVIDIA driver 580 or later; `nvidia-smi` shows the driver version.
+  needs NVIDIA driver 580 or later; `nvidia-smi` shows the driver version. No separate CUDA
+  toolkit is needed.
+- **On Linux, also a C compiler and Python's headers.** On a GPU, PyTorch compiles a small helper
+  with Triton the first time CLM runs, and stops with "Failed to find C compiler" or "Python.h: No such file"
+  without them. On Ubuntu: `sudo apt install build-essential python3.12-dev`.
+- **On a cloud VM, a whole GPU.** Some sizes give a share of one: Azure's NV6ads_A10_v5, for
+  example, has 4 GB of GPU memory, however much ordinary memory the VM lists.
 
 ### What has been checked
 
@@ -63,7 +70,9 @@ precision. The first start downloads about 16 GB.
 | Training the example with the torch backend on a Mac | 55% → 98% on held-back examples; 15 of 17 hand-written messages |
 | The torch backend on Linux (arm64), in Docker, on the CPU: the slow test through the server, released heads | Passes: 11 of 17 hand-written messages, in about 5 minutes on 2 CPUs. On the Mac's GPU the same test got 12; the difference is a near tie |
 | An Intel Linux image (amd64) | Installs, with PyTorch's CUDA 13.0 build. CLM was not run in it |
-| An NVIDIA GPU | **Not yet** |
+| The torch backend on an NVIDIA A100 80GB (Azure NC24ads_A100_v4, Ubuntu, driver 580): the slow test through the server, released heads | Passes: 12 of 17 hand-written messages, as on the Mac's GPU. Each decision took about 40 ms; the model loads in 7 seconds once downloaded. The fast tests pass (241, with 2 MLX-only ones skipped) |
+| The `Dockerfile`'s image on the A100, with `--gpus all`: the same slow test | Passes: 12 of 17 |
+| Training the example on the A100 | 55% → 98% on held-back examples, kept after the same pass as on the Mac; 15 of 17 hand-written messages; 20 seconds, loading the model included |
 
 ### Heads belong to one backend
 
