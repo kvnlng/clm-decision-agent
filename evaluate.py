@@ -163,11 +163,12 @@ def main(argv: list[str] | None = None) -> int:
     if skipped:
         print(f"{skipped} unreadable lines skipped in {scenario.record_path.name}")
     from clm_router import ClmError, make_router  # pylint: disable=import-outside-toplevel
-    router, clm_note = make_router(scenario)
-    print(f"CLM is using {clm_note}.")
-    if "trained heads from" in clm_note:
-        print("These heads were trained on the reviewed routes below, so routing accuracy here is not a test of them.")
     try:
+        router, clm_note = make_router(scenario)
+        print(f"CLM is using {clm_note}.")
+        if "trained heads from" in clm_note:
+            print("These heads were trained on the reviewed routes below, so routing accuracy here is not a test "
+                  "of them.")
         print(format_report(evaluate(records, scenario, router), scenario))
     except ClmError as error:
         print(f"error: {error}", file=sys.stderr)

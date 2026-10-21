@@ -61,10 +61,29 @@ link, and your workspace's outbound network rules must allow it. This has not be
 
 ## Where CLM runs
 
-By default CLM runs inside the server's process, with MLX, on an Apple Silicon Mac. To run the
-server on another machine, such as a Linux VM with a GPU, point it at the CLM authors' server
-(`clm-serve`, which needs a GPU) instead: see [models.md](models.md). Two caveats:
+CLM runs inside the server's process, on whatever the scenario's `[clm] backend` says
+([models.md](models.md)):
 
-- That backend follows the authors' server code but **has not been run against a real server**.
-- Heads trained on the Mac fit only the MLX 8-bit build, so a GPU server starts with the
-  released heads, and corrections are reused only for exactly the same text.
+- **A Mac with Apple Silicon:** `backend = "mlx"`.
+- **Linux with an NVIDIA GPU of 24 GB or more**, such as a VM with an A100: `backend = "torch"`.
+  A plain CPU works too, slowly.
+
+### In Docker
+
+The `Dockerfile` installs the project on Linux:
+
+```bash
+docker build -t clm-decision .
+docker run --rm clm-decision                       # the fast tests
+docker run --rm --gpus all -v clm-hf:/cache -e CLM_TEST_BACKEND=torch clm-decision \
+    uv run pytest -m slow -k real_server -s        # CLM on the GPU, through the server
+```
+
+- Models download into `/cache`; the volume keeps them between runs.
+- `--gpus all` needs the NVIDIA container toolkit, and a driver of version 580 or later on the host. Without it, CLM runs on the CPU, which
+  needs about 24 GB of memory for the container and is slow.
+- To serve from the container, run `uv run python server.py <scenario> --http --host 0.0.0.0`
+  with the key variable set (`-e DECISION_SERVER_KEY=...`) and the port published (`-p 8000:8000`).
+
+What has been checked so far is listed in [models.md](models.md#what-has-been-checked). **CLM
+has not yet been run on an NVIDIA GPU.**

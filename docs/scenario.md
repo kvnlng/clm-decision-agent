@@ -177,6 +177,9 @@ models: [models.md](models.md).
 
 | Setting | Default | Meaning |
 |---|---|---|
+| `[clm] backend` | `"mlx"` | `"mlx"` on a Mac, `"torch"` on Linux with a GPU: see [models.md](models.md) |
+| `[clm] model_id` | the 8-bit MLX build, or the authors' release with torch | Which CLM to download |
+| `[clm] device` | the first of cuda, mps, cpu | Torch only: where CLM runs |
 | `[clm] heads` | none | Folder of trained heads, beside the scenario |
-| `[generator]` | MLX Qwen3-4B | The language model `synthesize.py` uses; not used by the server |
+| `[generator]` | MLX Qwen3-4B | The language model `synthesize.py` uses; not used by the server. On Linux, use `ollama` or `openai` |
 | `[synthesize] messages` | "messages that a person might send to an assistant" | What `synthesize.py` asks the language model to write: say who is writing and to what |

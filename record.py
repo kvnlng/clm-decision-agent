@@ -42,7 +42,7 @@ def record_key(scenario: Scenario) -> bytes | None:
 
 
 def _open_private(path: Path, flags: int) -> int:
-    # The record holds conversation text, so a new file, and a folder made for it, are its owner's only
+    # The record holds request text, so a new file, and a folder made for it, are its owner's only
     Path(path).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     return os.open(path, flags, 0o600)
 

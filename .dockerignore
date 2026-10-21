@@ -1,0 +1,10 @@
+.git
+.venv
+__pycache__
+.pytest_cache
+.superpowers
+.claude
+.agents
+docs/superpowers
+*.corrections.jsonl
+*.key

@@ -200,33 +200,55 @@ def test_backends_that_talk_to_a_server_need_an_address(write_scenario):
     text = BASE_TOML.replace('backend = "mlx"', 'backend = "openai"')
     with pytest.raises(ScenarioError, match=re.escape("generator: missing 'base_url'")):
         load_scenario(write_scenario(text))
-    text = BASE_TOML.replace('model_id = "test/clm"', 'backend = "server"')
-    with pytest.raises(ScenarioError, match=re.escape("clm: missing 'url'")):
-        load_scenario(write_scenario(text))
 
 
-def test_server_backends_are_read(write_scenario):
-    text = (BASE_TOML.replace('backend = "mlx"', 'backend = "openai"\nbase_url = "http://localhost:11434/v1"\n'
-                                                 'api_key_env = "GEN_KEY"')
-            .replace('model_id = "test/clm"', 'backend = "server"\nurl = "http://gpu-box:8700"\nmodel = "clm-latest"'))
+def test_server_generator_is_read(write_scenario):
+    text = BASE_TOML.replace('backend = "mlx"', 'backend = "openai"\nbase_url = "http://localhost:11434/v1"\n'
+                                                'api_key_env = "GEN_KEY"')
     s = load_scenario(write_scenario(text))
     assert (s.generator_backend, s.generator_base_url, s.generator_key_env) == \
         ("openai", "http://localhost:11434/v1", "GEN_KEY")
-    assert (s.clm_backend, s.clm_url) == ("server", "http://gpu-box:8700")
-    assert (s.clm_key_env, s.clm_model_id) == (None, "clm-latest")
+
+
+def test_torch_backend_reads_model_and_device(write_scenario):
+    text = BASE_TOML.replace('model_id = "test/clm"', 'backend = "torch"\ndevice = "cuda"')
+    s = load_scenario(write_scenario(text))
+    assert (s.clm_backend, s.clm_device, s.clm_model_id) == ("torch", "cuda", "Contrastive-LM/CLM-v0.1-8B")
+
+
+def test_mlx_default_model_is_the_8bit_build(write_scenario):
+    s = load_scenario(write_scenario(BASE_TOML.replace('model_id = "test/clm"', '')))
+    assert (s.clm_backend, s.clm_device, s.clm_model_id) == ("mlx", None, "mlx-community/CLM-v0.1-8B-MLX-8bit")
 
 
 def test_unknown_clm_backend_is_an_error(write_scenario):
     text = BASE_TOML.replace('model_id = "test/clm"', 'backend = "cloud"')
-    with pytest.raises(ScenarioError, match=re.escape("clm.backend must be one of mlx, server")):
+    with pytest.raises(ScenarioError, match=re.escape("clm.backend must be one of mlx, torch")):
+        load_scenario(write_scenario(text))
+
+
+@pytest.mark.parametrize("setting, message", [
+    ('backend = "server"', 'clm.backend "server" is no longer supported; see docs/models.md'),
+    ('url = "http://gpu-box:8700"', "clm.url is no longer used; see docs/models.md"),
+    ('api_key_env = "CLM_API_KEY"', "clm.api_key_env is no longer used; see docs/models.md"),
+])
+def test_retired_clm_settings_name_the_doc(write_scenario, setting, message):
+    text = BASE_TOML.replace('model_id = "test/clm"', f'model_id = "test/clm"\n{setting}')
+    with pytest.raises(ScenarioError, match=re.escape(message)):
+        load_scenario(write_scenario(text))
+
+
+@pytest.mark.parametrize("setting, message", [
+    ('backend = "torch"\ndevice = "tpu"', "clm.device must be one of cuda, mps, cpu"),
+    ('device = "cpu"', "clm.device applies to the torch backend only"),
+])
+def test_device_is_checked(write_scenario, setting, message):
+    text = BASE_TOML.replace('model_id = "test/clm"', f'model_id = "test/clm"\n{setting}')
+    with pytest.raises(ScenarioError, match=re.escape(message)):
         load_scenario(write_scenario(text))
 
 
 @pytest.mark.parametrize("old, new, message", [
-    ('model_id = "test/clm"', 'backend = "server"\nurl = "localhost:8700"',
-     "clm.url must start with http:// or https://"),
-    ('model_id = "test/clm"', 'backend = "server"\nurl = "http://me:pw@host:8700"',
-     "clm.url must not contain a user name or password"),
     ('backend = "mlx"', 'backend = "openai"\nbase_url = "http://evil.example\\\\@localhost/v1"',
      "generator.base_url must not contain"),
     ('[routing]', '[record]\nkey_env = "A"\nkey_file = "b.key"\n\n[routing]',

@@ -3,19 +3,26 @@
 # how urgent it is and whether it involves identifiable data, looks up who handles it, and opens a ticket.
 # It is not a clinical tool: questions about a particular patient's care are routed out of scope.
 
+# Keep one of the two blocks below and comment out the other.
 [clm]
+# On a Mac with Apple Silicon: the MLX build
+backend = "mlx"
 model_id = "mlx-community/CLM-v0.1-8B-MLX-8bit"
+# On Linux with an NVIDIA GPU (or any machine, slowly, on the CPU): the authors' release with PyTorch
+# backend = "torch"
+# model_id = "Contrastive-LM/CLM-v0.1-8B"
+# device = "cuda"                   # optional: cuda, mps or cpu; the first one available otherwise
 heads = "scenario.heads"            # trained heads, made by train.py; the released ones are used until then
-# To ask the CLM authors' server on a GPU machine instead of running CLM in this process:
-# backend = "server"
-# url = "http://localhost:8700"
-# api_key_env = "CLM_API_KEY"       # optional
+# Heads fit the backend that trained them: after switching, run train.py again
 
 # Only synthesize.py uses a language model, to write example messages for training
 [generator]
 backend = "mlx"                                        # "mlx", "ollama" or "openai"
 model = "mlx-community/Qwen3-4B-Instruct-2507-4bit"    # with ollama, for example "gemma4:26b"
 max_tokens = 500
+# On Linux, MLX is not available: use a local Ollama server, or any server with the OpenAI interface
+# backend = "ollama"
+# model = "gemma4:26b"
 
 [synthesize]
 messages = "messages that staff might send to a help desk"   # what synthesize.py asks the language model to write

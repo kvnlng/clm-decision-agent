@@ -190,7 +190,8 @@ def test_questions_with_different_facts_are_asked_apart(setup, tmp_path):
         'def a(request):\n    return {"facts": ["fact A"]}\n\n'
         'def lookup(request):\n    return {"facts": ["fact B"]}\n\n'
         'def act(request):\n    return {}\n\nTOOLS = [a, lookup, act]\n')
-    text = (BASE_TOML.replace('"fake_tools"', '"split_tools"').replace('inform = ["lookup"]', 'inform = ["a", "lookup"]')
+    text = (BASE_TOML.replace('"fake_tools"', '"split_tools"')
+            .replace('inform = ["lookup"]', 'inform = ["a", "lookup"]')
             .replace("[tools.inform.lookup]", '[tools.inform.a]\nquestions = ["other"]\n\n[tools.inform.lookup]')
             .replace("[[actions]]", '[questions.other]\ntype = "noul"\ninstructions = "Other?"\n\n[[actions]]'))
     scenario, tools = setup(text)

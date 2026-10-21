@@ -8,7 +8,6 @@ import threading
 from pathlib import Path
 
 import pytest
-from langchain_core.messages import AIMessage
 
 from scenario import load_scenario
 
@@ -105,16 +104,15 @@ class FakeRouter:  # pylint: disable=too-many-instance-attributes
 
 
 class FakeGenerator:
-    """Returns the given replies in order; a str becomes a plain AIMessage."""
+    """Returns the given replies in order."""
 
     def __init__(self, *replies):
         self.replies = list(replies)
         self.calls = []
 
-    def generate(self, system, messages, tools=None):
-        self.calls.append({"system": system, "messages": list(messages), "tools": tools})
-        reply = self.replies.pop(0)
-        return reply if isinstance(reply, AIMessage) else AIMessage(content=reply)
+    def generate(self, system, user):
+        self.calls.append({"system": system, "user": user})
+        return self.replies.pop(0)
 
 
 @pytest.fixture

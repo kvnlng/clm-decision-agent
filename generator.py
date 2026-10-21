@@ -1,106 +1,41 @@
-"""Text generation behind one interface, with an MLX backend and an Ollama backend."""
+"""The language model synthesize.py asks for example messages: text in, text out.
+
+Three backends: MLX in this process (an Apple Silicon Mac), a local Ollama server, or any server with
+the OpenAI chat interface (vLLM, LM Studio, llama.cpp, Ollama ...), which suits a Linux machine.
+"""
 from __future__ import annotations
 
-import json
 import os
-import re
-from uuid import uuid4
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_core.utils.function_calling import convert_to_openai_tool
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from scenario import Scenario
-
-# A JSON object after <tool_call>, ended by the closing tag, the next call, or the end of the text
-_TOOL_CALL = re.compile(r"<tool_call>\s*(\{.*?\})\s*(?:</tool_call>|(?=<tool_call>)|\Z)", re.DOTALL)
-
-
-# Shown when the model answers with a tool call although no tools were offered
-NO_TOOL_REPLY = "I could not complete that request with the information I have."
 
 
 class GeneratorError(RuntimeError):
     """The generator backend could not produce a reply."""
 
 
-def _call_id() -> str:
-    return f"call_{uuid4().hex[:8]}"
-
-
-def to_chat_dicts(messages: list[BaseMessage]) -> list[dict]:
-    """LangChain messages -> the role/content dicts a tokenizer chat template expects."""
-    chat = []
-    for message in messages:
-        if isinstance(message, HumanMessage):
-            chat.append({"role": "user", "content": str(message.content)})
-        elif isinstance(message, AIMessage):
-            entry = {"role": "assistant", "content": str(message.content)}
-            if message.tool_calls:
-                entry["tool_calls"] = [
-                    {"type": "function", "function": {"name": call["name"], "arguments": call["args"]}}
-                    for call in message.tool_calls
-                ]
-            chat.append(entry)
-        elif isinstance(message, ToolMessage):
-            chat.append({"role": "tool", "name": message.name or "", "content": str(message.content)})
-        else:
-            raise TypeError(f"cannot send a {type(message).__name__} to the generator")
-    return chat
-
-
-def parse_reply(text: str) -> AIMessage:
-    """Model output -> AIMessage. Well-formed <tool_call> blocks become tool calls; anything else is text."""
-    plain = AIMessage(content=text.strip())
-    blocks = _TOOL_CALL.findall(text)
-    if not blocks and text.strip().startswith("{") and '"arguments"' in text:
-        blocks, text = [text.strip()], "<tool_call>" + text   # the model left the tags out
-    if not blocks:
-        return plain
-    calls = []
-    for block in blocks:
-        try:
-            data = json.loads(block)
-        except json.JSONDecodeError:
-            return plain
-        if not isinstance(data, dict) or not isinstance(data.get("name"), str):
-            return plain
-        args = data.get("arguments", {})
-        if not isinstance(args, dict):
-            return plain
-        calls.append({"name": data["name"], "args": args, "id": _call_id()})
-    return AIMessage(content=text[: text.index("<tool_call>")].strip(), tool_calls=calls)
-
-
-def finish_reply(text: str, offered: bool) -> AIMessage:
-    """Model output -> the reply for the graph. A tool call nobody offered is never shown to the user."""
-    reply = parse_reply(text)
-    if offered or not reply.tool_calls:
-        return reply
-    return AIMessage(content=reply.content or NO_TOOL_REPLY)
-
-
 class MLXGenerator:
-    """Runs in the same process as CLM. `loaded` lets tests pass a (model, tokenizer) pair."""
+    """Runs in the same process. `loaded` lets tests pass a (model, tokenizer) pair."""
 
     def __init__(self, model_id: str, max_tokens: int, loaded: tuple | None = None):
         if loaded is None:
-            from mlx_lm import load  # pylint: disable=import-outside-toplevel
+            from mlx_lm import load  # pylint: disable=import-outside-toplevel,import-error
             loaded = load(model_id)
         self.model, self.tokenizer = loaded[0], loaded[1]
         self.max_tokens = max_tokens
 
-    def build_prompt(self, system: str, messages: list[BaseMessage], tools: list | None = None) -> str:
-        """The full prompt text: system message, conversation and, if given, the tool definitions."""
-        chat = [{"role": "system", "content": system}, *to_chat_dicts(messages)]
-        schemas = [convert_to_openai_tool(t) for t in tools] if tools else None
-        return self.tokenizer.apply_chat_template(chat, tools=schemas, add_generation_prompt=True, tokenize=False)
+    def build_prompt(self, system: str, user: str) -> str:
+        """The full prompt text, in the model's chat template."""
+        chat = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        return self.tokenizer.apply_chat_template(chat, add_generation_prompt=True, tokenize=False)
 
-    def generate(self, system: str, messages: list[BaseMessage], tools: list | None = None) -> AIMessage:
-        """One reply; it carries tool calls only when `tools` were offered."""
-        from mlx_lm import generate  # pylint: disable=import-outside-toplevel
-        text = generate(self.model, self.tokenizer, prompt=self.build_prompt(system, messages, tools),
-                        max_tokens=self.max_tokens, verbose=False)
-        return finish_reply(text, offered=bool(tools))
+    def generate(self, system: str, user: str) -> str:
+        """The model's reply."""
+        from mlx_lm import generate  # pylint: disable=import-outside-toplevel,import-error
+        return generate(self.model, self.tokenizer, prompt=self.build_prompt(system, user),
+                        max_tokens=self.max_tokens, verbose=False).strip()
 
 
 class OllamaGenerator:
@@ -113,22 +48,18 @@ class OllamaGenerator:
             llm = ChatOllama(model=model, num_predict=max_tokens, reasoning=False)
         self.llm, self.model = llm, model
 
-    def generate(self, system: str, messages: list[BaseMessage], tools: list | None = None) -> AIMessage:
-        """One reply; it carries tool calls only when `tools` were offered."""
+    def generate(self, system: str, user: str) -> str:
+        """The model's reply."""
         import httpx  # pylint: disable=import-outside-toplevel
         import ollama  # pylint: disable=import-outside-toplevel
-        llm = self.llm.bind_tools(tools) if tools else self.llm
         try:
-            reply = llm.invoke([SystemMessage(content=system), *messages])
+            reply = self.llm.invoke([SystemMessage(content=system), HumanMessage(content=user)])
         except (httpx.ConnectError, ConnectionError) as error:
             raise GeneratorError("Cannot reach Ollama. Start it with `ollama serve` and try again.") from error
         except ollama.ResponseError as error:
             raise GeneratorError(f"Ollama could not run '{self.model}': {error}. "
                                  f"If the model is missing, run `ollama pull {self.model}`.") from error
-        calls = [{"name": call["name"], "args": call["args"], "id": call.get("id") or _call_id()}
-                 for call in (reply.tool_calls if tools else [])]
-        content = str(reply.content).strip()
-        return AIMessage(content=content or ("" if calls else NO_TOOL_REPLY), tool_calls=calls)
+        return str(reply.content).strip()
 
 
 class OpenAIGenerator:
@@ -143,12 +74,11 @@ class OpenAIGenerator:
                              timeout=120, max_retries=1)
         self.llm, self.model, self.base_url = llm, model, base_url
 
-    def generate(self, system: str, messages: list[BaseMessage], tools: list | None = None) -> AIMessage:
-        """One reply; it carries tool calls only when `tools` were offered."""
+    def generate(self, system: str, user: str) -> str:
+        """The model's reply."""
         import openai  # pylint: disable=import-outside-toplevel
-        llm = self.llm.bind_tools(tools) if tools else self.llm
         try:
-            reply = llm.invoke([SystemMessage(content=system), *messages])
+            reply = self.llm.invoke([SystemMessage(content=system), HumanMessage(content=user)])
         except openai.APIConnectionError as error:
             raise GeneratorError(f"Cannot reach the model server at {self.base_url}.") from error
         except openai.APIStatusError as error:
@@ -158,10 +88,7 @@ class OpenAIGenerator:
         except (ValueError, IndexError, KeyError, TypeError) as error:
             raise GeneratorError(f"The model server at {self.base_url} sent a reply that could not be read "
                                  f"({type(error).__name__}).") from error
-        calls = [{"name": call["name"], "args": call["args"], "id": call.get("id") or _call_id()}
-                 for call in (reply.tool_calls if tools else [])]
-        content = str(reply.content).strip()
-        return AIMessage(content=content or ("" if calls else NO_TOOL_REPLY), tool_calls=calls)
+        return str(reply.content).strip()
 
 
 def make_generator(scenario: Scenario):

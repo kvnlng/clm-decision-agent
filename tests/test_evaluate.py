@@ -5,7 +5,11 @@
 # pylint: disable=unused-argument,attribute-defined-outside-init,use-implicit-booleaness-not-comparison
 import pytest
 from conftest import FakeRouter, decision
+
+import clm_router
 from evaluate import agreement, confidence_bands, evaluate, format_report, main, match_report, suggest_threshold
+from record import save_correction
+from scenario import load_scenario
 
 
 def route_record(state_text, clm, human):
@@ -106,3 +110,15 @@ def test_agreement_counts(scenario):
                route_record("parcel", "Tech", "Shipping")]          # route no longer in the scenario
     router = FakeRouter({"refund": decision("Billing"), "crash": decision("Billing")})
     assert agreement(records, scenario, router) == {"n": 2, "agree": 1}
+
+
+def test_main_when_clm_cannot_load_is_one_line(write_scenario, monkeypatch, capsys):
+    path = write_scenario()
+    save_correction(load_scenario(path), "charged twice", "Billing", {"route": "Tech", "confidence": 0.7})
+
+    def no_cuda(*args):
+        raise clm_router.ClmError("CLM was set to run on cuda, which this machine does not have (available: cpu)")
+    monkeypatch.setattr(clm_router, "load_engine", no_cuda)
+    assert main([str(path)]) == 2
+    assert capsys.readouterr().err.strip() == \
+        "error: CLM was set to run on cuda, which this machine does not have (available: cpu)"
