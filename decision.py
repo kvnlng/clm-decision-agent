@@ -93,9 +93,9 @@ def _heard(scenario: Scenario, informed: list[dict]) -> dict[tuple, dict]:
     return groups
 
 
-def _inform(request: dict, scenario: Scenario, router, tools: dict[str, Callable], earlier: list[dict]) -> list[dict]:
+def _gather(request: dict, scenario: Scenario, tools: dict[str, Callable], earlier: list[dict]) -> list[dict]:
     """Run the route's informing tools; their facts, and those of routing's tools in `earlier`, are added to
-    `request` and given to the questions they inform. A tool that already ran for routing is not run again."""
+    `request`. A tool that already ran for routing is not run again."""
     informed = list(earlier)
     request["facts"] = facts_of(informed)
     route = scenario.routes[request["route"]]
@@ -105,13 +105,22 @@ def _inform(request: dict, scenario: Scenario, router, tools: dict[str, Callable
             check = _options if route.options and name == route.options.tool else _facts
             informed.append({"tool": name, **check(_run(tools[name], dict(request), "inform"))})
             request["facts"] = facts_of(informed)
-    groups = _heard(scenario, informed)
-    answers = dict(request["answers"])
-    for facts, asked in groups.items():
-        answers.update(router.ask(routed_text(request["text"], list(facts)), asked))
-    if groups:
-        request.update(answers=answers, rules=_rules(scenario, answers))
     return informed
+
+
+def _asks(request: dict, scenario: Scenario, informed: list[dict]) -> list[tuple[str, dict]]:
+    """The questions to ask again with facts: (the text with the facts, the questions that hear them)."""
+    return [(routed_text(request["text"], list(facts)), asked)
+            for facts, asked in _heard(scenario, informed).items()]
+
+
+def _answer(request: dict, scenario: Scenario, router, asks: list[tuple[str, dict]]) -> None:
+    """Ask the questions again with their facts; `request`'s answers and rules are updated."""
+    answers = dict(request["answers"])
+    for text, asked in asks:
+        answers.update(router.ask(text, asked))
+    if asks:
+        request.update(answers=answers, rules=_rules(scenario, answers))
 
 
 def _choose(request: dict, scenario: Scenario, router, informed: list[dict]) -> dict | None:
@@ -142,17 +151,25 @@ def _option_problem(scenario: Scenario, route: str, option: dict | None) -> str 
     return "option uncertain" if option["uncertain"] else None
 
 
-def _route(text: str, scenario: Scenario, router, earlier: list[dict]) -> dict:
-    """The route and the answers to the questions, decided again with routing's facts if it has any."""
-    result = router.decide(text, scenario)
-    if facts_of(earlier):
-        before = result
-        result = {key: value for key, value in before.items() if key not in ROUTE_KEYS}
-        result.update(router.route(routed_text(text, facts_of(earlier)), scenario),
-                      before_facts={key: before[key] for key in ("route", "confidence", "probabilities")})
+def _route(scenario: Scenario, made: dict, rerouted: dict | None) -> dict:
+    """The route and the answers to the questions: CLM's decision on the message, with the route replaced by
+    `rerouted`, the decision made with routing's facts, if there is one."""
+    result = made
+    if rerouted is not None:
+        result = {key: value for key, value in made.items() if key not in ROUTE_KEYS}
+        result.update(rerouted, before_facts={key: made[key] for key in ("route", "confidence", "probabilities")})
     # A route the owner chose is not second-guessed: the confidence is CLM's, in its own route
     result["uncertain"] = result.get("source") == "clm" and result["confidence"] < scenario.confidence_threshold
     return result
+
+
+def _request(text: str, result: dict, scenario: Scenario, context: dict | None) -> dict:
+    """What the tools are given, as far as the route and the answers."""
+    request = {"text": text, "route": result["route"], "answers": result["answers"],
+               "rules": _rules(scenario, result["answers"]), "facts": []}
+    if context is not None:
+        request["context"] = context
+    return request
 
 
 def _act(result: dict, request: dict, option: dict | None, scenario: Scenario,
@@ -170,23 +187,59 @@ def _act(result: dict, request: dict, option: dict | None, scenario: Scenario,
     return actions
 
 
-def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable], context: dict | None = None) -> dict:
-    """The scenario's decision on `text`, with what its tools found and did. `context` (such as a booking or
-    user ID) is passed to the tools; CLM never reads it."""
-    earlier = route_facts(text, scenario, tools, context)
-    result = _route(text, scenario, router, earlier)
-    request = {"text": text, "route": result["route"], "answers": result["answers"],
-               "rules": _rules(scenario, result["answers"]), "facts": []}
-    if context is not None:
-        request["context"] = context
-    informed = _inform(request, scenario, router, tools, earlier)
+def _finish(made: dict, scenario: Scenario, router, tools: dict[str, Callable]) -> dict:
+    """The reply for one request part-way through: `made` holds its result, request and informed outcomes,
+    with the questions already asked again. Ranks the options and runs the acting tools."""
+    result, request, informed = made["result"], made["request"], made["informed"]
     option = _choose(request, scenario, router, informed)
-    actions = _act(result, request, option, scenario, tools)
     reply = {**result, "answers": request["answers"], "rules": request["rules"], "informed": informed,
-             "actions": actions}
+             "actions": _act(result, request, option, scenario, tools)}
     if scenario.routes[result["route"]].options:
         reply["option"] = option
     return reply
+
+
+def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable], context: dict | None = None) -> dict:
+    """The scenario's decision on `text`, with what its tools found and did. `context` (such as a booking or
+    user ID) is passed to the tools; CLM never reads it."""
+    tracing.add("decisions")
+    earlier = route_facts(text, scenario, tools, context)
+    facts = facts_of(earlier)
+    result = _route(scenario, router.decide(text, scenario),
+                    router.route(routed_text(text, facts), scenario) if facts else None)
+    request = _request(text, result, scenario, context)
+    informed = _gather(request, scenario, tools, earlier)
+    _answer(request, scenario, router, _asks(request, scenario, informed))
+    return _finish({"result": result, "request": request, "informed": informed}, scenario, router, tools)
+
+
+def decide_many(requests: list[dict], scenario: Scenario, router, tools: dict[str, Callable]) -> list[dict]:
+    """decide() for each of `requests` ({"text", "context"?}), with the same replies, made phase by phase so
+    CLM encodes each phase's texts in one batched pass. The tools run in the order of the requests."""
+    tracing.add("decisions", len(requests))
+    made = [{"text": request["text"], "context": request.get("context"),
+             "earlier": route_facts(request["text"], scenario, tools, request.get("context"))} for request in requests]
+    for one, decided in zip(made, router.decide_batch([one["text"] for one in made], scenario)):
+        one["decided"] = decided
+    with_facts = [one for one in made if facts_of(one["earlier"])]
+    rerouted = router.route_batch([routed_text(one["text"], facts_of(one["earlier"])) for one in with_facts],
+                                  scenario) if with_facts else []
+    for one, routed in zip(with_facts, rerouted):
+        one["rerouted"] = routed
+    for one in made:
+        one["result"] = _route(scenario, one["decided"], one.get("rerouted"))
+        one["request"] = _request(one["text"], one["result"], scenario, one["context"])
+        one["informed"] = _gather(one["request"], scenario, tools, one["earlier"])
+        one["asks"] = _asks(one["request"], scenario, one["informed"])
+    # Texts asked the same questions are encoded together
+    together: dict[tuple, tuple[list[str], dict]] = {}
+    for text, questions in (pair for one in made for pair in one["asks"]):
+        together.setdefault(tuple(questions), ([], questions))[0].append(text)
+    for states, questions in together.values():
+        router.prefetch(states, questions)
+    for one in made:
+        _answer(one["request"], scenario, router, one["asks"])
+    return [_finish(one, scenario, router, tools) for one in made]
 
 
 def check_call(text: str, call: dict, scenario: Scenario, router) -> dict:

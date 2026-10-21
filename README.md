@@ -129,10 +129,11 @@ Read [docs/data-handling.md](docs/data-handling.md) before any real text goes in
 
 | MCP tool | What it does |
 |---|---|
-| `decide(text)` | The route with its confidence and probabilities, `uncertain` below the threshold, each question's answer, the rules that apply, the facts the informing tools found, and what the acting tools did |
+| `decide(text, context)` | The route with its confidence and probabilities, `uncertain` below the threshold, each question's answer, the rules that apply, the facts the informing tools found, the option chosen, and what the acting tools did. `context` is optional and goes to the tools, not to CLM |
+| `decide_many(requests)` | The same as `decide` for up to 1000 requests (`{"text", "context"}`) at once, faster per request |
 | `check_call(text, call)` | CLM's opinion of a tool call the caller proposes: a probability and approved yes or no |
-| `describe()` | The scenario's routes, questions and rules |
-| `correct(text, route)` | Review mode only: save the right route for a request |
+| `describe()` | The scenario's routes and their options, questions and rules, and the tools whose facts the route considers |
+| `correct(text, route, context)` | Review mode only: save the right route for a request |
 | `agreement()` | Review mode only: how often CLM's own route agrees with the saved corrections |
 
 ## What to expect

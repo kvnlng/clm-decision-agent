@@ -6,7 +6,7 @@ import fake_tools
 import pytest
 from conftest import BASE_TOML, FakeRouter, decision
 
-from decision import check_call, decide, describe, routed_text
+from decision import check_call, decide, decide_many, describe, routed_text
 from scenario import load_scenario
 from tools import load_tools
 
@@ -341,3 +341,60 @@ def test_describe_lists_a_routes_options(setup):
     routes = {route["name"]: route for route in describe(setup(OPTIONS_TOML)[0])["routes"]}
     assert routes["Billing"]["options"] == {"tool": "alternatives", "instructions": "Which refund suits them?"}
     assert "options" not in routes["Tech"]
+
+
+MANY_TOML = OPTIONS_TOML.replace("confidence_threshold = 0.6", 'confidence_threshold = 0.6\ninform = ["flaky"]')
+OTHER = "my app crashes"
+
+
+def many_router():
+    """The same answers for every run: each text routed one way alone and another with its facts."""
+    decisions = {}
+    for text, alone, informed in ((TEXT, "Tech", "Billing"), (OTHER, "Billing", "Tech")):
+        decisions[text] = decision(alone, answers=urgent(0.9))
+        decisions[routed_text(text, [f"Flaky saw {text}."])] = decision(informed, answers=urgent(0.9))
+    return FakeRouter(decisions, asks=[urgent(0.9)] * 10, ranked=("b", 0.8))
+
+
+REQUESTS = [{"text": TEXT, "context": {"n": 1}}, {"text": OTHER, "context": {"n": 2}},
+            {"text": TEXT, "context": {"n": 3, "fail": True}}, {"text": OTHER}]
+
+
+def test_decide_many_equals_decide_one_by_one(setup, options):
+    options(FLIGHTS)
+    scenario, tools = setup(MANY_TOML)
+    alone = [decide(r["text"], scenario, many_router(), tools, r.get("context")) for r in REQUESTS]
+    together = decide_many(REQUESTS, scenario, many_router(), tools)
+    assert together == alone
+    assert [d["route"] for d in together] == ["Billing", "Tech", "Tech", "Tech"]
+    assert together[2]["informed"][0]["status"] == "failed" and "before_facts" not in together[2]
+
+
+def test_decide_many_runs_actions_in_request_order(setup, options):
+    options(FLIGHTS)
+    scenario, tools = setup(MANY_TOML.replace('routes = ["Billing"]', 'routes = ["Billing", "Tech"]'))
+    decide_many([{"text": OTHER, "context": {"n": n}} for n in range(3)], scenario, many_router(), tools)
+    assert [request["context"]["n"] for name, request in fake_tools.CALLS if name == "act"] == [0, 1, 2]
+
+
+def test_one_failing_tool_does_not_change_the_others(setup, options):
+    options(FLIGHTS)
+    scenario, tools = setup(MANY_TOML)
+    others = [r for r in REQUESTS if not r.get("context", {}).get("fail")]
+    with_failure = decide_many(REQUESTS, scenario, many_router(), tools)
+    without = decide_many(others, scenario, many_router(), tools)
+    assert [d for r, d in zip(REQUESTS, with_failure) if not r.get("context", {}).get("fail")] == without
+
+
+def test_decide_many_of_nothing_is_nothing(setup):
+    scenario, tools = setup()
+    assert decide_many([], scenario, FakeRouter(decision("Tech")), tools) == []
+
+
+def test_decide_many_batches_the_encoding(setup, options):
+    options(FLIGHTS)
+    scenario, tools = setup(MANY_TOML)
+    router = many_router()
+    decide_many(REQUESTS, scenario, router, tools)
+    # The messages, then the messages with routing's facts, then the questions with facts, each in one pass
+    assert [len(states) for states, _ in router.prefetched][:2] == [4, 3]

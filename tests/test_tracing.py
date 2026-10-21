@@ -333,3 +333,11 @@ def test_the_mlx_prefetch_is_counted(tmp_path):
     counts = lines(tmp_path / "trace.jsonl", writer)[0]["counts"]
     # Two state texts and the question's two option texts, at four tokens each
     assert (counts["texts_encoded"], counts["tokens"]) == (4, 16)
+
+
+def test_the_report_counts_decisions_for_decide_many():
+    records = [record(100.0, 1000.0, tool="decide_many", decisions=50), record(101.0, 1000.0, tool="decide_many",
+                                                                               decisions=50)]
+    summary = trace_report.summarise(records)["decide_many"]
+    assert summary["decisions"] == 100 and summary["per_second"] == pytest.approx(100 / 2.0)
+    assert "100 decisions" in trace_report.report({"decide_many": summary})

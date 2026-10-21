@@ -52,4 +52,12 @@ def alternatives(request):
     return {"options": OPTIONS["value"]}
 
 
-TOOLS = [lookup, act, broken, unserialisable, slow, alternatives]
+def flaky(request):
+    """An informing tool that fails when the request's context says so."""
+    CALLS.append(("flaky", request))
+    if request.get("context", {}).get("fail"):
+        raise RuntimeError("down for this one")
+    return {"facts": [f"Flaky saw {request['text']}."]}
+
+
+TOOLS = [lookup, act, broken, unserialisable, slow, alternatives, flaky]

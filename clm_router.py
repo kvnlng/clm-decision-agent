@@ -187,6 +187,11 @@ class LocalContrastiveRouter:
         self.prefetch(state_texts, {ROUTE_QID: _routing_question(scenario), **scenario.questions})
         return [self.decide(text, scenario) for text in state_texts]
 
+    def route_batch(self, state_texts: list[str], scenario: Scenario) -> list[dict]:
+        """route() for each state, with all of them encoded in one batched pass first."""
+        self.prefetch(state_texts, {ROUTE_QID: _routing_question(scenario)})
+        return [self.route(text, scenario) for text in state_texts]
+
     def route(self, state_text: str, scenario: Scenario) -> dict:
         """The routing question alone: {route, confidence, probabilities, source}, and the reviewed route if one
         matches."""

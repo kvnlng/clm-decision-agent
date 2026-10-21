@@ -9,11 +9,14 @@ setting.
 
 When an agent calls `decide` with the text of a request:
 
-1. CLM picks the route from the text alone.
+1. CLM picks the route from the text and, if `[routing] inform` names tools, their facts.
 2. The route's informing tools run, and their facts are added to what CLM reads.
 3. CLM answers the scenario's questions; the rules are checked against the answers.
 4. The acting tools whose conditions hold run, unless the route is uncertain.
 5. The reply goes back to the agent.
+
+`decide_many` makes the same decisions for many requests at once. CLM then reads each step's
+texts in one batched pass, and the tools run in the order the requests came.
 
 ## Routes
 

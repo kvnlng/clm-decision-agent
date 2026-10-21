@@ -43,20 +43,22 @@ async def tool_names(mcp_server):
 
 @pytest.mark.anyio
 async def test_lists_tools_without_review(parts):
-    assert await tool_names(server.build_server(*parts, review=False)) == ["check_call", "decide", "describe"]
+    assert await tool_names(server.build_server(*parts, review=False)) == \
+        ["check_call", "decide", "decide_many", "describe"]
 
 
 @pytest.mark.anyio
 async def test_lists_review_tools(parts):
     assert await tool_names(server.build_server(*parts, review=True)) == \
-        ["agreement", "check_call", "correct", "decide", "describe"]
+        ["agreement", "check_call", "correct", "decide", "decide_many", "describe"]
 
 
 @pytest.mark.anyio
-async def test_only_decide_can_change_anything(parts):
+async def test_only_deciding_can_change_anything(parts):
     async with Client(server.build_server(*parts, review=True)) as client:
         hints = {tool.name: tool.annotations.read_only_hint for tool in (await client.list_tools()).tools}
-    assert hints == {"decide": False, "check_call": True, "describe": True, "correct": False, "agreement": True}
+    assert hints == {"decide": False, "decide_many": False, "check_call": True, "describe": True, "correct": False,
+                     "agreement": True}
 
 
 @pytest.mark.anyio
@@ -208,3 +210,17 @@ async def test_correct_saves_the_text_the_route_saw(write_scenario):
     records, _ = load_records(scenario.record_path)
     assert [r["state_text"] for r in records] == [seen]
     assert router.verdicts == {seen: "Billing"}
+
+
+@pytest.mark.anyio
+async def test_decide_many_over_mcp(parts):
+    scenario, router, tools = parts
+    async with Client(server.build_server(scenario, router, tools, review=False)) as client:
+        result = await client.call_tool("decide_many", {"requests": [{"text": TEXT}, {"text": "other"}]})
+        empty = await client.call_tool("decide_many", {"requests": []})
+        too_many = await client.call_tool("decide_many", {"requests": [{"text": "x"}] * 1001})
+        no_text = await client.call_tool("decide_many", {"requests": [{"context": {}}]})
+    assert [d["route"] for d in result.structured_content["decisions"]] == ["Tech", "Tech"]
+    assert empty.structured_content == {"decisions": []}
+    assert too_many.is_error and "at most 1000" in too_many.content[0].text
+    assert no_text.is_error and "requests[0]" in no_text.content[0].text

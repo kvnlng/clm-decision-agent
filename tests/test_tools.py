@@ -17,7 +17,7 @@ def test_load_tools_by_name(write_scenario):
     registry = load_tools(load_scenario(path))
     assert registry == {"lookup": fake_tools.lookup, "act": fake_tools.act, "broken": fake_tools.broken,
                         "unserialisable": fake_tools.unserialisable, "slow": fake_tools.slow,
-                        "alternatives": fake_tools.alternatives}
+                        "alternatives": fake_tools.alternatives, "flaky": fake_tools.flaky}
     assert fake_tools.SETTINGS == {"url": "http://x", "scenario_dir": str(path.resolve().parent)}
 
 

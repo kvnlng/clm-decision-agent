@@ -26,6 +26,7 @@ from scenario import Scenario, ScenarioError, load_scenario
 from tools import check_tools, load_tools
 
 KEY_ENV = "DECISION_SERVER_KEY"
+MAX_BATCH = 1000
 READ_ONLY = ToolAnnotations(read_only_hint=True)
 CHANGES = ToolAnnotations(read_only_hint=False)
 
@@ -78,6 +79,18 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
             if trace:
                 record["outcome"] = {key: result.get(key) for key in ("route", "confidence", "uncertain", "source")}
             return result
+
+    @server.tool(annotations=CHANGES)
+    def decide_many(requests: list[dict[str, Any]]) -> dict[str, Any]:
+        """Decide on many requests at once, each {"text": ..., "context": ...} with context optional: the same
+        decisions as decide, in the same order, faster per request. At most 1000 requests a call."""
+        if len(requests) > MAX_BATCH:
+            raise ToolError(f"decide_many takes at most {MAX_BATCH} requests a call, not {len(requests)}")
+        for i, request in enumerate(requests):
+            if not isinstance(request.get("text"), str) or not isinstance(request.get("context", {}), dict):
+                raise ToolError(f"requests[{i}] must be {{'text': ..., 'context': {{...}}}}, with context optional")
+        with traced("decide_many"):
+            return {"decisions": clm(lambda: decision.decide_many(requests, scenario, router, tools))}
 
     @server.tool(annotations=READ_ONLY)
     def check_call(text: str, call: dict[str, Any]) -> dict[str, Any]:

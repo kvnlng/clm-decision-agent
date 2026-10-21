@@ -95,7 +95,12 @@ class FakeRouter:  # pylint: disable=too-many-instance-attributes
         self.prefetched = getattr(self, "prefetched", []) + [(list(state_texts), questions)]
 
     def decide_batch(self, state_texts, scenario):
+        self.prefetch(state_texts, "decide")
         return [self.decide(text, scenario) for text in state_texts]
+
+    def route_batch(self, state_texts, scenario):
+        self.prefetch(state_texts, "route")
+        return [self.route(text, scenario) for text in state_texts]
 
     def route(self, state_text, scenario):
         found = self.decide(state_text, scenario)
