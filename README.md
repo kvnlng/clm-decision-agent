@@ -32,17 +32,24 @@ CLM answers, the rules that follow from the answers, and the tools. Information 
 reaches a decision only through those tools. There is no language model in the server.
 
 ```
-test chat  ──MCP──▶  decision server ──▶ CLM (in this process, or a CLM server on a GPU machine)
+test chat  ──MCP──▶  decision server ──▶ CLM (in this process: MLX on a Mac, PyTorch on a GPU)
 (or any agent)            ├──▶ informing tools (facts)
                           └──▶ acting tools (do things)
 ```
 
 ## Getting started
 
-You need an Apple Silicon Mac, Python 3.12 or later, and [uv](https://docs.astral.sh/uv/). The
-first run downloads CLM, about 8 GB.
+You need Python 3.12 or later, [uv](https://docs.astral.sh/uv/), and one of:
 
-**1. Install.**
+- **a Mac with Apple Silicon** and 16 GB of memory or more. CLM runs with MLX; the first run
+  downloads about 8 GB.
+- **Linux with an NVIDIA GPU of 24 GB or more**, such as an A100. CLM runs with PyTorch; the
+  first run downloads about 16 GB. Before step 2, switch the example to the torch backend: in
+  `examples/service_desk/scenario.toml`, comment out the MLX lines under `[clm]` and uncomment
+  the torch ones. A plain CPU works too, slowly. There is a `Dockerfile`:
+  [docs/serving.md](docs/serving.md#in-docker).
+
+**1. Install.** The same command on both machines.
 
 ```bash
 uv sync
@@ -131,6 +138,10 @@ Measured on the example scenario, on an M5 Max with 64 GB:
   eye before relying on them.
 - **Decisions are quick.** The slow test loads CLM and makes those 17 decisions, with their
   tool calls, in under 3 seconds.
+- **The two backends agree.** With the released heads, the torch backend (on the Mac's GPU)
+  and the MLX build chose the same route for 79 of 81 requests from the example. Trained with
+  the torch backend, the example also reached 98% and 15 of 17. CLM has not yet been run on an
+  NVIDIA GPU: see [docs/models.md](docs/models.md#what-has-been-checked).
 
 ## Layout
 
@@ -140,17 +151,18 @@ Measured on the example scenario, on an M5 Max with 64 GB:
 | `decision.py` | One decision: route, informing tools, questions, rules, acting tools |
 | `server.py` | The decision server: MCP over stdio or HTTP |
 | `chat.py` | The test chat, an MCP client |
-| `clm_router.py` | CLM, local or on a server, and the reuse of corrections |
+| `clm_router.py` | Loads CLM with either backend; routing and the reuse of corrections |
+| `clm_torch.py`, `clm_schema.py`, `clm_common.py` | CLM with PyTorch; the authors' question format, copied unchanged; what both share |
 | `tools.py` | Loads a scenario's tools |
 | `record.py`, `evaluate.py` | The corrections record and its replay |
 | `dataset.py`, `synthesize.py`, `train.py`, `generator.py` | Training, and the language model that writes examples |
 | `examples/service_desk/` | The worked example, with a stand-in issue tracker |
-| `mlx_clm_triage.py` | A single CLM call, the smallest possible example |
-| `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads CLM) |
+| `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads CLM; `CLM_TEST_BACKEND=torch` for the torch backend) |
+| `Dockerfile` | The project on Linux, for the torch backend |
 
 CLM is described in Kwok et al. (2026) and published at
-[Contrastive-LM/CLM](https://github.com/Contrastive-LM/CLM). This project uses the community
-MLX builds of it.
+[Contrastive-LM/CLM](https://github.com/Contrastive-LM/CLM). This project runs the authors'
+released model with PyTorch, or the community MLX builds of it on a Mac.
 
 ## Licence
 

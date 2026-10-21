@@ -10,13 +10,13 @@ The text a caller sends with `decide`, `check_call` or `correct` reaches:
 
 | Place | When | You control it with |
 |---|---|---|
-| CLM | Every call | `[clm] backend`, `url` |
+| CLM | Every call | `[clm]`: it runs in the server's process, with either backend |
 | Your informing and acting tools, and whatever they call | When the decision runs them | Your tools module and `[tools.settings]` |
 | The corrections record, on disk | `correct`, in review mode only | `[record]` |
 | The examples file and trained heads, on disk | If you train from corrections | Where you keep those files |
 
-With the default settings CLM runs inside the server's process, so nothing leaves the machine
-except what your tools send. The server keeps no log of the requests it is sent: outside review
+CLM runs inside the server's process, so nothing leaves the machine except what your tools
+send. The first start downloads CLM from Hugging Face; requests are never sent there. The server keeps no log of the requests it is sent: outside review
 mode, it saves nothing.
 
 **Acting tools receive the caller's raw text.** There is no language model to reword it, so

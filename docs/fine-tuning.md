@@ -83,8 +83,9 @@ Two earlier measurements on a similar problem (issue reports, 450 generated exam
 
 ## Limits
 
-- Training runs on Apple Silicon only, with the local CLM backend. The CLM authors publish
-  their own training script for GPU servers; this project does not use it.
+- Training runs with either backend, on the machine you serve from. Heads trained with one
+  backend are not used by the other ([models.md](models.md#heads-belong-to-one-backend)).
+  Trained with the torch backend on a Mac, the example also reached 98% held-back and 15 of 17.
 - One example in five of the generated set is held back, chosen by a hash of its text, so the
   same examples are held back on every run. Reviewed routes are always trained on.
 - After training, the "near-identical message" matching used to reuse corrections works on

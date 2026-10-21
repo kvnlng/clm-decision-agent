@@ -10,15 +10,19 @@ CLM is a frozen encoder (Qwen3-8B) with two small "heads" on top. The encoder tu
 a vector; one head projects the situation, the other projects each option, and the answer is
 whichever option lands closest.
 
-### In this process (the default)
+CLM always runs inside the server's process. `backend` under `[clm]` chooses how, to suit the
+machine. The example scenario has both blocks, with one commented out.
+
+### On a Mac with Apple Silicon: `backend = "mlx"` (the default)
 
 ```toml
 [clm]
+backend = "mlx"
 model_id = "mlx-community/CLM-v0.1-8B-MLX-8bit"
 heads = "scenario.heads"     # optional: heads trained for this scenario
 ```
 
-This uses the community MLX builds, which run on Apple Silicon.
+This uses the community MLX builds of CLM, converted from the authors' release and checked against it.
 
 | Build | Download | Agreement with the original | Use it when |
 |---|---|---|---|
@@ -29,30 +33,57 @@ This uses the community MLX builds, which run on Apple Silicon.
   keeps the released heads unchanged. The 4-bit build's heads were re-fitted to a more
   compressed encoder, so its answers differ more.
 - The agreement figures are the build publishers' own.
-- **Heads only work with the encoder build they were made for.** Heads trained with the 8-bit
-  build must be used with the 8-bit build; the server checks this.
+- A Mac needs about 9 GB of free memory for the 8-bit build; 16 GB is the practical minimum.
 
-### On the CLM authors' server
+### On Linux with an NVIDIA GPU: `backend = "torch"`
 
 ```toml
 [clm]
-backend = "server"
-url = "http://localhost:8700"
-api_key_env = "CLM_API_KEY"      # optional: the variable holding the server's key
-model = "clm-latest"
+backend = "torch"
+model_id = "Contrastive-LM/CLM-v0.1-8B"
+device = "cuda"              # optional: cuda, mps or cpu; the first one available otherwise
+heads = "scenario.heads"     # optional: heads trained for this scenario
 ```
 
-The authors' `clm-serve` needs a GPU machine. This backend follows their server code but
-**has not been run against a real server**. Two things differ from the local backend:
+This runs the CLM authors' own release with PyTorch: their heads (`Contrastive-LM/CLM-v0.1-8B`)
+and the encoder they were made for (`Qwen/Qwen3-8B`, at the revision the authors used), at full
+precision. The first start downloads about 16 GB.
 
-- A corrected route is reused only when the request text is exactly the same, because
-  the server returns answers and not the vectors that "near-identical" matching needs.
-- `train.py` does not apply. Train and load heads on the server with the authors' tools.
+- **A GPU with 24 GB of memory or more.** The encoder takes about 17 GB. An A100 is plenty.
+- **It also runs on a Mac** (`device = "mps"`) **and on a plain CPU**, slowly. That is how it
+  was checked, as described below.
+- `uv sync` installs PyTorch on every machine; on Linux the PyPI build includes CUDA.
+
+### What has been checked
+
+| Check | Result |
+|---|---|
+| The torch backend on a Mac's GPU against the MLX 8-bit build, released heads, 81 requests from the example | Same route for 79; the largest difference in a route's probability was 0.06 |
+| Training the example with the torch backend on a Mac | 55% → 98% on held-back examples; 15 of 17 hand-written messages |
+| The torch backend on Linux, in Docker, on the CPU | See [serving.md](serving.md#where-clm-runs) |
+| An NVIDIA GPU | **Not yet** |
+
+### Heads belong to one backend
+
+Heads trained with `train.py` record the backend and the CLM build they were trained with.
+The MLX build's encoder is compressed and the torch backend's is not, so heads trained on one
+do not fit the other. The server checks this, says so at start-up, and uses the released heads
+until you run `train.py` on the machine you serve from. There is no conversion; training takes
+under a minute.
+
+The heads file itself has the same layout for both backends.
+
+### Earlier settings
+
+Earlier versions could ask the CLM authors' server (`clm-serve`) with `backend = "server"`,
+`url` and `api_key_env`. The torch backend replaces it, and a scenario that still uses those
+settings stops at start-up with a line pointing here.
 
 ## The language model
 
 It writes example messages for training and is not used while the server runs. Any model that
-follows instructions will do.
+follows instructions will do. The `mlx` backend needs a Mac; on Linux, use `ollama` or
+`openai`.
 
 ```toml
 [generator]
