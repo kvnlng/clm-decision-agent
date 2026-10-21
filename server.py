@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import hmac
 import os
 import sys
 import threading
+import time
 from typing import Any, Callable
 
 from mcp.server import MCPServer
@@ -16,6 +18,7 @@ from mcp.types import ToolAnnotations
 from starlette.responses import JSONResponse
 
 import decision
+import tracing
 from clm_common import ClmError
 from evaluate import agreement as replay_agreement
 from record import load_records, record_key, save_correction
@@ -37,13 +40,18 @@ class _OneAtATime:
         method = getattr(self._router, name)
 
         def locked(*args, **kwargs):
+            start = time.perf_counter()
             with self._lock:
+                tracing.add("lock_wait_ms", (time.perf_counter() - start) * 1000)
                 return method(*args, **kwargs)
         return locked
 
 
-def build_server(scenario: Scenario, router, tools: dict[str, Callable], review: bool) -> MCPServer:
-    """The MCP server for one scenario. Review mode adds `correct` and `agreement`, which write and read the record."""
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def build_server(scenario: Scenario, router, tools: dict[str, Callable], review: bool,
+                 trace: tracing.TraceWriter | None = None) -> MCPServer:
+    """The MCP server for one scenario. Review mode adds `correct` and `agreement`, which write and read the record.
+    With `trace`, each call is written to the trace."""
     server = MCPServer("decision-server", instructions=(
         f"Decisions for the scenario '{scenario.path.stem}'. Call describe to see the routes and questions, "
         "then decide with the text of a request. decide may run the scenario's acting tools."),
@@ -57,22 +65,32 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         except ClmError as error:
             raise ToolError(str(error)) from error
 
+    def traced(tool: str, text: str | None = None):
+        return trace.call(tool, text) if trace else contextlib.nullcontext({})
+
     @server.tool(annotations=CHANGES)
     def decide(text: str) -> dict[str, Any]:
         """Decide on a request: its route and confidence, the answers to the scenario's questions, the rules
         that apply, facts the informing tools found, and what the acting tools did. An uncertain route runs no
         acting tool."""
-        return clm(lambda: decision.decide(text, scenario, router, tools))
+        with traced("decide", text) as record:
+            result = clm(lambda: decision.decide(text, scenario, router, tools))
+            record["outcome"] = {key: result[key] for key in ("route", "confidence", "uncertain", "source")}
+            return result
 
     @server.tool(annotations=READ_ONLY)
     def check_call(text: str, call: dict[str, Any]) -> dict[str, Any]:
         """CLM's opinion of a tool call you propose for a request: a probability and whether it is approved."""
-        return clm(lambda: decision.check_call(text, call, scenario, router))
+        with traced("check_call", text) as record:
+            result = clm(lambda: decision.check_call(text, call, scenario, router))
+            record["outcome"] = result
+            return result
 
     @server.tool(annotations=READ_ONLY)
     def describe() -> dict[str, Any]:
         """The decisions this server makes: its routes, questions and rules."""
-        return decision.describe(scenario)
+        with traced("describe"):
+            return decision.describe(scenario)
 
     if not review:
         return server
@@ -90,7 +108,8 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
             if scenario.live_corrections:
                 router.add_verdict(text, route, scenario)
             return {"saved": True}
-        return clm(work)
+        with traced("correct", text):
+            return clm(work)
 
     @server.tool(annotations=READ_ONLY)
     def agreement() -> dict[str, Any]:
@@ -98,7 +117,8 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         records, _ = load_records(scenario.record_path, record_key(scenario))
         # Replayed without reusing corrections, or every correction would agree with itself
         plain = dataclasses.replace(scenario, live_corrections=False)
-        return clm(lambda: replay_agreement(records, plain, router))
+        with traced("agreement"):
+            return clm(lambda: replay_agreement(records, plain, router))
 
     return server
 
@@ -147,6 +167,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--key-env", default=KEY_ENV, help="variable holding the key callers must send")
     parser.add_argument("--allowed-host", action="append", dest="allowed_hosts",
                         help="a Host header to accept, such as decisions.example.org:443 (repeatable)")
+    parser.add_argument("--trace", metavar="FILE", help="write one line per call to FILE, saying where the time went")
+    parser.add_argument("--trace-text", action="store_true", help="include each request's text in the trace")
     args = parser.parse_args(argv)
     key = os.environ.get(args.key_env, "").strip()
     if args.http and not key:
@@ -157,7 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     except (ScenarioError, ClmError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    server = build_server(scenario, router, tools, args.review)
+    trace = tracing.TraceWriter(args.trace, text=args.trace_text) if args.trace else None
+    server = build_server(scenario, router, tools, args.review, trace=trace)
     if not args.http:
         server.run("stdio")
         return 0

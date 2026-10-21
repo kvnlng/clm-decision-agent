@@ -165,6 +165,7 @@ Measured on the example scenario, on an M5 Max with 64 GB:
 | `clm_torch.py`, `clm_schema.py`, `clm_common.py` | CLM with PyTorch; the authors' question format, copied unchanged; what both share |
 | `tools.py` | Loads a scenario's tools |
 | `record.py`, `evaluate.py` | The corrections record and its replay |
+| `tracing.py`, `trace_report.py` | `server.py --trace`: where each call's time went, and its summary |
 | `dataset.py`, `synthesize.py`, `train.py`, `generator.py` | Training, and the language model that writes examples |
 | `examples/service_desk/` | The worked example, with a stand-in issue tracker |
 | `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads CLM; `CLM_TEST_BACKEND=torch` for the torch backend) |

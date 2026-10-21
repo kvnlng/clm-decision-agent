@@ -59,6 +59,29 @@ Agents written in Python, AI Playground and Genie Code can then use it. Databric
 able to reach the address, so the server needs a public HTTPS address, or a private network
 link, and your workspace's outbound network rules must allow it. This has not been tried yet.
 
+## Where the time goes
+
+`--trace <file>` writes one line per call to the file: how long it took, and how much of that
+was waiting for CLM, encoding text, the heads, each of the scenario's tools, and matching stored
+corrections. It also counts the texts and tokens CLM encoded, and how many it found in its cache.
+
+```bash
+uv run python server.py my_scenario.toml --http --trace calls.jsonl
+uv run python trace_report.py calls.jsonl
+```
+
+The report gives each kind of call (`decide`, `check_call`, ...) a table of its stages, with the
+mean, median, 95th and 99th percentile in milliseconds and each stage's share of the time, then
+the cache hit rate, texts and tokens per call, and how much of what was encoded was padding.
+
+- The trace leaves out the requests' text. `--trace-text` adds it; the trace then needs the same
+  care as the corrections record ([data-handling.md](data-handling.md)).
+- Tracing is off unless asked for. When on, it adds little: a few clock readings per call.
+- On a Mac, the MLX build encodes and applies the heads inside its own code, so its trace counts
+  the heads' time as encoding and has no batch or padding counts.
+- A request seen before is found in CLM's cache, so repeating the same requests shows a higher
+  hit rate than new ones would.
+
 ## Where CLM runs
 
 CLM runs inside the server's process, on whatever the scenario's `[clm] backend` says
