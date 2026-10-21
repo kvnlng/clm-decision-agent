@@ -85,6 +85,5 @@ docker run --rm --gpus all -v clm-hf:/cache -e CLM_TEST_BACKEND=torch clm-decisi
 - To serve from the container, run `uv run python server.py <scenario> --http --host 0.0.0.0`
   with the key variable set (`-e DECISION_SERVER_KEY=...`) and the port published (`-p 8000:8000`).
 
-What has been checked so far is listed in [models.md](models.md#what-has-been-checked). CLM has
-run on an A100, on the VM itself. **This image has not yet been run on a GPU**, and it has no C
-compiler, which PyTorch needs there ([models.md](models.md#on-linux-with-an-nvidia-gpu-backend--torch)).
+What has been checked so far is listed in [models.md](models.md#what-has-been-checked), including
+this image on an A100.
