@@ -115,13 +115,6 @@ def make_router(scenario: Scenario):
     return LocalContrastiveRouter(scenario.clm_model_id, heads_dir=heads_dir), f"its {note}"
 
 
-def last_turn(state_text: str) -> str:
-    """The final user message of a rendered conversation, with any continuation lines."""
-    lines = state_text.split("\n")
-    starts = [i for i, line in enumerate(lines) if line.startswith("User: ")]
-    return "\n".join(lines[starts[-1]:]) if starts else state_text
-
-
 class LocalContrastiveRouter:
     """CLM for one scenario: routing decisions, tool-call checks and reuse of reviewed routes."""
 
@@ -152,10 +145,6 @@ class LocalContrastiveRouter:
         }
         if self.verdicts and scenario.live_corrections:
             match = self._reviewed(state_text, scenario)
-            latest = last_turn(state_text)
-            if not match and latest != state_text:
-                # A question repeated later in a conversation should still meet its first-turn verdict
-                match = self._reviewed(latest, scenario)
             if match:
                 human_route, similarity = match
                 decision.update(route=human_route, source="reviewed", similarity=similarity,
@@ -181,6 +170,10 @@ class LocalContrastiveRouter:
         self.verdicts = [(r["state_text"] if self.exact_match else self.embed_state(r["state_text"], scenario),
                           r["human"]) for r in route_verdicts(records, scenario)]
         return len(self.verdicts)
+
+    def add_verdict(self, state_text: str, route: str, scenario: Scenario) -> None:
+        """Reuse the owner's `route` for this state (and near-identical ones) from now on."""
+        self.verdicts.append((state_text if self.exact_match else self.embed_state(state_text, scenario), route))
 
     def match_verdict(self, vector: list[float], threshold: float) -> tuple[str, float] | None:
         """The closest stored verdict at or above the threshold; on a tie the later one wins."""

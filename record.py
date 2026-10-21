@@ -1,4 +1,4 @@
-"""The record: human verdicts on the models' decisions, one JSON object per line beside the scenario."""
+"""The record: the owner's corrections of CLM's routes, one JSON object per line beside the scenario."""
 from __future__ import annotations
 
 import argparse
@@ -67,16 +67,18 @@ def append_record(path: Path, entry: dict, key: bytes | None = None) -> None:
 def _valid(entry) -> bool:
     if not isinstance(entry, dict) or not isinstance(entry.get("state_text"), str) or not entry["state_text"]:
         return False
-    kind, human = entry.get("kind"), entry.get("human")
-    if kind == "route":
-        clm = entry.get("clm")
-        return isinstance(human, str) and isinstance(clm, dict) and isinstance(clm.get("route"), str)
-    if kind == "tool":
-        return isinstance(human, bool)
-    if kind == "reply":
-        return isinstance(human, dict) and isinstance(human.get("acceptable"), bool) \
-            and isinstance(entry.get("route"), str)
-    return False
+    human, clm = entry.get("human"), entry.get("clm")
+    return entry.get("kind") == "route" and isinstance(human, str) and isinstance(clm, dict) \
+        and isinstance(clm.get("route"), str)
+
+
+def save_correction(scenario: Scenario, text: str, route: str, clm: dict) -> None:
+    """Save the owner's route for `text`, with what CLM had decided ({"route", "confidence"})."""
+    if route not in scenario.routes:
+        raise ValueError(f"unknown route '{route}'; the routes are {', '.join(scenario.routes)}")
+    entry = {"kind": "route", "state_text": text, "human": route,
+             "clm": {"route": clm["route"], "confidence": clm["confidence"]}}
+    append_record(scenario.record_path, entry, record_key(scenario))
 
 
 def _decode(line: bytes, key: bytes | None):
@@ -176,9 +178,9 @@ def _purge(scenario: Scenario, read) -> int:
         return 2
     lines = _lines(path)
     if not all(_is_token(line) or line.lstrip().startswith(b'{"time"') for line in lines):
-        print(f"error: {path} does not look like a review record, so it was not deleted.", file=sys.stderr)
+        print(f"error: {path} does not look like a corrections record, so it was not deleted.", file=sys.stderr)
         return 2
-    print(f"{path} holds {len(lines)} line{'' if len(lines) == 1 else 's'} of reviewed conversation text.")
+    print(f"{path} holds {len(lines)} line{'' if len(lines) == 1 else 's'} of corrected request text.")
     try:
         answer = read("Delete it? This cannot be undone. [yes/no] ")
     except EOFError:
@@ -193,7 +195,7 @@ def _purge(scenario: Scenario, read) -> int:
 
 def main(argv: list[str] | None = None, read=input) -> int:
     """Command-line entry point: `purge <scenario>` or `newkey <file>`; returns the process exit code."""
-    parser = argparse.ArgumentParser(description="Look after a scenario's review record.")
+    parser = argparse.ArgumentParser(description="Look after a scenario's corrections record.")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("purge", help="delete a scenario's record").add_argument("scenario")
     commands.add_parser("newkey", help="write a new encryption key to a file").add_argument("file")

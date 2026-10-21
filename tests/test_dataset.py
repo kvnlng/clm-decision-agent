@@ -26,23 +26,22 @@ def test_split_is_stable_and_holds_back_about_a_fifth():
 def test_training_rows_use_examples_and_reviewed_routes(scenario):
     texts = [f"message number {i}" for i in range(40)]
     examples = [{"text": t, "route": "Billing"} for t in texts] + [{"text": "gone", "route": "Removed_Route"}]
-    records = [{"kind": "route", "state_text": "User: my app crashes", "human": "Tech",
-                "clm": {"route": "Billing", "confidence": 0.8, "probabilities": {}}},
-               {"kind": "reply", "state_text": "x", "route": "Tech", "reply": "", "human": {"acceptable": True}}]
+    records = [{"kind": "route", "state_text": "my app crashes", "human": "Tech",
+                "clm": {"route": "Billing", "confidence": 0.8, "probabilities": {}}}]
     train, reviewed, test = training_rows(scenario, examples, records)
 
-    assert reviewed == [("User: my app crashes", "Tech")]
+    assert reviewed == [("my app crashes", "Tech")]
     train = train + reviewed
     assert all(route in scenario.routes for _, route in train + test)
-    assert {state for state, _ in train + test} == {f"User: {t}" for t in texts} | {"User: my app crashes"}
-    assert {state for state, _ in test} == {f"User: {t}" for t in texts if split_of(t) == "test"}
+    assert {state for state, _ in train + test} == set(texts) | {"my app crashes"}
+    assert {state for state, _ in test} == {t for t in texts if split_of(t) == "test"}
     assert not {state for state, _ in train} & {state for state, _ in test}
 
 
 def test_a_reviewed_route_that_repeats_a_held_back_example_is_not_trained_on(scenario):
     texts = [f"message number {i}" for i in range(40)]
     held = next(t for t in texts if split_of(t) == "test")
-    records = [{"kind": "route", "state_text": f"User: {held}", "human": "Billing",
+    records = [{"kind": "route", "state_text": held, "human": "Billing",
                 "clm": {"route": "Tech", "confidence": 0.8, "probabilities": {}}}]
     _, reviewed, _ = training_rows(scenario, [{"text": t, "route": "Billing"} for t in texts], records)
     assert reviewed == []

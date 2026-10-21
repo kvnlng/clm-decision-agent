@@ -1,14 +1,14 @@
 # Choosing and pointing at models
 
-A scenario names two models. Both can run in the chat's own process or on a server.
+A scenario names two models: CLM, which the decision server uses for every decision, and a
+language model, which only `synthesize.py` uses to write training examples. Both can run in
+the same process or on a server.
 
 ## CLM
 
 CLM is a frozen encoder (Qwen3-8B) with two small "heads" on top. The encoder turns text into
 a vector; one head projects the situation, the other projects each option, and the answer is
 whichever option lands closest.
-
-![How CLM decides: the situation and the options pass through the frozen encoder and the two heads, are compared, and the confidence threshold splits acting from asking](diagrams/how-clm-decides.png)
 
 ### In this process (the default)
 
@@ -30,7 +30,7 @@ This uses the community MLX builds, which run on Apple Silicon.
   compressed encoder, so its answers differ more.
 - The agreement figures are the build publishers' own.
 - **Heads only work with the encoder build they were made for.** Heads trained with the 8-bit
-  build must be used with the 8-bit build; the chat checks this.
+  build must be used with the 8-bit build; the server checks this.
 
 ### On the CLM authors' server
 
@@ -45,13 +45,14 @@ model = "clm-latest"
 The authors' `clm-serve` needs a GPU machine. This backend follows their server code but
 **has not been run against a real server**. Two things differ from the local backend:
 
-- A reviewer's route is reused only when the conversation text is exactly the same, because
+- A corrected route is reused only when the request text is exactly the same, because
   the server returns answers and not the vectors that "near-identical" matching needs.
 - `train.py` does not apply. Train and load heads on the server with the authors' tools.
 
 ## The language model
 
-Any model that follows instructions and can call tools will do.
+It writes example messages for training and is not used while the server runs. Any model that
+follows instructions will do.
 
 ```toml
 [generator]
@@ -71,17 +72,7 @@ model = "gemma4:26b"
 api_key_env = "MODEL_API_KEY"                         # optional
 ```
 
-All three have been run with the example. What we saw:
+All three have been used to write the example's training messages. A larger model writes more
+varied examples but takes longer; the small one is the default because it runs in this process.
 
-| | Qwen3-4B (in process) | Gemma 26B (Ollama) |
-|---|---|---|
-| Extracting collected details, 20 fields | 18 right | 19 right |
-| Time for five extractions | 1.3 s | 18 s, including loading |
-| Size on disk | 2 to 3 GB | 18 GB |
-
-The small model is the default because extraction runs on every turn. A larger one is more
-likely to matter for the wording of what is finally submitted. Both fit beside the 8-bit CLM (about
-9 GB in use) on a 64 GB machine.
-
-`base_url` can point at a machine other than yours. The chat prints where text is going at
-start-up; see [data-handling.md](data-handling.md).
+`base_url` can point at a machine other than yours; see [data-handling.md](data-handling.md).

@@ -5,7 +5,7 @@
 # pylint: disable=unused-argument,attribute-defined-outside-init,use-implicit-booleaness-not-comparison
 import pytest
 from conftest import FakeRouter, decision
-from evaluate import confidence_bands, evaluate, format_report, main, match_report, suggest_threshold
+from evaluate import agreement, confidence_bands, evaluate, format_report, main, match_report, suggest_threshold
 
 
 def route_record(state_text, clm, human):
@@ -32,12 +32,6 @@ def test_evaluate_replays_the_record_against_the_scenario(scenario):
         route_record("User: crash", "Billing", "Tech"),
         route_record("User: slow", "Tech", "Tech"),
         route_record("User: parcel", "Tech", "Shipping"),            # route no longer in the scenario
-        {"kind": "tool", "state_text": "tool-a", "calls": [], "clm": {"p": 0.9, "approved": True}, "human": True},
-        {"kind": "tool", "state_text": "tool-b", "calls": [], "clm": {"p": 0.9, "approved": True}, "human": False},
-        {"kind": "reply", "state_text": "User: refund", "route": "Billing", "reply": "ok",
-         "human": {"acceptable": True, "note": ""}},
-        {"kind": "reply", "state_text": "User: crash", "route": "Tech", "reply": "no",
-         "human": {"acceptable": False, "note": "wrong"}},
     ]
     router = FakeRouter(
         {"User: refund": decision("Billing", 0.9), "User: crash": decision("Billing", 0.3),
@@ -53,8 +47,7 @@ def test_evaluate_replays_the_record_against_the_scenario(scenario):
     assert routing["confusion"] == {("Billing", "Billing"): 1, ("Tech", "Billing"): 1, ("Tech", "Tech"): 1}
     assert routing["misses"] == [{"state_text": "User: crash", "human": "Tech", "clm": "Billing", "confidence": 0.3}]
     assert routing["suggested_threshold"] == 0.7
-    assert result["tools"] == {"n": 2, "agree": 1}
-    assert result["replies"] == {"Billing": {"n": 1, "acceptable": 1}, "Tech": {"n": 1, "acceptable": 0}}
+    assert set(result) == {"routing", "matching"}
     # "User: slow" and "User: crash" are identical in vector space and the reviewer gave both the same route
     assert result["matching"] == {"n": 3, "matched": 2, "same_route": 2}
 
@@ -75,7 +68,7 @@ def test_report_names_the_numbers_a_reader_needs(scenario):
     assert "Tech -> Billing  x1" in report
     assert "[0.30] Tech (CLM: Billing): User: crash" in report
     assert "Suggested confidence_threshold: 0.90 (current 0.60)" in report
-    assert "Tool checks: no reviewed tool calls" in report
+    assert "Tool checks" not in report
 
 
 def test_main_with_an_empty_record_explains_what_to_do(write_scenario, capsys):
@@ -106,3 +99,10 @@ def test_evaluate_works_without_vectors_and_says_reuse_is_by_exact_text(scenario
     result = evaluate(records, scenario, NoVectors(decision("Billing")))
     assert result["matching"] is None
     assert "exact text" in format_report(result, scenario)
+
+
+def test_agreement_counts(scenario):
+    records = [route_record("refund", "Billing", "Billing"), route_record("crash", "Billing", "Tech"),
+               route_record("parcel", "Tech", "Shipping")]          # route no longer in the scenario
+    router = FakeRouter({"refund": decision("Billing"), "crash": decision("Billing")})
+    assert agreement(records, scenario, router) == {"n": 2, "agree": 1}

@@ -1,7 +1,7 @@
 [project]
 name = "clm-decision-agent"
 version = "0.1.0"
-description = "Local chat agent: CLM decides, a generator writes, LangGraph connects them"
+description = "A decision server: CLM makes a scenario's decisions and offers them to agents over MCP"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -10,12 +10,12 @@ dependencies = [
     "mlx-lm>=0.32.0",
     "transformers>=5.18.0",
     "huggingface_hub",
-    "langgraph>=1.2.12,<2",
     "langchain-core>=1.6.6,<2",
     "langchain-ollama>=1.1.0,<2",
     "httpx>=0.28.1",
     "langchain-openai>=1.6.7",
     "cryptography>=50.0.2",
+    "mcp>=2.3,<3",
 ]
 
 [dependency-groups]
