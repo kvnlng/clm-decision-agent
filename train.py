@@ -193,7 +193,7 @@ def train(scenario, engine, train_rows: list, reviewed: list, test_rows: list, w
     names = list(scenario.routes)
 
     def encode(rows):
-        # The same layout CLM is asked with: the conversation, a blank line, the routing question
+        # The same layout CLM is asked with: the request, a blank line, the routing question
         texts = [f"{state.strip()}\n\n{scenario.routing_instructions.strip()}" for state, _ in rows]
         return _embed(engine, texts), torch.tensor([names.index(route) for _, route in rows])
 

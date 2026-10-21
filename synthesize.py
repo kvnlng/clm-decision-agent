@@ -16,8 +16,6 @@ import json
 import re
 import sys
 
-from langchain_core.messages import HumanMessage
-
 from dataset import examples_path, save_examples
 from generator import GeneratorError, make_generator
 from scenario import load_for_command
@@ -100,9 +98,9 @@ def synthesize(scenario, generator, path, per_route: int = 64, per_call: int = 8
         # Two calls in a row with nothing new means the generator has run out of variety
         while len(seen) < per_route and idle < 2:
             style = STYLES[call % len(STYLES)]
-            reply = generator.generate(build_prompt(scenario, route, style, per_call),
-                                       [HumanMessage(content=f"Batch {call + 1}.")])
-            fresh = [m for m in dict.fromkeys(parse_messages(str(reply.content))) if m not in seen]
+            # The batch number varies the request, so a model that always picks its likeliest words still varies
+            reply = generator.generate(build_prompt(scenario, route, style, per_call), f"Batch {call + 1}.")
+            fresh = [m for m in dict.fromkeys(parse_messages(reply)) if m not in seen]
             fresh = fresh[:per_route - len(seen)]
             idle = 0 if fresh else idle + 1
             seen.update(fresh)
