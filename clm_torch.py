@@ -19,7 +19,7 @@ from huggingface_hub import snapshot_download
 from safetensors.numpy import load_file
 
 import clm_schema
-from clm_router import HEADS_FILE, ClmError
+from clm_common import HEADS_FILE, ClmError
 
 RELEASED_HEADS_FILE = "CLM_v0.1-8B.pt"
 # The encoder revisions the authors' heads were released for; the MLX build was made from the same one

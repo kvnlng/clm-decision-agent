@@ -4,15 +4,13 @@
 # pylint: disable=missing-function-docstring,missing-class-docstring,redefined-outer-name
 # pylint: disable=unused-argument,attribute-defined-outside-init,use-implicit-booleaness-not-comparison
 import json
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import mlx.core as mx
+import numpy as np
 import pytest
 from conftest import BASE_TOML
 
 import clm_router
-from clm_router import ROUTE_QID, ClmError, LocalContrastiveRouter, RemoteEngine, make_router, resolve_heads
+from clm_router import ROUTE_QID, LocalContrastiveRouter, make_router, resolve_heads
 from scenario import load_scenario
 
 
@@ -132,22 +130,20 @@ def test_live_corrections_can_be_switched_off(write_scenario):
 
 
 def test_embed_state_projects_context_plus_routing_question(scenario):
-    class Encoder:
+    class Engine(FakeEngine):
         def embed(self, texts):
             self.texts = texts
-            return mx.array([[3.0, 4.0]]), 5
+            return np.array([[3.0, 4.0]], dtype=np.float32)
 
-    class Heads:
-        def project(self, embedding, which):
+        def project(self, vectors, which):
             self.which = which
-            return mx.array([[0.6, 0.8]])
+            return np.array([[0.6, 0.8]], dtype=np.float32)
 
-    engine = FakeEngine({})
-    engine.encoder, engine.heads = Encoder(), Heads()
+    engine = Engine({})
     vector = LocalContrastiveRouter(engine=engine).embed_state("User: hi ", scenario)
 
-    assert engine.encoder.texts == ["User: hi\n\nWhich workflow?"]
-    assert engine.heads.which == "state"
+    assert engine.texts == ["User: hi\n\nWhich workflow?"]
+    assert engine.which == "state"
     assert vector == pytest.approx([0.6, 0.8])
 
 
@@ -189,117 +185,29 @@ def test_no_heads_setting_means_the_released_heads(scenario):
     assert resolve_heads(scenario) == (None, "released heads")
 
 
-@pytest.fixture
-def clm_server():
-    """A stand-in for the CLM authors' server: POST /v1/systemone answers every question with its first option."""
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self):  # pylint: disable=invalid-name
-            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            self.server.seen.append((self.path, self.headers.get("Authorization"), body))
-            if self.server.key and self.headers.get("Authorization") != f"Bearer {self.server.key}":
-                status, out = 401, {"detail": "invalid API key"}
-            else:
-                answers = {}
-                for name, question in body["questions"].items():
-                    if question["type"] == "choice":
-                        first = next(iter(question["criteria"]))
-                        answers[name] = {"type": "choice", "choice": first, "confidence": 0.9,
-                                         "probabilities": {key: 0.9 if key == first else 0.1
-                                                           for key in question["criteria"]}}
-                    else:
-                        answers[name] = {"type": "noul", "noul": 0.7}
-                status, out = 200, {"model": body.get("model"), "answers": answers, "usage": {}}
-            payload = json.dumps(out).encode()
-            self.send_response(status)
-            for header, value in (("Content-Type", "application/json"), ("Content-Length", str(len(payload)))):
-                self.send_header(header, value)
-            self.end_headers()
-            self.wfile.write(payload)
-
-        def log_message(self, format, *args):  # pylint: disable=redefined-builtin
-            pass
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.seen, server.key = [], None
-    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True).start()
-    yield server
-    server.shutdown()
-    server.server_close()
+def heads_scenario(write_scenario, backend="mlx"):
+    clm = f'backend = "{backend}"\nmodel_id = "test/clm"\nheads = "my.heads"'
+    scenario = load_scenario(write_scenario(BASE_TOML.replace('model_id = "test/clm"', clm)))
+    scenario.clm_heads.mkdir()
+    (scenario.clm_heads / "CLM_v0.1-8B.safetensors").write_bytes(b"x")
+    return scenario
 
 
-def server_scenario(write_scenario, server, extra=""):
-    url = f"http://127.0.0.1:{server.server_address[1]}"
-    text = BASE_TOML.replace('model_id = "test/clm"', f'backend = "server"\nurl = "{url}"\n{extra}')
-    return load_scenario(write_scenario(text))
+def test_heads_trained_on_the_other_backend_are_not_used(write_scenario):
+    scenario = heads_scenario(write_scenario, "torch")
+    facts = {"routing_sha": scenario.routing_sha, "clm_model_id": "test/clm"}     # no backend: made with mlx
+    (scenario.clm_heads / "training.json").write_text(json.dumps(facts))
+    assert resolve_heads(scenario) == (None, "released heads (my.heads was trained with the mlx backend; "
+                                             "run train.py again)")
+    (scenario.clm_heads / "training.json").write_text(json.dumps({**facts, "clm_backend": "torch"}))
+    assert resolve_heads(scenario) == (scenario.clm_heads, "trained heads from my.heads")
 
 
-def test_server_backend_decides_and_checks_tools_over_http(write_scenario, clm_server):
-    scenario = server_scenario(write_scenario, clm_server)
-    router, note = make_router(scenario)
-    decision = router.decide("User: charged twice", scenario)
-
-    assert "127.0.0.1" in note
-    assert (decision["route"], decision["confidence"], decision["source"]) == ("Billing", 0.9, "clm")
-    assert decision["answers"] == {"urgent": {"type": "noul", "noul": 0.7}}
-    path, authorization, body = clm_server.seen[0]
-    assert (path, authorization) == ("/v1/systemone", None)
-    assert body["state"] == "User: charged twice" and body["model"] == "clm-latest"
-    assert body["questions"][ROUTE_QID]["criteria"] == {"Billing": "Charges and refunds", "Tech": "Bugs and outages"}
-    assert router.check_tool("User: x", scenario) == 0.7
-
-
-def test_server_backend_sends_the_key_as_a_bearer_token(write_scenario, clm_server, monkeypatch):
-    clm_server.key = "s3cret"
-    monkeypatch.setenv("DEMO_CLM_KEY", "s3cret")
-    scenario = server_scenario(write_scenario, clm_server, 'api_key_env = "DEMO_CLM_KEY"')
-    assert make_router(scenario)[0].decide("User: hi", scenario)["route"] == "Billing"
-    assert clm_server.seen[0][1] == "Bearer s3cret"
-
-
-def test_server_backend_reports_a_rejected_key_and_an_unreachable_server(write_scenario, clm_server):
-    clm_server.key = "s3cret"
-    scenario = server_scenario(write_scenario, clm_server)
-    with pytest.raises(ClmError, match="rejected the API key"):
-        make_router(scenario)[0].decide("User: hi", scenario)
-    with pytest.raises(ClmError, match="http://127.0.0.1:9"):
-        RemoteEngine("http://127.0.0.1:9", "clm-latest").answer("User: hi", {"q": {"type": "noul"}})
-
-
-def test_server_backend_reuses_a_reviewed_route_when_the_text_is_the_same(write_scenario, clm_server):
-    scenario = server_scenario(write_scenario, clm_server)
-    router, _ = make_router(scenario)
-    records = [{"kind": "route", "state_text": "User: my app crashes", "human": "Tech",
-                "clm": {"route": "Billing", "confidence": 0.9, "probabilities": {}}}]
-    assert router.load_verdicts(records, scenario) == 1
-
-    same = router.decide("User: my app crashes", scenario)
-    assert (same["route"], same["source"]) == ("Tech", "reviewed")
-    assert (same["clm_route"], same["similarity"]) == ("Billing", 1.0)
-    assert router.decide("User: my app crashed", scenario)["source"] == "clm"
-
-
-def test_trained_heads_are_not_used_with_the_server_backend(write_scenario, clm_server):
-    scenario = server_scenario(write_scenario, clm_server, 'heads = "my.heads"')
-    assert "trained heads apply to the mlx backend only" in make_router(scenario)[1]
-
-
-@pytest.mark.parametrize("body", [
-    b"<html>proxy error</html>", b'{"detail": "oops"}', b"[1, 2]",
-    json.dumps({"answers": {"other": {"type": "noul", "noul": 0.5}}}).encode(),
-    json.dumps({"answers": {"q": {"type": "choice", "choice": "Nope", "confidence": 0.9,
-                                  "probabilities": {"Nope": 1.0}}}}).encode(),
-    json.dumps({"answers": {"q": {"type": "choice", "choice": "a"}}}).encode(),
-])
-def test_a_server_reply_that_cannot_be_used_is_a_clm_error(monkeypatch, body):
-    monkeypatch.setattr(clm_router.httpx, "post", lambda *args, **kwargs: clm_router.httpx.Response(200, content=body))
-    question = {"q": {"type": "choice", "instructions": "Which?", "criteria": {"a": "A", "b": "B"}}}
-    with pytest.raises(ClmError, match="could not be used"):
-        RemoteEngine("http://x", "clm-latest").answer("User: hi", question)
-
-
-def test_server_errors_do_not_repeat_what_the_server_sent(monkeypatch):
-    monkeypatch.setattr(clm_router.httpx, "post",
-                        lambda *args, **kwargs: clm_router.httpx.Response(500, text="Bearer s3cret was wrong"))
-    with pytest.raises(ClmError) as failure:
-        RemoteEngine("http://x", "clm-latest", "s3cret").answer("User: hi", {"q": {"type": "noul"}})
-    assert "HTTP 500" in str(failure.value) and "s3cret" not in str(failure.value)
+def test_make_router_passes_backend_and_device_to_load_engine(write_scenario, monkeypatch):
+    seen = []
+    monkeypatch.setattr(clm_router, "load_engine", lambda *args: seen.append(args) or FakeEngine({}))
+    text = BASE_TOML.replace('model_id = "test/clm"', 'backend = "torch"\nmodel_id = "test/clm"\ndevice = "cpu"')
+    router, note = make_router(load_scenario(write_scenario(text)))
+    assert seen == [("torch", "test/clm", None, "cpu")]
+    assert isinstance(router, LocalContrastiveRouter)
+    assert note == "its released heads"
