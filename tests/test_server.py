@@ -8,12 +8,12 @@ import time
 import httpx2
 import pytest
 import uvicorn
+import fake_tools
 from conftest import BASE_TOML, FakeRouter, decision
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
 import clm_router
-import fake_tools
 import server
 from decision import decide
 from record import load_records
@@ -170,7 +170,6 @@ def test_the_server_logs_only_warnings(parts):
 @pytest.mark.anyio
 async def test_a_slow_tool_does_not_hold_up_other_calls(write_scenario):
     import anyio  # pylint: disable=import-outside-toplevel
-    import fake_tools  # pylint: disable=import-outside-toplevel
     text = (BASE_TOML.replace('tool = "act"', 'tool = "slow"').replace('when = "urgent >= 0.5"\n', "")
             .replace('routes = ["Billing"]', 'routes = ["Tech"]'))
     scenario = load_scenario(write_scenario(text))
