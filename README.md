@@ -55,7 +55,16 @@ You need Python 3.12 or later, [uv](https://docs.astral.sh/uv/), and one of:
 uv sync
 ```
 
-**2. Run the example.** It is a small finished scenario: a data service desk.
+**2. Run the example.** It is a small finished scenario: a data service desk. The repository
+does not include trained heads, and as released CLM routes the example poorly (about half
+right), so train it first. It takes under a minute on a Mac or a GPU, using the example
+messages that come with it:
+
+```bash
+uv run python train.py examples/service_desk/scenario.toml
+```
+
+Then start it:
 
 ```bash
 uv run python examples/service_desk/mock_tracker.py                          # terminal 1: a stand-in issue tracker

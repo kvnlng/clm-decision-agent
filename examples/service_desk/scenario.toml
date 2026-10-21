@@ -13,7 +13,7 @@ model_id = "mlx-community/CLM-v0.1-8B-MLX-8bit"
 # model_id = "Contrastive-LM/CLM-v0.1-8B"
 # device = "cuda"                   # optional: cuda, mps or cpu; the first one available otherwise
 heads = "scenario.heads"            # trained heads, made by train.py; the released ones are used until then
-# The trained heads below are for the MLX build; with torch, CLM uses the released heads until you run train.py
+# Heads fit the backend that trained them: after switching, run train.py again
 
 # Only synthesize.py uses a language model, to write example messages for training
 [generator]

@@ -10,7 +10,14 @@ not a clinical tool. All data here is invented.
 
 ## Run it
 
-Two terminals, from the project root.
+First train CLM for the scenario, once; the repository does not include trained heads (see
+[Training CLM for the scenario](#training-clm-for-the-scenario)):
+
+```bash
+uv run python train.py examples/service_desk/scenario.toml
+```
+
+Then two terminals, from the project root.
 
 ```bash
 uv run python examples/service_desk/mock_tracker.py                    # terminal 1: the mock tracker
@@ -51,7 +58,8 @@ Try:
 
 ## Training CLM for the scenario
 
-As released, CLM routes poorly. One command fits it to this scenario in under a minute:
+As released, CLM routes poorly, and the repository does not include trained heads: they are
+made on the machine that serves them. One command fits CLM to this scenario in under a minute:
 
 ```bash
 uv run python train.py examples/service_desk/scenario.toml
