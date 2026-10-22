@@ -342,3 +342,10 @@ def test_actions_and_informs_name_the_problem(write_scenario, old, new, message)
 def test_old_keys_are_refused(write_scenario, old, new, message):
     with pytest.raises(ScenarioError, match=re.escape(message)):
         load_scenario(write_scenario(BASE_TOML.replace(old, new)))
+
+
+def test_a_routing_tool_cannot_be_a_routes_options_tool(write_scenario):
+    text = OPTIONS_TOML.replace("confidence_threshold = 0.6", 'confidence_threshold = 0.6\ninform = ["alternatives"]')
+    with pytest.raises(ScenarioError, match=re.escape(
+            "routing.inform: 'alternatives' fetches routes.Billing's options, so it must run after routing")):
+        load_scenario(write_scenario(text))

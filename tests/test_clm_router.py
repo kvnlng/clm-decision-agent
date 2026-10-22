@@ -264,3 +264,12 @@ def test_mlx_prefetch_uses_the_builds_vectors():
     engine.engine = FakeMlxBuild()
     engine.prefetch(["a", "b"], {"q": {"type": "noul", "instructions": "Urgent?"}})
     assert ("state", ["a\n\nUrgent?", "b\n\nUrgent?"]) in engine.engine.vectors
+
+
+def test_decide_many_of_nothing_on_a_real_engine(scenario):
+    from test_clm_torch import CONFIG, FakeEncoder, tiny_weights  # pylint: disable=import-outside-toplevel
+    from clm_torch import TorchEngine, TorchHeads  # pylint: disable=import-outside-toplevel
+    from decision import decide_many  # pylint: disable=import-outside-toplevel
+    engine = TorchEngine(FakeEncoder(), TorchHeads(tiny_weights(), CONFIG, "cpu"))
+    engine.prefetch([], {"q": {"type": "noul", "instructions": "Urgent?"}})
+    assert decide_many([], scenario, LocalContrastiveRouter(engine=engine), {}) == []

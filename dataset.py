@@ -45,6 +45,8 @@ def training_rows(scenario: Scenario, examples: list[dict], records: list[dict])
             row = (example["text"], example["route"])
             (test if split_of(example["text"]) == "test" else train).append(row)
     held_back = {state for state, _ in test}
+    # A reviewed route's text may carry routing's facts after the message ("...\n\nKnown:\n- ..."); the
+    # message is what repeats an example
     reviewed = [(verdict["state_text"], verdict["human"]) for verdict in route_verdicts(records, scenario)
-                if verdict["state_text"] not in held_back]
+                if verdict["state_text"].split("\n\nKnown:\n")[0] not in held_back]
     return train, reviewed, test

@@ -87,7 +87,7 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         if len(requests) > MAX_BATCH:
             raise ToolError(f"decide_many takes at most {MAX_BATCH} requests a call, not {len(requests)}")
         for i, request in enumerate(requests):
-            if not isinstance(request.get("text"), str) or not isinstance(request.get("context", {}), dict):
+            if not isinstance(request.get("text"), str) or not isinstance(request.get("context") or {}, dict):
                 raise ToolError(f"requests[{i}] must be {{'text': ..., 'context': {{...}}}}, with context optional")
         with traced("decide_many"):
             return {"decisions": clm(lambda: decision.decide_many(requests, scenario, router, tools))}

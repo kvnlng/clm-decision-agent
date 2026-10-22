@@ -216,6 +216,8 @@ def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable], co
 def decide_many(requests: list[dict], scenario: Scenario, router, tools: dict[str, Callable]) -> list[dict]:
     """decide() for each of `requests` ({"text", "context"?}), with the same replies, made phase by phase so
     CLM encodes each phase's texts in one batched pass. The tools run in the order of the requests."""
+    if not requests:
+        return []
     tracing.add("decisions", len(requests))
     made = [{"text": request["text"], "context": request.get("context"),
              "earlier": route_facts(request["text"], scenario, tools, request.get("context"))} for request in requests]

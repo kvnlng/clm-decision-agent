@@ -182,6 +182,7 @@ words, with what the tool worked out: "Sam, database team, on call until 18:00, 
 - The acting tools get the chosen option as `request["option"]` (`id` and `text`).
 - On that route, actions are skipped with the reason `no option` or `option uncertain`.
 - Routes without `options` have no `option` in their reply.
+- The options tool runs after routing, so it cannot also be one of `[routing] inform`.
 
 ### Acting tools
 

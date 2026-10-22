@@ -47,6 +47,8 @@ class MlxEngine:
     def prefetch(self, states: list, questions: dict[str, dict]) -> None:
         """Encode, in one batched pass, every state text that answering `questions` about `states` will need, so
         those answers are found in the build's cache."""
+        if not states:
+            return
         pairs = [pair for state in states for pair in clm_schema.build_pairs(state, questions).values()]
         texts = {"state": [pair[0] for pair in pairs], "action": [text for pair in pairs for text in pair[2]]}
         if tracing.active():

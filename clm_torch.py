@@ -239,6 +239,8 @@ class TorchEngine:
     def prefetch(self, states: list, questions: dict[str, dict]) -> None:
         """Encode, in one batched pass, every state text that answering `questions` about `states` will need, so
         those answers are found in the cache."""
+        if not states:
+            return
         pairs = [pair for state in states for pair in clm_schema.build_pairs(state, questions).values()]
         self._vectors([pair[0] for pair in pairs], "state")
         self._vectors([text for pair in pairs for text in pair[2]], "action")

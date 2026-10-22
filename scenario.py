@@ -199,6 +199,16 @@ def _names(table: dict, key: str, where: str, what: str) -> list[str]:
     return value
 
 
+def _route_inform(routing: dict, routes: dict[str, Route]) -> tuple[str, ...]:
+    names = tuple(_names(routing, "inform", "routing", "tool names"))
+    for route in routes.values():
+        # Routing's tools run before there is a route, so their options would have nowhere to go
+        if route.options and route.options.tool in names:
+            raise ScenarioError(f"routing.inform: '{route.options.tool}' fetches routes.{route.name}'s options, "
+                                "so it must run after routing: take it out of [routing] inform")
+    return names
+
+
 def _route(name: str, table) -> Route:
     where = f"routes.{name}"
     if not isinstance(table, dict):
@@ -381,7 +391,7 @@ def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-loc
         max_tokens=_number(generator, "max_tokens", "generator", 400, 1, integer=True),
         routing_instructions=_text(routing, "instructions", "routing"),
         confidence_threshold=_number(routing, "confidence_threshold", "routing", 0.6, 0, 1),
-        route_inform=tuple(_names(routing, "inform", "routing", "tool names")),
+        route_inform=_route_inform(routing, routes),
         routes=routes,
         questions=questions,
         tool_check_instructions=_text(tool_check, "instructions", "tool_check", DEFAULT_TOOL_CHECK),

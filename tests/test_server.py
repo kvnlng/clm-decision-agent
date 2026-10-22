@@ -224,3 +224,10 @@ async def test_decide_many_over_mcp(parts):
     assert empty.structured_content == {"decisions": []}
     assert too_many.is_error and "at most 1000" in too_many.content[0].text
     assert no_text.is_error and "requests[0]" in no_text.content[0].text
+
+
+@pytest.mark.anyio
+async def test_decide_many_accepts_a_null_context_as_decide_does(parts):
+    async with Client(server.build_server(*parts, review=False)) as client:
+        result = await client.call_tool("decide_many", {"requests": [{"text": TEXT, "context": None}]})
+    assert not result.is_error
