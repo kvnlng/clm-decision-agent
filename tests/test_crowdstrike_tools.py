@@ -1,6 +1,7 @@
 """Tests for the CrowdStrike scenario and its tools: what the server is told about each passenger."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import random
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from test_crowdstrike_world import flight
 
 import crowdstrike_tools
 from passengers import Fare
-from policy import ROUTES
+from policy import ROUTES, answer
 from world import World
 
 import decision
@@ -160,3 +161,99 @@ def test_unknown_booking_fails_clearly(world):
     result = decision.decide("Help", scenario, router, tools, context={"booking": "NOPE"})
     failed = next(entry for entry in result["informed"] if entry["tool"] == "situation")
     assert "context has no known booking: 'NOPE'" in failed["error"]
+
+
+def request(one, route, now=0, option=None):
+    found = {"text": "", "route": route, "context": {"booking": one.id, "now": now}}
+    return found if option is None else {**found, "option": {"id": option, "text": ""}}
+
+
+def router(route, confidence=0.9):
+    return FakeRouter({"route": route, "confidence": confidence, "probabilities": {route: confidence},
+                       "answers": {}, "source": "clm"})
+
+
+def test_options_follow_the_route(world):
+    one = booking(fare=Fare(refundable=False, partner_ok=True))
+    use(world, one)
+    ids = {route: [option["id"] for option in crowdstrike_tools.alternatives(request(one, route))["options"]]
+           for route in ("Rebook", "Rebook_Partner", "Overnight")}
+    assert ids == {"Rebook": ["T1"], "Rebook_Partner": ["P1"], "Overnight": ["M1"]}
+    first = crowdstrike_tools.alternatives(request(one, "Rebook"))["options"][0]["text"]
+    assert first == "DLT1 from A at 09:20 to B, arriving 09:00 (local times); lands first of these"
+
+
+def test_label_option_is_the_first_alternative():
+    crowdstrike_tools.configure({"seed": 0}, SCENARIO.parent)
+    day, bookings = crowdstrike_tools.STATE["world"], list(crowdstrike_tools.STATE["bookings"].values())
+    seen = set()
+    for one in random.Random(1).sample(bookings, 2000):
+        label = answer(one, day, one.sent // 60)
+        if label.route in ("Rebook", "Rebook_Partner", "Overnight"):
+            seen.add(label.route)
+            options = crowdstrike_tools.alternatives(request(one, label.route, one.sent // 60))["options"]
+            assert options[0]["id"] == "+".join(label.option)
+    assert seen == {"Rebook", "Rebook_Partner", "Overnight"}
+
+
+def test_hold_that_loses_the_race_fails(world):
+    one = booking()
+    scenario = load_scenario(SCENARIO)
+    tools = load_tools(scenario)
+    use(world, one)
+
+    def alternatives(found):
+        options = crowdstrike_tools.alternatives(found)
+        world.hold("someone-else", ("T1",), world.free("T1"))      # between choosing and holding
+        return options
+
+    result = decision.decide("Rebook me", scenario, router("Rebook"), {**tools, "alternatives": alternatives},
+                             context={"booking": one.id, "now": 0})
+    held = next(entry for entry in result["actions"] if entry["tool"] == "hold_seats")
+    assert held["status"] == "failed" and "T1 has 0 seats left" in held["error"]
+
+
+def test_a_hold_takes_the_partys_seats(world):
+    one = booking(party=3)
+    use(world, one)
+    before = world.free("T1")
+    assert crowdstrike_tools.hold_seats(request(one, "Rebook", option="T1")) == {"held": ["T1"]}
+    assert world.free("T1") == before - 3
+
+
+def test_uncertain_route_holds_nothing(world):
+    one = booking()
+    scenario = load_scenario(SCENARIO)
+    tools = load_tools(scenario)
+    use(world, one)
+    before = world.free("T1")
+    result = decision.decide("Rebook me", scenario, router("Rebook", 0.3), tools,
+                             context={"booking": one.id, "now": 0})
+    assert {entry["status"] for entry in result["actions"]} == {"skipped"}
+    assert world.free("T1") == before
+
+
+def test_hotel_only_on_overnight():
+    scenario = load_scenario(SCENARIO)
+    routes = {action.tool: set(action.routes) for action in scenario.actions}
+    assert routes == {"hold_seats": {"Rebook", "Rebook_Partner", "Overnight"}, "book_hotel": {"Overnight"},
+                      "issue_refund": {"Refund"},
+                      "draft_reply": {"Rebook", "Rebook_Partner", "Overnight", "Refund", "No_Action"}}
+
+
+def test_the_reply_names_the_journey(world):
+    one = booking()
+    use(world, one)
+    crowdstrike_tools.hold_seats(request(one, "Overnight", option="M1"))
+    reply = crowdstrike_tools.draft_reply(request(one, "Overnight", option="M1"))["reply"]
+    assert "a hotel for tonight" in reply and "DLM1" in reply
+
+
+def test_no_hotel_or_booked_reply_when_the_hold_failed(world):
+    # The acting tools run in order whatever happened before: hold_seats failed, so nothing is held
+    one = booking()
+    use(world, one)
+    with pytest.raises(ValueError, match="no seats are held"):
+        crowdstrike_tools.book_hotel(request(one, "Overnight", option="M1"))
+    with pytest.raises(ValueError, match="no seats are held"):
+        crowdstrike_tools.draft_reply(request(one, "Overnight", option="M1"))

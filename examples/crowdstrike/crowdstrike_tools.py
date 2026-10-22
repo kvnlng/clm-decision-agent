@@ -1,7 +1,12 @@
 """Tools for the CrowdStrike example. The decision server calls each one with the request, whose context
 is {"booking": "<id>", "now": <minute>}; without "now", the moment the passenger wrote.
 
-    situation   an informing tool the route hears: the booking, what happened, the fare and what is possible
+    situation     an informing tool the route hears: the booking, what happened, the fare and what is possible
+    alternatives  the rebooking routes' options: the soonest journeys of the route's kind, with seats
+    hold_seats    an acting tool: holds the whole party's seats on the chosen journey, or fails naming a full flight
+    book_hotel    an acting tool: a night's hotel near where they are (a mock)
+    issue_refund  an acting tool: refunds the fare (a mock)
+    draft_reply   an acting tool: the message back to the passenger
 
 The tools work things out and CLM judges: every fact is a plain sentence with the times already compared.
 They read only what a booking record holds (flights, party, fare), never what the passenger alone knows;
@@ -133,4 +138,73 @@ def situation(request: dict) -> dict:
     return {"facts": facts}
 
 
-TOOLS = [situation]
+KINDS = {"Rebook": "own", "Rebook_Partner": "partner", "Overnight": "tomorrow"}
+
+
+def alternatives(request: dict) -> dict:
+    """The journeys the route could book, soonest first, each said in plain words."""
+    booking, now = _booking(request)
+    world = STATE["world"]
+    found = situation_of(booking, world, now)
+    journeys = getattr(found, KINDS[request["route"]]) if request.get("route") in KINDS else ()
+    options = []
+    for index, journey in enumerate(journeys):
+        text = journey.text(world) + ("; lands first of these" if index == 0 else "")
+        if found.kept is not None and journey.arr < found.kept:
+            text += f"; {_span(found.kept - journey.arr)} sooner than their flights now"
+        options.append({"id": "+".join(journey.legs), "text": text})
+    return {"options": options}
+
+
+def _legs(request: dict) -> tuple[str, ...]:
+    return tuple(request["option"]["id"].split("+"))
+
+
+def _held(request: dict) -> tuple[str, ...]:
+    """The chosen journey, once hold_seats has held it: the acting tools run in turn, whatever came before."""
+    booking, _ = _booking(request)
+    legs = _legs(request)
+    if STATE["world"].holds.get(booking.id, ((), 0))[0] != legs:
+        raise ValueError(f"no seats are held on {request['option']['id']} for {booking.id}")
+    return legs
+
+
+def hold_seats(request: dict) -> dict:
+    """Hold the whole party's seats on every flight of the chosen journey; SeatsGone names a full one."""
+    booking, _ = _booking(request)
+    legs = _legs(request)
+    STATE["world"].hold(booking.id, legs, booking.party)
+    return {"held": list(legs)}
+
+
+def book_hotel(request: dict) -> dict:
+    """A night's hotel near the airport they leave from in the morning (this demo books nothing real)."""
+    first = STATE["world"].flights[_held(request)[0]]
+    return {"hotel": f"near {first.origin}", "nights": 1}
+
+
+def issue_refund(request: dict) -> dict:
+    """Refund the fare (this demo pays nothing)."""
+    booking, _ = _booking(request)
+    return {"refunded": booking.id}
+
+
+def draft_reply(request: dict) -> dict:
+    """The message back to the passenger, from the route and the chosen journey."""
+    world = STATE["world"]
+    journey = ""
+    if request.get("option"):
+        legs = _held(request)
+        flights = [world.flights[leg] for leg in legs]
+        journey = Journey(legs, flights[0].leaves, flights[-1].lands).text(world)
+    replies = {
+        "Rebook": f"We have booked you on {journey}.",
+        "Rebook_Partner": f"We have booked you with our partner airline on {journey}.",
+        "Overnight": f"We have booked a hotel for tonight, and you on {journey} tomorrow morning.",
+        "Refund": "We have refunded your fare.",
+        "No_Action": "Your flights still go, so you need do nothing; we are sorry for the delay.",
+    }
+    return {"reply": replies.get(request.get("route"), "A member of our team will contact you.")}
+
+
+TOOLS = [situation, alternatives, hold_seats, book_hotel, issue_refund, draft_reply]

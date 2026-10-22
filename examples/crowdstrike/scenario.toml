@@ -28,14 +28,32 @@ seed = 0                            # the day's seats and passengers; the traini
 [tools.inform.situation]
 questions = []
 
+[tools.inform.alternatives]
+questions = []
+
 [routes.Rebook]
 description = "The passenger still wants to travel, and one of our own airline's flights today has seats for the whole party and gets them there sooner than their own flight now will, in time for anything they must not miss. Book them on the flight that arrives first."
+inform = ["alternatives"]
+
+[routes.Rebook.options]
+tool = "alternatives"
+instructions = "Which journey should we book for this passenger?"
 
 [routes.Rebook_Partner]
 description = "The passenger still wants to travel and none of our own flights today will do: none has seats, or none arrives in time for something they must not miss. A partner airline's flight today will, and their fare allows partner airlines. Book them on the partner flight that arrives first."
+inform = ["alternatives"]
+
+[routes.Rebook_Partner.options]
+tool = "alternatives"
+instructions = "Which journey should we book for this passenger?"
 
 [routes.Overnight]
 description = "The passenger still wants to travel, but no flight today has seats for the whole party, and nothing they mention needs them to arrive tonight. Book a hotel for tonight and our first flight tomorrow morning."
+inform = ["alternatives"]
+
+[routes.Overnight.options]
+tool = "alternatives"
+instructions = "Which journey should we book for this passenger?"
 
 [routes.Refund]
 description = "The passenger no longer wants to travel, or they must arrive by a time that no flight can meet and their fare is refundable. Refund the fare."
@@ -76,3 +94,21 @@ tell = "Offer assistance at the airport and priority boarding."
 [[rules]]
 when = "travel_mode == rail"
 tell = "Say that this policy rebooks on flights only."
+
+# The acting tools run as soon as the decision is made, unless it is uncertain. A hold that loses the race
+# for the last seats fails, naming the full flight
+[[actions]]
+tool = "hold_seats"
+routes = ["Rebook", "Rebook_Partner", "Overnight"]
+
+[[actions]]
+tool = "book_hotel"
+routes = ["Overnight"]
+
+[[actions]]
+tool = "issue_refund"
+routes = ["Refund"]
+
+[[actions]]
+tool = "draft_reply"
+routes = ["Rebook", "Rebook_Partner", "Overnight", "Refund", "No_Action"]
