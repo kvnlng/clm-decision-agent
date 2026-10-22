@@ -4,13 +4,29 @@
 from dataclasses import replace
 
 import pytest
+from conftest import FakeRouter
+from mcp import Client
+from test_crowdstrike_messages import fixture_line
 from test_crowdstrike_policy import booking
+from test_crowdstrike_tools import SCENARIO
 from test_crowdstrike_world import flight
 
+import crowdstrike_tools
+from messages import BUCKETS, Pool
 from policy import Label
-from replay_day import LiveLabels, batches
+from replay_day import LiveLabels, batches, run
 from scoreboard import Scoreboard
 from world import World
+
+import server
+from clm_common import ClmError
+from scenario import load_scenario
+from tools import load_tools
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 
 
 @pytest.fixture
@@ -93,3 +109,49 @@ def test_render_names_every_count(board):
                   "to a person 3", "uncertain 1", "Agent route 1", "action failed 1", "holds 1 done, 1 failed",
                   "Rebook 2 of 2", "Refund 0 of 1", "confidently wrong 0"):
         assert words in panel, words
+
+
+def hand_world():
+    return World([flight("X", "A", "B", 600, 700, cancelled=True), flight("T1", "A", "B", 800, 900, capacity=20)],
+                 offsets={"A": 0, "B": 0})
+
+
+class FailingRouter(FakeRouter):
+    """A router whose CLM fails from the second batch on."""
+
+    def decide_batch(self, state_texts, scenario):
+        if getattr(self, "prefetched", None):
+            raise ClmError("CLM stopped")
+        return super().decide_batch(state_texts, scenario)
+
+
+async def replay(router, made):
+    scenario = load_scenario(SCENARIO)
+    tools = load_tools(scenario)
+    crowdstrike_tools.use(hand_world(), {one.id: one for one in made})      # the server's world
+    pool = Pool([{"bucket": key, "text": fixture_line(key)} for key in BUCKETS])
+    shown = []
+    async with Client(server.build_server(scenario, router, tools, review=False)) as client:
+        found = await run(client, made, hand_world(), 0, pool, Scoreboard(), 256,
+                          lambda panel, index: shown.append(panel))
+    return found, shown
+
+
+REBOOK = {"route": "Rebook", "confidence": 0.9, "probabilities": {"Rebook": 0.9}, "answers": {}, "source": "clm"}
+
+
+@pytest.mark.anyio
+async def test_run_replays_in_order_and_scores():
+    made = [booking(id="P1", sent=0), booking(id="P2", sent=30), booking(id="P3", sent=61)]
+    found, shown = await replay(FakeRouter(REBOOK), made)
+    assert (found["bookings"], found["route"], found["option"]) == (3, {"Rebook": (3, 3)}, {"Rebook": (3, 3)})
+    assert found["actions"]["hold_seats"] == {"done": 3, "failed": 0, "skipped": 0}
+    assert (found["diverged"], found.get("stopped")) == (0, None)
+    assert len(shown) == 2 and "3 bookings" in shown[-1]
+
+
+@pytest.mark.anyio
+async def test_run_stops_cleanly_when_the_server_fails():
+    made = [booking(id="P1", sent=0), booking(id="P2", sent=61)]
+    found, _ = await replay(FailingRouter(REBOOK), made)
+    assert found["bookings"] == 1 and "CLM stopped" in found["stopped"]

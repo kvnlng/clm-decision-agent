@@ -9,3 +9,4 @@ docs/superpowers/
 .forgejo-local.env
 *.heads/
 *.key
+examples/crowdstrike/runs/
