@@ -13,6 +13,7 @@ from torch import nn
 
 import train
 from clm_torch import TorchHeads
+from scenario import load_scenario
 from train import HeadsModel, accuracy, fit, probe_accuracy, save_heads
 
 DIM, CLASSES = 12, 3
@@ -126,11 +127,11 @@ class FakeEngine:
         self.rng = np.random.default_rng(1)
 
     def embed(self, texts):
+        # Each cue in the text adds its own direction, so a route's and a question's cues can sit together
         rows = []
         for text in texts:
-            name = next((name for name in self.names if name in text), None)
-            centre = self.centres[name] if name else self.rng.normal(size=8)
-            rows.append(centre + self.rng.normal(size=8))
+            found = [self.centres[name] for name in self.names if name in text]
+            rows.append((sum(found) if found else self.rng.normal(size=8)) + self.rng.normal(size=8))
         return np.array(rows, dtype=np.float32)
 
     def project(self, vectors, which):
@@ -189,7 +190,7 @@ def test_main_trains_with_the_torch_backend(write_scenario, monkeypatch, tmp_pat
         return FakeEngine(["Charges and refunds", "Bugs and outages"])
     monkeypatch.setattr(train, "load_engine", fake_load_engine)
     # Tiny made-up heads need a faster rate than the real ones to move in a few passes
-    monkeypatch.setattr(train, "fit", functools.partial(train.fit, learning_rate=1e-2, epochs=40))
+    monkeypatch.setattr(train, "fit_tasks", functools.partial(train.fit_tasks, learning_rate=1e-2, epochs=40))
     code = train.main([str(path)])
     assert seen == [("torch", "test/clm", None, None)]
     assert code == 0
@@ -220,3 +221,86 @@ def test_a_bad_label_stops_training_naming_the_line(write_scenario, capsys):
     path.with_name("scenario.examples.jsonl").write_text("\n".join(json.dumps(line) for line in lines))
     assert train.main([str(path)]) == 2
     assert capsys.readouterr().err.strip() == "error: scenario.examples.jsonl: line 2: unknown question 'mood'"
+
+
+def row(text, route, **more):
+    return {"text": text, "route": route, "answers": {}, "facts": [], "options": None, "option": None, **more}
+
+
+def question_rows(scenario, count=120, urgent_share=2):
+    """Rows whose urgency shows as the word URGENT; one in `urgent_share` is urgent (noul true is index 1)."""
+    names = list(scenario.routes)
+    made = []
+    for i in range(count):
+        name, urgent = names[i % 2], i % urgent_share == 0
+        text = f"{scenario.routes[name].description} case {i}" + (" URGENT" if urgent else "")
+        made.append(row(text, name, answers={"urgent": int(urgent)}))
+    return made
+
+
+def quiet_train(scenario, engine, rows, **kwargs):
+    lines = []
+    facts = train.train(scenario, engine, rows[:80], [], rows[80:], write=lines.append, **kwargs)
+    return facts, "\n".join(lines)
+
+
+def fast(monkeypatch, **more):
+    # Tiny made-up heads need a faster rate than the real ones to move in a few passes
+    monkeypatch.setattr(train, "fit_tasks", functools.partial(train.fit_tasks, **{"learning_rate": 1e-2,
+                                                                                  "epochs": 40, **more}))
+
+
+def test_a_labelled_question_is_trained_with_the_route(scenario, monkeypatch):
+    fast(monkeypatch)
+    engine = FakeEngine([route.description for route in scenario.routes.values()] + ["URGENT"])
+    facts, _ = quiet_train(scenario, engine, question_rows(scenario))
+    assert facts["trained"] == ["route", "urgent"]
+    before, after = facts["per_class"]["urgent"]["before"], facts["per_class"]["urgent"]["after"]
+    assert sum(c for c, _ in after.values()) > sum(c for c, _ in before.values())
+    assert after["true"][0] / after["true"][1] >= 0.8 and after["false"][0] / after["false"][1] >= 0.8
+
+
+def test_a_rare_class_is_weighted_up():
+    weights = train.class_weights(torch.tensor([0] * 90 + [1] * 10), 3)
+    assert weights.tolist() == pytest.approx([100 / (3 * 90), 100 / (3 * 10), 0.0])
+
+
+def test_a_question_with_one_class_trains_and_reports_the_missing_class(scenario, monkeypatch):
+    fast(monkeypatch)
+    engine = FakeEngine([route.description for route in scenario.routes.values()] + ["URGENT"])
+    rows = question_rows(scenario)
+    for one in rows[:80]:
+        one["answers"] = {"urgent": 0}                  # training never sees an urgent one
+    facts, report = quiet_train(scenario, engine, rows)
+    assert facts["per_class"]["urgent"]["after"]["true"][0] == 0
+    assert "true" in report and "0 of" in report
+
+
+def test_ranking_rows_train_against_their_own_options(write_scenario, monkeypatch):
+    from conftest import BASE_TOML  # pylint: disable=import-outside-toplevel
+    # Ranking among options made of random directions takes the tiny heads longer to learn
+    fast(monkeypatch, learning_rate=3e-2, epochs=200, patience=50)
+    scenario = load_scenario(write_scenario(BASE_TOML.replace(
+        'inform = ["lookup"]\n', 'inform = ["lookup", "alternatives"]\n\n[routes.Billing.options]\n'
+        'tool = "alternatives"\ninstructions = "Which refund suits them?"\n')))
+    engine = FakeEngine(["Charges and refunds", "Bugs and outages", "ALPHA", "BETA", "GAMMA"])
+    rows = []
+    for i in range(120):
+        cues = ["ALPHA", "BETA", "GAMMA"][i % 3:] + ["ALPHA", "BETA", "GAMMA"][:i % 3]
+        wanted = cues[i % 2]
+        options = [{"id": cue.lower(), "text": f"{cue} refund"} for cue in cues]
+        rows.append(row(f"Charges and refunds case {i} {wanted}", "Billing", options=options,
+                        option=cues.index(wanted)))
+    facts, report = quiet_train(scenario, engine, rows)
+    assert facts["options_trained"] == ["Billing"]
+    right, total = facts["per_class"]["options of Billing"]["after"]["right option"]
+    assert right / total >= 0.8
+    assert "options of Billing" in report
+
+
+def test_reports_are_per_class(scenario, monkeypatch):
+    fast(monkeypatch)
+    engine = FakeEngine([route.description for route in scenario.routes.values()] + ["URGENT"])
+    _, report = quiet_train(scenario, engine, question_rows(scenario))
+    for name in ("Billing", "Tech", "true", "false"):
+        assert any(line.split()[:1] == [name] and " of " in line for line in report.splitlines())

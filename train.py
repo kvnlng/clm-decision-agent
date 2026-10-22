@@ -18,6 +18,7 @@ import json
 import math
 import random
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -25,9 +26,11 @@ import torch
 from safetensors.numpy import save_file
 from torch import nn
 
+import clm_schema
 from clm_router import HEADS_FILE, ClmError, load_engine
 from clm_torch import Head
 from dataset import examples_path, load_examples, training_rows
+from decision import routed_text
 from record import load_records, record_key
 from scenario import ScenarioError
 from scenario import load_for_command
@@ -103,36 +106,116 @@ def accuracy(model: HeadsModel, states: torch.Tensor, labels: torch.Tensor, acti
         return float((model.logits(states, actions).argmax(dim=1) == labels).float().mean())
 
 
+@dataclass
+class Task:
+    """One thing CLM is trained to answer: the rows labelled for it, their state vectors, the right candidate of
+    each, and the candidates. A question shares its candidates (`classes` names them); ranking has its own
+    candidates per row (`actions` is then a list, and `classes` None)."""
+
+    name: str
+    rows: torch.Tensor                          # [m] which rows carry this label
+    states: torch.Tensor                        # [m, hidden]
+    labels: torch.Tensor                        # [m] the right candidate's index
+    actions: torch.Tensor | list[torch.Tensor]  # [k, hidden], or one [k_i, hidden] per row
+    classes: list[str] | None = None
+    weights: torch.Tensor | None = None         # per class, so a rare answer counts as much as a common one
+
+    def logits(self, model: HeadsModel, entries: torch.Tensor) -> list[torch.Tensor] | torch.Tensor:
+        """The scores of the entries' candidates: [n, k] for a question, a list of [k_i] for ranking."""
+        if self.classes is not None:
+            return model.logits(self.states[entries], self.actions)
+        return [model.logits(self.states[i:i + 1], self.actions[i])[0] for i in entries.tolist()]
+
+    def loss(self, model: HeadsModel, entries: torch.Tensor) -> torch.Tensor:
+        """Cross-entropy over the entries, weighted by class for a question."""
+        scores = self.logits(model, entries)
+        if self.classes is not None:
+            return nn.functional.cross_entropy(scores, self.labels[entries], weight=self.weights)
+        return torch.stack([nn.functional.cross_entropy(s[None], self.labels[i:i + 1])
+                            for s, i in zip(scores, entries.tolist())]).mean()
+
+    def predictions(self, model: HeadsModel, entries: torch.Tensor) -> torch.Tensor:
+        """The highest-scoring candidate of each entry."""
+        with torch.no_grad():
+            scores = self.logits(model, entries)
+            if self.classes is not None:
+                return scores.argmax(dim=1)
+            return torch.tensor([int(s.argmax()) for s in scores], dtype=torch.long)
+
+    def per_class(self, model: HeadsModel, entries: torch.Tensor | None = None) -> dict[str, list[int]]:
+        """{class: [right, of]} over the entries (all of them by default); ranking has the one class
+        "right option"."""
+        entries = torch.arange(len(self.labels)) if entries is None else entries
+        right = self.predictions(model, entries) == self.labels[entries]
+        if self.classes is None:
+            return {"right option": [int(right.sum()), len(entries)]}
+        wanted = self.labels[entries]
+        return {name: [int((right & (wanted == k)).sum()), int((wanted == k).sum())]
+                for k, name in enumerate(self.classes) if int((wanted == k).sum())}
+
+    def balanced(self, model: HeadsModel, entries: torch.Tensor | None = None) -> float:
+        """The mean of each class's share answered right, so "always the common answer" scores low."""
+        found = self.per_class(model, entries)
+        return sum(right / total for right, total in found.values()) / len(found) if found else 0.0
+
+
+def class_weights(labels: torch.Tensor, classes: int) -> torch.Tensor:
+    """n / (k * count) for each of the k classes, and 0 for a class with no examples."""
+    counts = torch.bincount(labels, minlength=classes).float()
+    return torch.where(counts > 0, len(labels) / (classes * counts.clamp(min=1)), torch.zeros_like(counts))
+
+
+def _entries(task: Task, rows: list[int]) -> torch.Tensor:
+    return torch.isin(task.rows, torch.tensor(rows, dtype=torch.long)).nonzero().flatten()
+
+
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments,too-many-locals
-def fit(model: HeadsModel, states: torch.Tensor, labels: torch.Tensor, actions: torch.Tensor, epochs: int = 25,
-        learning_rate: float = 5e-5, batch: int = 32, patience: int = 4, seed: int = 0, pinned: int = 0) -> dict:
-    """Train, and keep the weights that did best on a fifth of the examples set aside for validation.
+def fit_tasks(model: HeadsModel, tasks: list[Task], rows: int, epochs: int = 25, learning_rate: float = 5e-5,
+              batch: int = 32, patience: int = 4, seed: int = 0, pinned: int = 0) -> dict:
+    """Train on every task at once, and keep the weights that did best on a fifth of the `rows` set aside for
+    validation, scored as the mean balanced accuracy over the tasks.
 
     The last `pinned` rows are never set aside. The starting weights count as a candidate, so
     training that only does harm changes nothing."""
-    order = list(range(len(labels) - pinned))
+    order = list(range(rows - pinned))
     random.Random(seed).shuffle(order)
     held = max(1, len(order) // 5)
-    validation = torch.tensor(order[:held])
-    training = order[held:] + list(range(len(labels) - pinned, len(labels)))
+    validation = [_entries(task, order[:held]) for task in tasks]
+    training = order[held:] + list(range(rows - pinned, rows))
     optimizer = MlxAdamW(model.parameters(), learning_rate=learning_rate, weight_decay=1e-2)
 
-    best = accuracy(model, states[validation], labels[validation], actions)
+    def score() -> float:
+        found = [task.balanced(model, entries) for task, entries in zip(tasks, validation) if len(entries)]
+        return sum(found) / len(found) if found else 0.0
+
+    best = score()
     best_weights, best_epoch, epoch = copy.deepcopy(model.state_dict()), 0, 0
     for epoch in range(1, epochs + 1):
         random.Random(seed + epoch).shuffle(training)
         for start in range(0, len(training), batch):
-            rows = torch.tensor(training[start:start + batch])
+            chosen = training[start:start + batch]
+            losses = [task.loss(model, entries) for task in tasks if len(entries := _entries(task, chosen))]
+            if not losses:
+                continue
             optimizer.zero_grad()
-            nn.functional.cross_entropy(model.logits(states[rows], actions), labels[rows]).backward()
+            sum(losses).backward()
             optimizer.step()
-        score = accuracy(model, states[validation], labels[validation], actions)
-        if score > best + 1e-6:
-            best, best_weights, best_epoch = score, copy.deepcopy(model.state_dict()), epoch
+        found = score()
+        if found > best + 1e-6:
+            best, best_weights, best_epoch = found, copy.deepcopy(model.state_dict()), epoch
         elif epoch - best_epoch >= patience:
             break
     model.load_state_dict(best_weights)
     return {"epochs": epoch, "best_epoch": best_epoch, "validation_accuracy": best, "validation_examples": held}
+
+
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def fit(model: HeadsModel, states: torch.Tensor, labels: torch.Tensor, actions: torch.Tensor, epochs: int = 25,
+        learning_rate: float = 5e-5, batch: int = 32, patience: int = 4, seed: int = 0, pinned: int = 0) -> dict:
+    """fit_tasks for one question whose rows are all labelled: its states, labels and candidates."""
+    task = Task("route", torch.arange(len(labels)), states, labels, actions,
+                classes=[str(k) for k in range(len(actions))], weights=class_weights(labels, len(actions)))
+    return fit_tasks(model, [task], len(labels), epochs, learning_rate, batch, patience, seed, pinned)
 
 
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
@@ -169,8 +252,8 @@ def _embed(engine, texts: list[str], batch: int = 32) -> torch.Tensor:
                                            for start in range(0, len(texts), batch)]))
 
 
-def _other_answers(engine, scenario, states: list[str]) -> list[dict]:
-    return [engine.answer(state, scenario.questions)["answers"] for state in states] if scenario.questions else []
+def _other_answers(engine, questions: dict, states: list[str]) -> list[dict]:
+    return [engine.answer(state, questions)["answers"] for state in states] if questions else []
 
 
 def _drift(before: list[dict], after: list[dict]) -> dict[str, str]:
@@ -187,49 +270,126 @@ def _drift(before: list[dict], after: list[dict]) -> dict[str, str]:
     return report
 
 
+def _question_text(row: dict, instructions: str) -> str:
+    """The text CLM reads for a question about the row: the request, its facts, then the question."""
+    return clm_schema.state_text(routed_text(row["text"], row["facts"]), instructions)
+
+
+class _Candidates:  # pylint: disable=too-few-public-methods
+    """Candidate texts' vectors, each list encoded once for training and testing alike."""
+
+    def __init__(self, engine):
+        self.engine, self.found = engine, {}
+
+    def __call__(self, texts: list[str]) -> torch.Tensor:
+        if tuple(texts) not in self.found:
+            self.found[tuple(texts)] = _embed(self.engine, texts)
+        return self.found[tuple(texts)]
+
+
+def _question_task(name: str, question: dict, engine, rows: list[dict], candidates: _Candidates) -> Task:
+    keys, texts = clm_schema.candidates(question)
+    mine = [i for i, row in enumerate(rows) if name in row["answers"]]
+    labels = torch.tensor([rows[i]["answers"][name] for i in mine], dtype=torch.long)
+    states = _embed(engine, [_question_text(rows[i], question["instructions"]) for i in mine]) if mine \
+        else torch.zeros(0)
+    return Task(name, torch.tensor(mine, dtype=torch.long), states, labels, candidates(texts), classes=keys,
+                weights=class_weights(labels, len(keys)) if mine else None)
+
+
+def _ranking_task(route, engine, rows: list[dict], candidates: _Candidates) -> Task:
+    mine = [i for i, row in enumerate(rows) if row["options"] and row["route"] == route.name]
+    states = _embed(engine, [_question_text(rows[i], route.options.instructions) for i in mine]) if mine \
+        else torch.zeros(0)
+    return Task(f"options of {route.name}", torch.tensor(mine, dtype=torch.long), states,
+                torch.tensor([rows[i]["option"] for i in mine], dtype=torch.long),
+                [candidates([option["text"] for option in rows[i]["options"]]) for i in mine])
+
+
+def _tasks(scenario, engine, rows: list[dict], candidates: _Candidates, trained: list[str] | None = None) -> list[Task]:
+    """A task for the route, each question the rows label, and each route's ranking the rows label; with
+    `trained`, the tasks of those names instead."""
+    names = list(scenario.routes)
+    labels = torch.tensor([names.index(row["route"]) for row in rows])
+    # The same layout CLM is asked with: the request, a blank line, the routing question
+    tasks = [Task("route", torch.arange(len(rows)),
+                  _embed(engine, [f"{row['text'].strip()}\n\n{scenario.routing_instructions.strip()}"
+                                  for row in rows]),
+                  labels, candidates([route.description for route in scenario.routes.values()]), classes=names,
+                  weights=class_weights(labels, len(names)))]
+    for name, question in scenario.questions.items():
+        if (name in trained) if trained is not None else any(name in row["answers"] for row in rows):
+            tasks.append(_question_task(name, question, engine, rows, candidates))
+    for route in scenario.routes.values():
+        wanted = f"options of {route.name}"
+        if route.options and ((wanted in trained) if trained is not None
+                              else any(row["options"] and row["route"] == route.name for row in rows)):
+            tasks.append(_ranking_task(route, engine, rows, candidates))
+    return tasks
+
+
+def _write_results(write, tasks: list[Task], before: dict, after: dict) -> None:
+    for task in tasks:
+        write(f"  {task.name:<24}released {before[task.name]['score']:.0%}   "
+              f"trained {after[task.name]['score']:.0%}   (balanced: each class counts the same)")
+        for name, (right, total) in after[task.name]["per_class"].items():
+            was = before[task.name]["per_class"].get(name, [0, total])[0]
+            write(f"    {name:<22}released {was:>3} of {total:<4} trained {right:>3} of {total}")
+
+
+def _results(model: HeadsModel, tasks: list[Task]) -> dict:
+    return {task.name: {"score": task.balanced(model), "per_class": task.per_class(model)} for task in tasks}
+
+
 # pylint: disable-next=too-many-locals,too-many-arguments,too-many-positional-arguments
 def train(scenario, engine, train_rows: list, reviewed: list, test_rows: list, write=print) -> dict:
-    """Fine-tune the engine's heads in place on the rows; returns the facts saved with the heads."""
-    names = list(scenario.routes)
-
-    def encode(rows):
-        # The same layout CLM is asked with: the request, a blank line, the routing question
-        texts = [f"{row['text'].strip()}\n\n{scenario.routing_instructions.strip()}" for row in rows]
-        return _embed(engine, texts), torch.tensor([names.index(row["route"]) for row in rows])
-
+    """Fine-tune the engine's heads in place on the rows: the route, every question the rows label, and each
+    route's ranking of options. Returns the facts saved with the heads."""
     write(f"Encoding {len(train_rows)} examples and {len(reviewed)} reviewed routes for training, "
           f"and {len(test_rows)} held-back examples...")
-    (train_states, train_labels), (test_states, test_labels) = encode(train_rows + reviewed), encode(test_rows)
-    actions = _embed(engine, [route.description for route in scenario.routes.values()])
+    candidates = _Candidates(engine)
+    tasks = _tasks(scenario, engine, train_rows + reviewed, candidates)
+    trained = [task.name for task in tasks]
+    test_tasks = _tasks(scenario, engine, test_rows, candidates, trained)
     model = HeadsModel.from_weights(engine.head_weights(), engine.head_config)
     sample = [row["text"] for row in test_rows[::max(1, len(test_rows) // 30)]]       # spread across the routes
+    untrained = {name: question for name, question in scenario.questions.items() if name not in trained}
+    others_before = _other_answers(engine, untrained, sample)
 
-    before, others_before = accuracy(model, test_states, test_labels, actions), _other_answers(engine, scenario, sample)
-    info = fit(model, train_states, train_labels, actions, pinned=len(reviewed))
+    before = _results(model, test_tasks)
+    info = fit_tasks(model, tasks, len(train_rows) + len(reviewed), pinned=len(reviewed))
     engine.set_head_weights(model.weights())
-    after, others_after = accuracy(model, test_states, test_labels, actions), _other_answers(engine, scenario, sample)
-    baseline = probe_accuracy(train_states, train_labels, test_states, test_labels, len(names))
+    after = _results(model, test_tasks)
+    route, test_route = tasks[0], test_tasks[0]
+    baseline = probe_accuracy(route.states, route.labels, test_route.states, test_route.labels, len(scenario.routes))
 
-    write(f"Routing accuracy on {len(test_rows)} held-back generated examples:")
-    write(f"  released heads      {before:.0%}")
-    write(f"  trained heads       {after:.0%}   "
-          f"(kept after pass {info['best_epoch']} of {info['epochs']} over the training examples)")
-    write(f"  simple classifier   {baseline:.0%}   (a baseline on the encoder's vectors; not used by the server)")
-    with torch.no_grad():
-        correct = model.logits(test_states, actions).argmax(dim=1) == test_labels
-    for index, name in enumerate(names):
-        mine = test_labels == index
-        total = int(mine.sum())
-        if total:
-            write(f"    {name:<24}{int((correct & mine).sum()):>4} / {total}")
-    drift = _drift(others_before, others_after)
+    write(f"Results on {len(test_rows)} held-back generated examples "
+          f"(kept after pass {info['best_epoch']} of {info['epochs']} over the training examples):")
+    _write_results(write, test_tasks, before, after)
+    write(f"  simple classifier for the route {baseline:.0%}   (a baseline on the encoder's vectors; "
+          f"not used by the server)")
+    drift = _drift(others_before, _other_answers(engine, untrained, sample))
     for name, change in drift.items():
         write(f"  untrained question '{name}': {change}")
+    score_before = sum(found["score"] for found in before.values()) / len(before)
+    score_after = sum(found["score"] for found in after.values()) / len(after)
     return {"routing_sha": scenario.routing_sha, "clm_backend": scenario.clm_backend,
             "clm_model_id": scenario.clm_model_id,
             "train_examples": len(train_rows), "reviewed_routes": len(reviewed), "test_examples": len(test_rows),
-            "accuracy_before": before, "accuracy_after": after, "accuracy_simple_classifier": baseline,
+            "trained": trained, "options_trained": [name[len("options of "):] for name in trained
+                                                    if name.startswith("options of ")],
+            "accuracy_before": _plain(before["route"]["per_class"]),
+            "accuracy_after": _plain(after["route"]["per_class"]),
+            "score_before": score_before, "score_after": score_after, "accuracy_simple_classifier": baseline,
+            "per_class": {name: {"before": before[name]["per_class"], "after": after[name]["per_class"]}
+                          for name in trained},
             "other_questions": drift, **info}
+
+
+def _plain(per_class: dict) -> float:
+    """The share answered right, all classes together."""
+    total = sum(of for _, of in per_class.values())
+    return sum(right for right, _ in per_class.values()) / total if total else 0.0
 
 
 def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-return-statements
@@ -275,8 +435,8 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-retu
         print(f"error: {error}", file=sys.stderr)
         return 2
     facts = train(scenario, engine, train_rows, reviewed, test_rows)
-    if facts["accuracy_after"] <= facts["accuracy_before"]:
-        print("Training did not improve routing on the held-back examples, so nothing was saved.")
+    if facts["score_after"] <= facts["score_before"]:
+        print("Training did not improve the trained answers on the held-back examples, so nothing was saved.")
         return 1
     save_heads(engine.head_weights(), engine.head_config, scenario.clm_heads, facts)
     print(f"Trained heads saved to {scenario.clm_heads}. The server uses them from its next start.")
