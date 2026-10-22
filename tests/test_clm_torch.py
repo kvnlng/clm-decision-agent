@@ -14,6 +14,7 @@ from safetensors.numpy import save_file
 
 import clm_schema
 import clm_torch
+import tracing
 from clm_router import HEADS_FILE, ClmError
 from clm_torch import TorchEncoder, TorchEngine, TorchHeads, pick_device
 
@@ -231,3 +232,37 @@ def test_prefetch_encodes_states_in_one_call():
     for state in ("a", "b", "c"):
         engine.answer(state, question)
     assert len(encoder.asked) == asked
+
+
+def tiny_qwen():
+    """A small random Qwen3, CLM's encoder architecture, to check against the real attention and cache."""
+    from transformers import AutoModel, Qwen3Config  # pylint: disable=import-outside-toplevel
+    torch.manual_seed(0)
+    config = Qwen3Config(  # pylint: disable=unexpected-keyword-arg
+        vocab_size=128, hidden_size=HIDDEN, intermediate_size=64, num_hidden_layers=2, num_attention_heads=4,
+        num_key_value_heads=2, head_dim=8, max_position_embeddings=256)
+    return AutoModel.from_config(config).eval()
+
+
+SHARED = ["Please give me access to the oncology registry for an audit next week",
+          "Please give me access to the oncology dashboard",
+          "Please give me access to the oncology registry for an audit next week\n\nIs it urgent?",
+          "Please give me access to the oncology registry for an audit next week\n\nWhich team?",
+          "short", "Something else entirely, with no shared start",
+          # A second group with a shorter start, so the batch pads one group's start
+          "My bill is wrong\n\nIs it urgent?", "My bill is wrong\n\nWhich team?"]
+
+
+def test_shared_prefixes_give_the_same_vectors_as_encoding_in_full():
+    shared = TorchEncoder("test/encoder", None, "cpu", loaded=(tiny_qwen(), StubTokenizer()))
+    full = TorchEncoder("test/encoder", None, "cpu", min_prefix=None, loaded=(shared.model, StubTokenizer()))
+    np.testing.assert_allclose(shared.embed(SHARED), full.embed(SHARED), atol=1e-5)
+
+
+def test_a_shared_prefix_is_encoded_once(tmp_path):
+    encoder = TorchEncoder("test/encoder", None, "cpu", loaded=(tiny_qwen(), StubTokenizer()))
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
+    with writer.call("decide") as record:
+        encoder.embed(SHARED[2:4])
+    # The message and its blank line once, then each question's own tokens
+    assert record["counts"]["tokens"] == len(SHARED[2]) + len("Which team?")

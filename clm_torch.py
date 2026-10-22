@@ -138,8 +138,10 @@ class TorchEncoder:
 
     # pylint: disable-next=too-many-arguments,too-many-positional-arguments
     def __init__(self, repo: str, revision: str | None, device: str, max_tokens: int = 2048,
-                 batch_tokens: int = 4096, loaded: tuple | None = None):
+                 batch_tokens: int = 4096, min_prefix: int | None = 8, loaded: tuple | None = None):
         self.device, self.max_tokens, self.batch_tokens = device, max_tokens, batch_tokens
+        # Texts that start with the same `min_prefix` tokens or more share one encoding of that start; None: never
+        self.min_prefix = min_prefix
         if loaded is None:
             # pylint: disable-next=import-outside-toplevel
             from transformers import AutoModel, AutoTokenizer, logging as transformers_logging
@@ -170,8 +172,73 @@ class TorchEncoder:
         with tracing.timed("encode_ms"):
             return self._embed([self.ids(text) for text in texts])
 
+    def _groups(self, id_lists: list[list[int]]) -> list[tuple[int, list[int]]]:
+        """[(shared prefix length, indexes into `id_lists`)]: texts that start with the same tokens, grouped. A
+        prefix of 0 means the text is encoded alone. Every text keeps at least its last token out of the prefix."""
+        order = sorted(range(len(id_lists)), key=lambda i: id_lists[i])
+        found, start = [], 0
+        while start < len(order):
+            first, end, prefix = id_lists[order[start]], start + 1, len(id_lists[order[start]]) - 1
+            while end < len(order):
+                other = id_lists[order[end]]
+                common = next((n for n, (a, b) in enumerate(zip(first, other)) if a != b), min(len(first), len(other)))
+                shorter = min(prefix, common, len(other) - 1)
+                if self.min_prefix is None or shorter < self.min_prefix:
+                    break
+                prefix, end = shorter, end + 1
+            found.append((prefix if end - start > 1 else 0, order[start:end]))
+            start = end
+        return found
+
     def _embed(self, id_lists: list[list[int]]) -> np.ndarray:
-        """The vectors for lists of token ids, encoded in batches of similar length."""
+        """The vectors for lists of token ids. Texts that start alike, such as one message asked several questions,
+        have their start encoded once and each rest encoded on its cached keys and values."""
+        out: list = [None] * len(id_lists)
+        groups = self._groups(id_lists)
+        alone = [k for prefix, group in groups if not prefix for k in group]
+        for k, vector in zip(alone, self._encode([id_lists[k] for k in alone])):
+            out[k] = vector
+        shared = [(prefix, group) for prefix, group in groups if prefix]
+        for batch in self._batches([id_lists[group[0]][:prefix] for prefix, group in shared]):
+            self._encode_shared([shared[k] for k in batch], id_lists, out)
+        return np.stack(out) if out else np.zeros((0, 0), dtype=np.float32)
+
+    # One pass over prefixes and one over the rests, each needing its ids, masks and rows
+    # pylint: disable-next=too-many-locals
+    def _encode_shared(self, groups: list[tuple[int, list[int]]], id_lists: list[list[int]], out: list) -> None:
+        """Encode each group's prefix once, then every text's rest on the prefix's cached keys and values."""
+        prefixes = [id_lists[group[0]][:prefix] for prefix, group in groups]
+        rows = [(g, k) for g, (_, group) in enumerate(groups) for k in group]
+        rests = [id_lists[k][groups[g][0]:] for g, k in rows]
+        tracing.add("encoder_batches", 2)
+        tracing.add("texts_encoded", len(rows))
+        tracing.add("tokens", sum(map(len, prefixes)) + sum(map(len, rests)))
+        tracing.add("padded_tokens", len(prefixes) * max(map(len, prefixes)) + len(rests) * max(map(len, rests)))
+        which = torch.tensor([g for g, _ in rows], device=self.device)
+        # Padding goes after each prefix and each rest; the masks keep the rests from attending to it, and
+        # explicit positions carry on from each prefix's own length
+        prefix_ids, prefix_mask = self._padded(prefixes)
+        rest_ids, rest_mask = self._padded(rests)
+        positions = (torch.tensor([groups[g][0] for g, _ in rows], device=self.device)[:, None]
+                     + torch.arange(rest_ids.shape[1], device=self.device)[None])
+        with torch.inference_mode():
+            cache = self.model(input_ids=prefix_ids, attention_mask=prefix_mask, use_cache=True).past_key_values
+            cache.batch_select_indices(which)       # each text gets its group's prefix
+            hidden = self.model(input_ids=rest_ids, attention_mask=torch.cat([prefix_mask[which], rest_mask], dim=1),
+                                position_ids=positions, past_key_values=cache, use_cache=True).last_hidden_state
+            last = torch.tensor([len(r) - 1 for r in rests], device=self.device)
+            vectors = _unit(hidden[torch.arange(len(rows), device=self.device), last].float()).cpu().numpy()
+        for (_, k), vector in zip(rows, vectors):
+            out[k] = vector
+
+    def _padded(self, id_lists: list[list[int]]) -> tuple[torch.Tensor, torch.Tensor]:
+        """(ids, mask), each row padded at its end to the longest."""
+        longest = max(map(len, id_lists))
+        return (torch.tensor([ids + [0] * (longest - len(ids)) for ids in id_lists], device=self.device),
+                torch.tensor([[1] * len(ids) + [0] * (longest - len(ids)) for ids in id_lists], device=self.device))
+
+    def _encode(self, id_lists: list[list[int]]) -> list[np.ndarray]:
+        """The vectors for lists of token ids, each encoded in full, in batches of similar length."""
         out: list = [None] * len(id_lists)
         for batch in self._batches(id_lists):
             rows = [id_lists[k] for k in batch]
@@ -189,7 +256,7 @@ class TorchEncoder:
                 vectors = _unit(hidden[torch.arange(len(rows), device=self.device), last].float()).cpu().numpy()
             for k, vector in zip(batch, vectors):
                 out[k] = vector
-        return np.stack(out) if out else np.zeros((0, 0), dtype=np.float32)
+        return out
 
 
 class TorchEngine:
