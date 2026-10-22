@@ -91,11 +91,18 @@ second (encoding's share of the time):
 
 | Calls | M5 Max, 64 GB, MLX | A100 80 GB, torch |
 |---|---|---|
-| `decide`, one message at a time | 14.7 (95%) | 20.1 (94%) |
-| `decide_many`, 100 messages a call | 22.4 (93%) | 55.2 (90%) |
+| `decide`, one message at a time | 14.7 (95%) | 19.8 (94%) |
+| `decide_many`, 100 messages a call | 22.4 (93%) | 71.6 (87%) |
 
-- Encoding is still almost all of the time, so that is where faster decisions will come from. On
-  the A100, a fifth of what a batch encodes is padding, which sorting texts by length could cut.
+- **Each message is encoded once for all its questions** on torch. CLM reads a message with each
+  question appended, so the texts start alike; the encoder runs the shared start once and each
+  question on its cached keys and values. That halved the tokens and took `decide_many` on the
+  A100 from 55 to 72 a second, with vectors matching the full encoding to a cosine of 0.9998.
+  It takes two passes, which only pays with enough to compute, so it is used from 1,024 tokens
+  at once: a single decision is about 120, and sharing slowed it from 20 to 11 a second. The
+  MLX build has its own encoder and does not do this.
+- **Batch size made no difference**: batches of 1,024 to 4,096 tokens took the same time, and
+  larger ones were slower, because they pad more.
 - Your tools' share grows as CLM gets faster. On the A100, the example's tools made a new HTTP
   client per call at first, about 17 ms each; that held `decide_many` to 23 a second until they
   shared one ([scenario.md](scenario.md#tools)).
