@@ -42,6 +42,7 @@ def check_tools(scenario: Scenario, registry: dict[str, Callable]) -> None:
     known = f"registered: {', '.join(sorted(registry))}" if registry else "no [tools] module is set"
     named = [(f"routes.{route.name}.inform", tool) for route in scenario.routes.values() for tool in route.inform]
     named += [(f"tools.inform.{tool}", tool) for tool in scenario.informs]
+    named += [("routing.inform", tool) for tool in scenario.route_inform]
     named += [(f"actions[{index}].tool", action.tool) for index, action in enumerate(scenario.actions)]
     for where, tool in named:
         if tool not in registry:

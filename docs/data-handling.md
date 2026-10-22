@@ -6,7 +6,7 @@ compliant with any regulation.
 
 ## Where text goes
 
-The text a caller sends with `decide`, `check_call` or `correct` reaches:
+The text a caller sends with `decide`, `decide_many`, `check_call` or `correct` reaches:
 
 | Place | When | You control it with |
 |---|---|---|

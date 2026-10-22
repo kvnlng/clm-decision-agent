@@ -8,13 +8,14 @@ import time
 import httpx2
 import pytest
 import uvicorn
+import fake_tools
 from conftest import BASE_TOML, FakeRouter, decision
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
 import clm_router
 import server
-from decision import decide
+from decision import decide, routed_text
 from record import load_records
 from scenario import load_scenario
 from tools import load_tools
@@ -42,20 +43,22 @@ async def tool_names(mcp_server):
 
 @pytest.mark.anyio
 async def test_lists_tools_without_review(parts):
-    assert await tool_names(server.build_server(*parts, review=False)) == ["check_call", "decide", "describe"]
+    assert await tool_names(server.build_server(*parts, review=False)) == \
+        ["check_call", "decide", "decide_many", "describe"]
 
 
 @pytest.mark.anyio
 async def test_lists_review_tools(parts):
     assert await tool_names(server.build_server(*parts, review=True)) == \
-        ["agreement", "check_call", "correct", "decide", "describe"]
+        ["agreement", "check_call", "correct", "decide", "decide_many", "describe"]
 
 
 @pytest.mark.anyio
-async def test_only_decide_can_change_anything(parts):
+async def test_only_deciding_can_change_anything(parts):
     async with Client(server.build_server(*parts, review=True)) as client:
         hints = {tool.name: tool.annotations.read_only_hint for tool in (await client.list_tools()).tools}
-    assert hints == {"decide": False, "check_call": True, "describe": True, "correct": False, "agreement": True}
+    assert hints == {"decide": False, "decide_many": False, "check_call": True, "describe": True, "correct": False,
+                     "agreement": True}
 
 
 @pytest.mark.anyio
@@ -65,6 +68,18 @@ async def test_decide_over_mcp(parts):
         result = await client.call_tool("decide", {"text": TEXT})
     assert not result.is_error
     assert result.structured_content == decide(TEXT, scenario, FakeRouter(router.decisions), tools)
+
+
+@pytest.mark.anyio
+async def test_decide_over_mcp_accepts_context(write_scenario):
+    scenario = load_scenario(write_scenario())
+    urgent = {"urgent": {"type": "noul", "noul": 0.9}}
+    router = FakeRouter(decision("Billing", answers=urgent), asks=[urgent])
+    fake_tools.CALLS.clear()
+    async with Client(server.build_server(scenario, router, load_tools(scenario), review=False)) as client:
+        result = await client.call_tool("decide", {"text": TEXT, "context": {"booking": "PNR1"}})
+    assert not result.is_error
+    assert fake_tools.CALLS[0][1]["context"] == {"booking": "PNR1"}
 
 
 @pytest.mark.anyio
@@ -157,7 +172,6 @@ def test_the_server_logs_only_warnings(parts):
 @pytest.mark.anyio
 async def test_a_slow_tool_does_not_hold_up_other_calls(write_scenario):
     import anyio  # pylint: disable=import-outside-toplevel
-    import fake_tools  # pylint: disable=import-outside-toplevel
     text = (BASE_TOML.replace('tool = "act"', 'tool = "slow"').replace('when = "urgent >= 0.5"\n', "")
             .replace('routes = ["Billing"]', 'routes = ["Tech"]'))
     scenario = load_scenario(write_scenario(text))
@@ -182,3 +196,38 @@ def test_clm_that_cannot_load_is_one_line(write_scenario, monkeypatch, capsys):
     assert server.main([str(write_scenario())]) == 2
     assert capsys.readouterr().err.strip().splitlines()[-1] == \
         "error: CLM was set to run on cuda, which this machine does not have (available: cpu)"
+
+
+@pytest.mark.anyio
+async def test_correct_saves_the_text_the_route_saw(write_scenario):
+    scenario = load_scenario(write_scenario(BASE_TOML.replace(
+        "confidence_threshold = 0.6", 'confidence_threshold = 0.6\ninform = ["lookup"]')))
+    seen = routed_text(TEXT, ["The queue is A."])
+    router = FakeRouter({TEXT: decision("Tech"), seen: decision("Tech")})
+    async with Client(server.build_server(scenario, router, load_tools(scenario), review=True)) as client:
+        saved = await client.call_tool("correct", {"text": TEXT, "route": "Billing", "context": {"booking": "B"}})
+    assert not saved.is_error
+    records, _ = load_records(scenario.record_path)
+    assert [r["state_text"] for r in records] == [seen]
+    assert router.verdicts == {seen: "Billing"}
+
+
+@pytest.mark.anyio
+async def test_decide_many_over_mcp(parts):
+    scenario, router, tools = parts
+    async with Client(server.build_server(scenario, router, tools, review=False)) as client:
+        result = await client.call_tool("decide_many", {"requests": [{"text": TEXT}, {"text": "other"}]})
+        empty = await client.call_tool("decide_many", {"requests": []})
+        too_many = await client.call_tool("decide_many", {"requests": [{"text": "x"}] * 1001})
+        no_text = await client.call_tool("decide_many", {"requests": [{"context": {}}]})
+    assert [d["route"] for d in result.structured_content["decisions"]] == ["Tech", "Tech"]
+    assert empty.structured_content == {"decisions": []}
+    assert too_many.is_error and "at most 1000" in too_many.content[0].text
+    assert no_text.is_error and "requests[0]" in no_text.content[0].text
+
+
+@pytest.mark.anyio
+async def test_decide_many_accepts_a_null_context_as_decide_does(parts):
+    async with Client(server.build_server(*parts, review=False)) as client:
+        result = await client.call_tool("decide_many", {"requests": [{"text": TEXT, "context": None}]})
+    assert not result.is_error

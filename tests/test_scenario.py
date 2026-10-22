@@ -53,11 +53,43 @@ match_threshold = 0.9
     ("confidence_threshold = 0.6", "confidence_threshold = 1.5", "routing.confidence_threshold"),
     ('instructions = "Which workflow?"\n', "", "routing: missing 'instructions'"),
     ('inform = ["lookup"]', 'inform = "lookup"', "routes.Billing.inform must be a list of tool names"),
+    ("confidence_threshold = 0.6", 'confidence_threshold = 0.6\ninform = "lookup"',
+     "routing.inform must be a list of tool names"),
 ])
 def test_invalid_scenarios_name_the_problem(write_scenario, old, new, message):
     assert old in BASE_TOML
     with pytest.raises(ScenarioError, match=re.escape(message)):
         load_scenario(write_scenario(BASE_TOML.replace(old, new)))
+
+
+def test_routing_inform_names_the_tools_the_route_hears(write_scenario):
+    assert load_scenario(write_scenario()).route_inform == ()
+    text = BASE_TOML.replace("confidence_threshold = 0.6", 'confidence_threshold = 0.6\ninform = ["lookup"]')
+    assert load_scenario(write_scenario(text)).route_inform == ("lookup",)
+
+
+OPTIONS_TOML = BASE_TOML.replace('inform = ["lookup"]\n', '''inform = ["lookup", "alternatives"]
+
+[routes.Billing.options]
+tool = "alternatives"
+instructions = "Which refund suits them?"
+''')
+
+
+def test_route_options_are_read(write_scenario):
+    route = load_scenario(write_scenario(OPTIONS_TOML)).routes["Billing"]
+    assert (route.options.tool, route.options.instructions) == ("alternatives", "Which refund suits them?")
+    assert load_scenario(write_scenario()).routes["Billing"].options is None
+
+
+@pytest.mark.parametrize("old, new, message", [
+    ('instructions = "Which refund suits them?"\n', "", "routes.Billing.options: missing 'instructions'"),
+    ('inform = ["lookup", "alternatives"]', 'inform = ["lookup"]',
+     "routes.Billing.options.tool must be one of the route's informing tools"),
+])
+def test_route_options_are_checked(write_scenario, old, new, message):
+    with pytest.raises(ScenarioError, match=re.escape(message)):
+        load_scenario(write_scenario(OPTIONS_TOML.replace(old, new)))
 
 
 def test_choice_question_needs_criteria(write_scenario):
@@ -310,3 +342,10 @@ def test_actions_and_informs_name_the_problem(write_scenario, old, new, message)
 def test_old_keys_are_refused(write_scenario, old, new, message):
     with pytest.raises(ScenarioError, match=re.escape(message)):
         load_scenario(write_scenario(BASE_TOML.replace(old, new)))
+
+
+def test_a_routing_tool_cannot_be_a_routes_options_tool(write_scenario):
+    text = OPTIONS_TOML.replace("confidence_threshold = 0.6", 'confidence_threshold = 0.6\ninform = ["alternatives"]')
+    with pytest.raises(ScenarioError, match=re.escape(
+            "routing.inform: 'alternatives' fetches routes.Billing's options, so it must run after routing")):
+        load_scenario(write_scenario(text))

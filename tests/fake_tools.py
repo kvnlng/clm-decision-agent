@@ -43,4 +43,21 @@ def slow(request):
     return {"slow": True}
 
 
-TOOLS = [lookup, act, broken, unserialisable, slow]
+OPTIONS = {"value": []}   # what alternatives() returns as its options; a test sets it
+
+
+def alternatives(request):
+    """An informing tool that fetches options."""
+    CALLS.append(("alternatives", request))
+    return {"options": OPTIONS["value"]}
+
+
+def flaky(request):
+    """An informing tool that fails when the request's context says so."""
+    CALLS.append(("flaky", request))
+    if request.get("context", {}).get("fail"):
+        raise RuntimeError("down for this one")
+    return {"facts": [f"Flaky saw {request['text']}."]}
+
+
+TOOLS = [lookup, act, broken, unserialisable, slow, alternatives, flaky]

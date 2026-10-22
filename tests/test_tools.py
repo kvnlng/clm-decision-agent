@@ -16,7 +16,8 @@ def test_load_tools_by_name(write_scenario):
                                             'module = "fake_tools"\n\n[tools.settings]\nurl = "http://x"'))
     registry = load_tools(load_scenario(path))
     assert registry == {"lookup": fake_tools.lookup, "act": fake_tools.act, "broken": fake_tools.broken,
-                        "unserialisable": fake_tools.unserialisable, "slow": fake_tools.slow}
+                        "unserialisable": fake_tools.unserialisable, "slow": fake_tools.slow,
+                        "alternatives": fake_tools.alternatives, "flaky": fake_tools.flaky}
     assert fake_tools.SETTINGS == {"url": "http://x", "scenario_dir": str(path.resolve().parent)}
 
 
@@ -42,6 +43,7 @@ def test_the_scenario_tools_check_passes(scenario):
 @pytest.mark.parametrize("change, message", [
     (('inform = ["lookup"]', 'inform = ["x"]'), "routes.Billing.inform: unknown tool 'x'"),
     (('tool = "act"', 'tool = "x"'), "actions[0].tool: unknown tool 'x'"),
+    (("confidence_threshold = 0.6", 'confidence_threshold = 0.6\ninform = ["x"]'), "routing.inform: unknown tool 'x'"),
     (('[tools.inform.lookup]', '[tools.inform.x]'), "tools.inform.x: unknown tool 'x'"),
     (('[tools]\nmodule = "fake_tools"\n', ""),
      "routes.Billing.inform: unknown tool 'lookup' (no [tools] module is set)"),

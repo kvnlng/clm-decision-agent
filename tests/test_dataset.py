@@ -45,3 +45,12 @@ def test_a_reviewed_route_that_repeats_a_held_back_example_is_not_trained_on(sce
                 "clm": {"route": "Tech", "confidence": 0.8, "probabilities": {}}}]
     _, reviewed, _ = training_rows(scenario, [{"text": t, "route": "Billing"} for t in texts], records)
     assert reviewed == []
+
+
+def test_a_reviewed_route_with_routing_facts_that_repeats_a_held_back_example_is_not_trained_on(scenario):
+    texts = [f"message number {i}" for i in range(40)]
+    held = next(t for t in texts if split_of(t) == "test")
+    records = [{"kind": "route", "state_text": f"{held}\n\nKnown:\n- The table holds personal data.",
+                "human": "Billing", "clm": {"route": "Tech", "confidence": 0.8, "probabilities": {}}}]
+    _, reviewed, _ = training_rows(scenario, [{"text": t, "route": "Billing"} for t in texts], records)
+    assert reviewed == []

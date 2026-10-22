@@ -26,6 +26,7 @@ from scenario import Scenario, ScenarioError, load_scenario
 from tools import check_tools, load_tools
 
 KEY_ENV = "DECISION_SERVER_KEY"
+MAX_BATCH = 1000
 READ_ONLY = ToolAnnotations(read_only_hint=True)
 CHANGES = ToolAnnotations(read_only_hint=False)
 
@@ -69,15 +70,27 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         return trace.call(tool, text) if trace else contextlib.nullcontext({})
 
     @server.tool(annotations=CHANGES)
-    def decide(text: str) -> dict[str, Any]:
+    def decide(text: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
         """Decide on a request: its route and confidence, the answers to the scenario's questions, the rules
         that apply, facts the informing tools found, and what the acting tools did. An uncertain route runs no
-        acting tool."""
+        acting tool. `context` (such as a booking or user ID) is given to the scenario's tools, not to CLM."""
         with traced("decide", text) as record:
-            result = clm(lambda: decision.decide(text, scenario, router, tools))
+            result = clm(lambda: decision.decide(text, scenario, router, tools, context))
             if trace:
                 record["outcome"] = {key: result.get(key) for key in ("route", "confidence", "uncertain", "source")}
             return result
+
+    @server.tool(annotations=CHANGES)
+    def decide_many(requests: list[dict[str, Any]]) -> dict[str, Any]:
+        """Decide on many requests at once, each {"text": ..., "context": ...} with context optional: the same
+        decisions as decide, in the same order, faster per request. At most 1000 requests a call."""
+        if len(requests) > MAX_BATCH:
+            raise ToolError(f"decide_many takes at most {MAX_BATCH} requests a call, not {len(requests)}")
+        for i, request in enumerate(requests):
+            if not isinstance(request.get("text"), str) or not isinstance(request.get("context") or {}, dict):
+                raise ToolError(f"requests[{i}] must be {{'text': ..., 'context': {{...}}}}, with context optional")
+        with traced("decide_many"):
+            return {"decisions": clm(lambda: decision.decide_many(requests, scenario, router, tools))}
 
     @server.tool(annotations=READ_ONLY)
     def check_call(text: str, call: dict[str, Any]) -> dict[str, Any]:
@@ -97,17 +110,20 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         return server
 
     @server.tool(annotations=CHANGES)
-    def correct(text: str, route: str) -> dict[str, Any]:
-        """Review mode: save the right route for a request, for training. Near-identical requests get it at once."""
+    def correct(text: str, route: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Review mode: save the right route for a request, for training. Near-identical requests get it at once.
+        Send the same `context` as with decide, so the route is saved with the facts it was decided on."""
         def work() -> dict:
-            made = router.decide(text, scenario)
+            # The route is saved and reused for the text it was decided on: the request and routing's facts
+            seen = decision.routed_text(text, decision.facts_of(decision.route_facts(text, scenario, tools, context)))
+            made = router.route(seen, scenario)
             try:
-                save_correction(scenario, text, route, {"route": made.get("clm_route", made["route"]),
+                save_correction(scenario, seen, route, {"route": made.get("clm_route", made["route"]),
                                                         "confidence": made["confidence"]})
             except ValueError as error:
                 raise ToolError(str(error)) from error
             if scenario.live_corrections:
-                router.add_verdict(text, route, scenario)
+                router.add_verdict(seen, route, scenario)
             return {"saved": True}
         with traced("correct", text):
             return clm(work)

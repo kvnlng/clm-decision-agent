@@ -84,6 +84,22 @@ the cache hit rate, texts and tokens per call, and how much of what was encoded 
 - A request seen before is found in CLM's cache, so repeating the same requests shows a higher
   hit rate than new ones would.
 
+### One at a time or many at once
+
+Measured on an M5 Max with 64 GB, with MLX, on the example scenario's 318 example messages, each
+run in a fresh server:
+
+| Calls | Decisions a second | Encoding's share of the time |
+|---|---|---|
+| `decide`, one message at a time | 14.7 | 95% |
+| `decide_many`, 100 messages a call | 22.4 | 93% |
+
+- Encoding is still almost all of the time, so that is where faster decisions will come from.
+- Encoded together, a text's numbers come out very slightly different from encoded alone. A
+  decision on the edge between two routes can then go the other way: 2 of the 318 did. Both
+  were near ties (about 0.50 against 0.49), well below the confidence threshold, so both were
+  uncertain either way and no acting tool ran.
+
 ## Where CLM runs
 
 CLM runs inside the server's process, on whatever the scenario's `[clm] backend` says

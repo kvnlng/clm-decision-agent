@@ -51,6 +51,15 @@ class Rule:
 
 
 @dataclass(frozen=True)
+class Options:
+    """A route's options fetched at decision time: the informing tool that finds them, and the question CLM is
+    asked to choose among them."""
+
+    tool: str
+    instructions: str
+
+
+@dataclass(frozen=True)
 class Route:
     """One kind of request: what it means to CLM (description) and the tools that inform its decisions."""
 
@@ -58,6 +67,7 @@ class Route:
     description: str
     examples: tuple[str, ...] = ()
     inform: tuple[str, ...] = ()
+    options: Options | None = None
 
 
 @dataclass(frozen=True)
@@ -110,6 +120,8 @@ class Scenario:  # pylint: disable=too-many-instance-attributes
     synthesize_messages: str = DEFAULT_SYNTHESIZE
     informs: dict[str, Inform] = field(default_factory=dict)
     actions: tuple[Action, ...] = ()
+    # Informing tools run before routing, whose facts the route hears too
+    route_inform: tuple[str, ...] = ()
 
     @property
     def record_path(self) -> Path:
@@ -187,6 +199,16 @@ def _names(table: dict, key: str, where: str, what: str) -> list[str]:
     return value
 
 
+def _route_inform(routing: dict, routes: dict[str, Route]) -> tuple[str, ...]:
+    names = tuple(_names(routing, "inform", "routing", "tool names"))
+    for route in routes.values():
+        # Routing's tools run before there is a route, so their options would have nowhere to go
+        if route.options and route.options.tool in names:
+            raise ScenarioError(f"routing.inform: '{route.options.tool}' fetches routes.{route.name}'s options, "
+                                "so it must run after routing: take it out of [routing] inform")
+    return names
+
+
 def _route(name: str, table) -> Route:
     where = f"routes.{name}"
     if not isinstance(table, dict):
@@ -194,9 +216,15 @@ def _route(name: str, table) -> Route:
     for key in RETIRED_ROUTE_KEYS:
         if key in table:
             raise ScenarioError(f"{where}.{key} is no longer used; see docs/scenario.md")
-    return Route(name, _text(table, "description", where),
-                 tuple(_names(table, "examples", where, "example messages")),
-                 tuple(_names(table, "inform", where, "tool names")))
+    inform = tuple(_names(table, "inform", where, "tool names"))
+    options = None
+    if "options" in table:
+        found = _table(table, "options")
+        options = Options(_text(found, "tool", f"{where}.options"), _text(found, "instructions", f"{where}.options"))
+        if options.tool not in inform:
+            raise ScenarioError(f"{where}.options.tool must be one of the route's informing tools ({where}.inform)")
+    return Route(name, _text(table, "description", where), tuple(_names(table, "examples", where, "example messages")),
+                 inform, options)
 
 
 def _question(name: str, table) -> dict:
@@ -363,6 +391,7 @@ def load_scenario(path: str | Path) -> Scenario:  # pylint: disable=too-many-loc
         max_tokens=_number(generator, "max_tokens", "generator", 400, 1, integer=True),
         routing_instructions=_text(routing, "instructions", "routing"),
         confidence_threshold=_number(routing, "confidence_threshold", "routing", 0.6, 0, 1),
+        route_inform=_route_inform(routing, routes),
         routes=routes,
         questions=questions,
         tool_check_instructions=_text(tool_check, "instructions", "tool_check", DEFAULT_TOOL_CHECK),

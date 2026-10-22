@@ -45,10 +45,12 @@ def _summarise_tool(records: list[dict]) -> dict:
                                    "p95": float(np.percentile(values, 95)), "p99": float(np.percentile(values, 99)),
                                    "share": float(values.sum() / total)}
     span = max(r["started"] + r["ms"] / 1000 for r in records) - min(r["started"] for r in records)
-    summary["per_second"] = len(records) / span if span > 0 else None
 
     def count(key):
         return sum(record["counts"].get(key, 0) for record in records)
+    # decide_many makes many decisions a call, so the rate is of decisions where they are counted
+    summary["decisions"] = count("decisions") or len(records)
+    summary["per_second"] = summary["decisions"] / span if span > 0 else None
     looked_up = count("cache_hits") + count("cache_misses")
     summary["cache_hit_rate"] = count("cache_hits") / looked_up if looked_up else None
     summary["texts_per_call"] = count("texts_encoded") / len(records)
@@ -60,7 +62,8 @@ def _summarise_tool(records: list[dict]) -> dict:
 
 
 def summarise(records: list[dict]) -> dict[str, dict]:
-    """Per MCP tool: calls, calls per second, each stage's time and share, cache hit rate, texts and tokens."""
+    """Per MCP tool: calls, decisions and decisions per second, each stage's time and share, cache hit rate,
+    texts and tokens."""
     by_tool: dict[str, list[dict]] = defaultdict(list)
     for record in records:
         by_tool[record["tool"]].append(record)
@@ -76,7 +79,8 @@ def report(summary: dict[str, dict]) -> str:
     out = []
     for tool, found in summary.items():
         rate = "" if found["per_second"] is None else f", {found['per_second']:.1f} a second"
-        out.append(f"{tool}: {found['calls']} calls{rate}")
+        made = "" if found["decisions"] == found["calls"] else f", {found['decisions']} decisions"
+        out.append(f"{tool}: {found['calls']} calls{made}{rate}")
         out.append(f"  {'stage':<22}{'mean ms':>10}{'p50':>10}{'p95':>10}{'p99':>10}{'share':>8}")
         for name, stage in found["stages"].items():
             share = "" if name == "total" else _percent(stage["share"])

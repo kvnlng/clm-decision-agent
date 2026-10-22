@@ -75,8 +75,11 @@ def decision(route, confidence=0.9, answers=None, probabilities=None):
 class FakeRouter:  # pylint: disable=too-many-instance-attributes
     """`decisions` is one decision used for every state, or a dict of state_text -> decision."""
 
-    def __init__(self, decisions, tool_p=0.9, vectors=None, asks=None):
+    # pylint: disable-next=too-many-arguments,too-many-positional-arguments
+    def __init__(self, decisions, tool_p=0.9, vectors=None, asks=None, ranked=None):
         self.decisions, self.tool_p, self.vectors = decisions, tool_p, vectors or {}
+        # rank() answers with `ranked` (an option id and its confidence), or the first option at 0.9
+        self.ranked, self.rank_calls = ranked, []
         self.states, self.tool_states, self.verdicts = [], [], {}
         # Answers for ask(), returned in order
         self.asks, self.ask_calls = list(asks or []), []
@@ -87,6 +90,29 @@ class FakeRouter:  # pylint: disable=too-many-instance-attributes
         if scenario.live_corrections and state_text in self.verdicts:
             found.update(route=self.verdicts[state_text], source="reviewed", clm_route=found["route"])
         return found
+
+    def prefetch(self, state_texts, questions):
+        self.prefetched = getattr(self, "prefetched", []) + [(list(state_texts), questions)]
+
+    def decide_batch(self, state_texts, scenario):
+        self.prefetch(state_texts, "decide")
+        return [self.decide(text, scenario) for text in state_texts]
+
+    def route_batch(self, state_texts, scenario):
+        self.prefetch(state_texts, "route")
+        return [self.route(text, scenario) for text in state_texts]
+
+    def route(self, state_text, scenario):
+        found = self.decide(state_text, scenario)
+        found.pop("answers")
+        return found
+
+    def rank(self, state_text, options, instructions):
+        self.rank_calls.append((state_text, options, instructions))
+        choice, confidence = self.ranked or (next(iter(options)), 0.9)
+        rest = (1 - confidence) / max(len(options) - 1, 1)
+        return {"choice": choice, "confidence": confidence,
+                "probabilities": {key: confidence if key == choice else rest for key in options}}
 
     def add_verdict(self, state_text, route, scenario):
         self.verdicts[state_text] = route
