@@ -134,6 +134,16 @@ class Scenario:  # pylint: disable=too-many-instance-attributes
         wording = [self.routing_instructions, [[name, route.description] for name, route in self.routes.items()]]
         return hashlib.sha256(json.dumps(wording).encode("utf-8")).hexdigest()
 
+    def question_sha(self, name: str) -> str:
+        """A fingerprint of a trained question's wording: a question's definition, or for "options of <route>"
+        the route's options instructions. Trained heads only fit the wording they were trained on."""
+        if name.startswith("options of "):
+            options = self.routes[name[len("options of "):]].options
+            wording = options.instructions if options else None
+        else:
+            wording = self.questions.get(name)
+        return hashlib.sha256(json.dumps(wording, sort_keys=True).encode("utf-8")).hexdigest()
+
     def matching_rules(self, answers: dict) -> list[Rule]:
         """The rules whose condition CLM's answers meet, in file order."""
         return [rule for rule in self.rules if rule.applies(answers)]

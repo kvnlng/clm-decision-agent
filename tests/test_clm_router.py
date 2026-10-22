@@ -273,3 +273,41 @@ def test_decide_many_of_nothing_on_a_real_engine(scenario):
     engine = TorchEngine(FakeEncoder(), TorchHeads(tiny_weights(), CONFIG, "cpu"))
     engine.prefetch([], {"q": {"type": "noul", "instructions": "Urgent?"}})
     assert decide_many([], scenario, LocalContrastiveRouter(engine=engine), {}) == []
+
+
+def trained_facts(scenario, **more):
+    return {"routing_sha": scenario.routing_sha, "clm_model_id": "test/clm", **more}
+
+
+def test_heads_from_before_stage_2_still_load(write_scenario):
+    scenario = heads_scenario(write_scenario)
+    (scenario.clm_heads / "training.json").write_text(json.dumps(trained_facts(scenario)))
+    assert resolve_heads(scenario) == (scenario.clm_heads, "trained heads from my.heads")
+
+
+def test_changing_a_trained_questions_wording_makes_heads_stale(write_scenario):
+    scenario = heads_scenario(write_scenario)
+    facts = trained_facts(scenario, trained=["route", "urgent"],
+                          questions_sha={"urgent": scenario.question_sha("urgent")})
+    (scenario.clm_heads / "training.json").write_text(json.dumps(facts))
+    assert resolve_heads(scenario)[0] == scenario.clm_heads
+    changed = load_scenario(write_scenario(scenario.path.read_text(encoding="utf-8").replace("Is this urgent?", "Is it urgent?")))
+    assert resolve_heads(changed) == (None, "released heads (the question 'urgent' changed since my.heads was "
+                                            "trained; run train.py again)")
+
+
+def test_changing_an_untrained_question_does_not(write_scenario):
+    scenario = heads_scenario(write_scenario)
+    (scenario.clm_heads / "training.json").write_text(json.dumps(trained_facts(scenario, trained=["route"],
+                                                                               questions_sha={})))
+    changed = load_scenario(write_scenario(scenario.path.read_text(encoding="utf-8").replace("Is this urgent?", "Is it urgent?")))
+    assert resolve_heads(changed)[0] == changed.clm_heads
+
+
+def test_a_trained_ranking_goes_stale_with_its_instructions(write_scenario):
+    text = BASE_TOML.replace('model_id = "test/clm"', 'model_id = "test/clm"\nheads = "my.heads"').replace(
+        'inform = ["lookup"]\n', 'inform = ["lookup", "alternatives"]\n\n[routes.Billing.options]\n'
+        'tool = "alternatives"\ninstructions = "Which refund suits them?"\n')
+    scenario = load_scenario(write_scenario(text))
+    assert scenario.question_sha("options of Billing") != load_scenario(
+        write_scenario(text.replace("Which refund", "What refund"))).question_sha("options of Billing")

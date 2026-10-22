@@ -134,6 +134,13 @@ def _stale(folder: Path, facts: dict, scenario: Scenario) -> str | None:
     if facts.get("clm_model_id") != scenario.clm_model_id:
         return (f"{folder.name} was trained for a different CLM build, {facts.get('clm_model_id')}; "
                 f"run train.py again")
+    # Heads trained before questions were trained have no questions_sha: they learned the route alone
+    for name, sha in facts.get("questions_sha", {}).items():
+        if name.startswith("options of ") and name[len("options of "):] not in scenario.routes:
+            continue
+        if sha != scenario.question_sha(name):
+            what = f"the {name}" if name.startswith("options of ") else f"the question '{name}'"
+            return f"{what} changed since {folder.name} was trained; run train.py again"
     if not (folder / HEADS_FILE).is_file():
         return f"the weights file is missing from {folder.name}; run train.py again"
     return None

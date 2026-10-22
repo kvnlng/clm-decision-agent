@@ -304,3 +304,10 @@ def test_reports_are_per_class(scenario, monkeypatch):
     _, report = quiet_train(scenario, engine, question_rows(scenario))
     for name in ("Billing", "Tech", "true", "false"):
         assert any(line.split()[:1] == [name] and " of " in line for line in report.splitlines())
+
+
+def test_training_records_each_trained_questions_wording(scenario, monkeypatch):
+    fast(monkeypatch)
+    engine = FakeEngine([route.description for route in scenario.routes.values()] + ["URGENT"])
+    facts, _ = quiet_train(scenario, engine, question_rows(scenario))
+    assert facts["questions_sha"] == {"urgent": scenario.question_sha("urgent")}

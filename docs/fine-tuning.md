@@ -97,6 +97,8 @@ Two earlier measurements on a similar problem (issue reports, 450 generated exam
   heads fit the exact wording: in a test, rewording the options after training dropped
   accuracy below the untrained model. The server detects this, says so, and uses the released
   heads until you retrain.
+- **Whenever a trained question's wording changes**, or a route's options instructions if its
+  ranking was trained. Questions that were not trained can change freely.
 - When you change the CLM build.
 - When you have corrected more real messages.
 

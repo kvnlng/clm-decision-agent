@@ -376,7 +376,9 @@ def train(scenario, engine, train_rows: list, reviewed: list, test_rows: list, w
     return {"routing_sha": scenario.routing_sha, "clm_backend": scenario.clm_backend,
             "clm_model_id": scenario.clm_model_id,
             "train_examples": len(train_rows), "reviewed_routes": len(reviewed), "test_examples": len(test_rows),
-            "trained": trained, "options_trained": [name[len("options of "):] for name in trained
+            "trained": trained,
+            "questions_sha": {name: scenario.question_sha(name) for name in trained if name != "route"},
+            "options_trained": [name[len("options of "):] for name in trained
                                                     if name.startswith("options of ")],
             "accuracy_before": _plain(before["route"]["per_class"]),
             "accuracy_after": _plain(after["route"]["per_class"]),
