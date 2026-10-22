@@ -111,3 +111,11 @@ def test_a_missed_connection_rebooks_from_where_they_are(world):
 
 def test_departed_alternatives_are_not_offered(world):
     assert answer(booking(), world, 801) == Label("Overnight", ("M1",))
+
+
+def test_rule_4_today_means_every_flight_leaves_today():
+    # The only way today connects overnight at M: that is a hotel night, so it's Overnight
+    world = World([flight("X", "A", "B", 600, 700, cancelled=True), flight("AM", "A", "M", 1300, 1350),
+                   flight("MB", "M", "B", 1500, 1560), flight("M1", "A", "B", 1500, 1600)],
+                  offsets={"A": 0, "B": 0, "M": 0})
+    assert answer(booking(), world, 0) == Label("Overnight", ("M1",))

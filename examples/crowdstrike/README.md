@@ -27,3 +27,8 @@ uv run python examples/crowdstrike/make_extract.py <the unzipped CSV>
 
 BTS gives local times without time zones. The script works out each airport's offset from the
 schedule itself, and drops the 8 flights whose own schedule contradicts itself.
+
+## What the world knows
+
+The search for alternatives uses each flight's real departure and arrival, delays included, so the
+options it offers know how the day turned out. The policy's right answers use the same knowledge.

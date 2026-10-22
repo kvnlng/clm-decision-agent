@@ -53,11 +53,19 @@ def _first(world: World, booking: Booking, now: int, carriers: set[str],  # pyli
         # They are on board: only what comes after it can change, with time to make the connection
         airport, after = first.dest, first.lands + CONNECTION
     midnight = 1440 - world.offsets.get(airport, 0)
+
+    def today(journey: Journey) -> bool:
+        # Every flight leaves today where it leaves from: a connection overnight is a hotel night
+        return all(world.flights[leg].leaves < 1440 - world.offsets.get(world.flights[leg].origin, 0)
+                   for leg in journey.legs)
+
+    def tomorrow_morning(journey: Journey) -> bool:
+        return journey.dep < midnight + 720
+
     if day == 1:
         after = max(after, midnight)
-    end = midnight if day == 0 else midnight + 720
-    found = world.search(airport, booking.dest, after, now, booking.party, carriers, deadline=by, limit=10)
-    found = [journey for journey in found if journey.dep < end]
+    found = world.search(airport, booking.dest, after, now, booking.party, carriers, deadline=by, limit=1,
+                         accept=tomorrow_morning if day == 1 else today)
     return found[0] if found else None
 
 

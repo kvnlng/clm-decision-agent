@@ -9,6 +9,7 @@ import gzip
 import random
 import threading
 from bisect import bisect_left
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -26,6 +27,14 @@ DELAY_KNOWN = 60             # and a long delay this many
 LONG_DELAY = 120             # minutes late that count as a long delay
 CONNECTION = 45              # least minutes between flights of the same airline
 CONNECTION_CHANGE = 60       # and between different airlines
+
+
+class SeatsGone(Exception):
+    """A hold failed: the flight named has too few seats left."""
+
+    def __init__(self, flight: str, free: int, party: int):
+        super().__init__(f"{flight} has {free} seats left, not {party}")
+        self.flight = flight
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,15 +171,29 @@ class World:  # pylint: disable=too-many-instance-attributes
         """Seats left on a flight."""
         return self._free[flight_id]
 
-    def hold(self, booking_id: str, legs: tuple[str, ...], party: int) -> bool:
-        """Hold `party` seats on every leg, or on none; False when any leg is short of seats."""
+    def hold(self, booking_id: str, legs: tuple[str, ...], party: int) -> None:
+        """Hold `party` seats on every leg, or on none: SeatsGone names the first leg short of seats."""
+        if party < 1:
+            raise ValueError(f"a party is at least 1 person, not {party}")
+        for leg in legs:
+            if leg not in self._free:
+                raise ValueError(f"unknown flight {leg!r}")
         with self._lock:
-            if any(self._free[leg] < party for leg in legs):
-                return False
+            if booking_id in self.holds:
+                raise ValueError(f"booking {booking_id!r} already holds seats; release them first")
+            for leg in legs:
+                if self._free[leg] < party:
+                    raise SeatsGone(leg, self._free[leg], party)
             for leg in legs:
                 self._free[leg] -= party
             self.holds[booking_id] = (tuple(legs), party)
-            return True
+
+    def release(self, booking_id: str) -> None:
+        """Give back the seats a booking holds."""
+        with self._lock:
+            legs, party = self.holds.pop(booking_id)
+            for leg in legs:
+                self._free[leg] += party
 
     def _departures(self, origin: str, dest: str, after: int, party: int, carriers: set[str]):
         found = self._routes.get((origin, dest), [])
@@ -193,14 +216,16 @@ class World:  # pylint: disable=too-many-instance-attributes
         return found
 
     def search(self, origin: str, dest: str, after: int, now: int, party: int,  # pylint: disable=too-many-arguments,too-many-positional-arguments
-               carriers: set[str], *, deadline: int | None = None, limit: int = 3) -> list[Journey]:
+               carriers: set[str], *, deadline: int | None = None, limit: int = 3,
+               accept: Callable[[Journey], bool] | None = None) -> list[Journey]:
         """Up to `limit` journeys leaving at or after both `after` and `now`, earliest arrival first, on
         the given carriers, with seats for the whole party, no more than one connection, and arriving by
-        `deadline` if given. No two journeys share a flight, so each is a different choice."""
+        `deadline` if given, and passing `accept` if given. No two journeys share a flight, so each is a
+        different choice."""
         start = max(after, now)
         found = [Journey((f.id,), f.leaves, f.lands) for f in self._departures(origin, dest, start, party, carriers)]
         found += self._connecting(origin, dest, start, party, carriers)
-        found = [j for j in found if deadline is None or j.arr <= deadline]
+        found = [j for j in found if (deadline is None or j.arr <= deadline) and (accept is None or accept(j))]
         found.sort(key=lambda j: (j.arr, len(j.legs), j.dep, j.legs))
         chosen: list[Journey] = []
         used: set[str] = set()

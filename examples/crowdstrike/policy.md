@@ -24,6 +24,9 @@ what each answer means; they are also what the decision server reads as its rout
    **Agent**.
 9. Otherwise: **Agent**.
 
+"Today" means every flight of the journey leaves before midnight where it leaves from: a journey
+that waits overnight for its connection is a hotel night, so rule 7, not rule 4 or 5.
+
 A time they would like to arrive by, but need not, changes nothing: the flight that arrives first is
 also the best for it.
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from world import Flight, World
+from world import Flight, SeatsGone, World
 
 EXTRACT = Path(__file__).parent.parent / "examples" / "crowdstrike" / "flights.csv.gz"
 
@@ -83,8 +83,15 @@ def test_search_skips_departed_cancelled_and_full_flights(small):
 def test_two_threads_race_for_the_last_seats():
     world = World([flight("F", "A", "B", 100, 200)], offsets={"A": 0, "B": 0}, free={"F": 10})
     results = []
-    threads = [threading.Thread(target=lambda i=i: results.append(world.hold(f"b{i}", ("F",), 2)))
-               for i in range(50)]
+
+    def try_hold(i):
+        try:
+            world.hold(f"b{i}", ("F",), 2)
+            results.append(True)
+        except SeatsGone:
+            results.append(False)
+
+    threads = [threading.Thread(target=try_hold, args=(i,)) for i in range(50)]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -95,7 +102,8 @@ def test_two_threads_race_for_the_last_seats():
 def test_a_failed_hold_changes_nothing(small):
     small.hold("first", ("BC2",), small.free("BC2"))
     before = small.free("AB")
-    assert small.hold("second", ("AB", "BC2"), 1) is False
+    with pytest.raises(SeatsGone):
+        small.hold("second", ("AB", "BC2"), 1)
     assert small.free("AB") == before
 
 
@@ -130,3 +138,33 @@ def test_airports_with_no_direct_flight_are_reached_by_a_connection(small):
 def test_airports_have_city_names():
     day = World.load(0)
     assert (day.cities["ATL"], day.cities["LAX"], day.cities["JFK"]) == ("Atlanta", "Los Angeles", "New York")
+
+
+def test_a_failed_hold_says_which_flight_is_full():
+    world = World([flight("AB", "A", "B", 100, 200), flight("BC", "B", "C", 260, 330)], offsets={},
+                  free={"AB": 5, "BC": 1})
+    with pytest.raises(SeatsGone, match="BC") as gone:
+        world.hold("b1", ("AB", "BC"), 2)
+    assert gone.value.flight == "BC" and (world.free("AB"), world.free("BC")) == (5, 1)
+
+
+@pytest.mark.parametrize("legs, party, message", [
+    (("AB",), 0, "party"), (("AB",), -3, "party"), (("NOPE",), 1, "unknown flight 'NOPE'")])
+def test_a_hold_needs_a_party_and_known_flights(small, legs, party, message):
+    with pytest.raises(ValueError, match=message):
+        small.hold("b1", legs, party)
+
+
+def test_a_booking_holds_once_and_can_release(small):
+    before = small.free("AB")
+    small.hold("b1", ("AB",), 2)
+    with pytest.raises(ValueError, match="already holds"):
+        small.hold("b1", ("AC",), 1)
+    small.release("b1")
+    assert small.free("AB") == before and "b1" not in small.holds
+    small.hold("b1", ("AC",), 1)
+
+
+def test_a_search_can_leave_out_journeys_before_choosing(small):
+    found = small.search("A", "C", after=0, now=0, party=1, carriers={"DL"}, accept=lambda j: len(j.legs) == 1)
+    assert [j.legs for j in found] == [("AC",)]
