@@ -299,14 +299,17 @@ class TorchEngine:
         # A text repeated in one call is encoded once, so its repeats count as hits
         tracing.add("cache_hits", len(texts) - len(missing))
         tracing.add("cache_misses", len(missing))
+        # The call's cached texts become the newest first, so making room never drops one this call needs
+        for text in dict.fromkeys(texts):
+            if (which, text) in self.cache:
+                self.cache.move_to_end((which, text))
         if missing:
             for text, vector in zip(missing, self.project(self.embed(missing), which)):
                 self.cache[(which, text)] = vector
-            while len(self.cache) > self.cache_size:
-                self.cache.popitem(last=False)
-        for text in texts:
-            self.cache.move_to_end((which, text))
-        return np.stack([self.cache[(which, text)] for text in texts])
+        found = np.stack([self.cache[(which, text)] for text in texts])
+        while len(self.cache) > self.cache_size:
+            self.cache.popitem(last=False)
+        return found
 
     def prefetch(self, states: list, questions: dict[str, dict]) -> None:
         """Encode, in one batched pass, every state text that answering `questions` about `states` will need, so

@@ -114,6 +114,14 @@ def test_projections_are_cached_per_text():
     assert len(encoder.asked) == asked
 
 
+def test_a_full_cache_keeps_the_texts_of_the_call_that_fills_it():
+    # "a" is the oldest entry, but the second call needs it: eviction must not drop it mid-call
+    engine = TorchEngine(FakeEncoder(), TorchHeads(tiny_weights(), CONFIG, "cpu"), cache_size=3)
+    engine._vectors(["a", "b"], "state")  # pylint: disable=protected-access
+    found = engine._vectors(["a", "c", "d"], "state")  # pylint: disable=protected-access
+    assert found.shape[0] == 3 and len(engine.cache) == 3 and ("state", "a") in engine.cache
+
+
 def test_set_head_weights_clears_the_cache():
     encoder = FakeEncoder()
     engine = TorchEngine(encoder, TorchHeads(tiny_weights(), CONFIG, "cpu"))
