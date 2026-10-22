@@ -118,3 +118,10 @@ def test_a_search_over_the_whole_day_is_fast():
     for _ in range(20):
         day.search("ATL", "SEA", after=600, now=600, party=2, carriers={"DL", "9E"})
     assert (time.perf_counter() - start) / 20 < 0.02
+
+
+def test_airports_with_no_direct_flight_are_reached_by_a_connection(small):
+    found = small.search("A", "B", after=0, now=0, party=1, carriers={"DL"})
+    assert [j.legs for j in found] == [("AB",)]
+    world = World([flight("AB", "A", "B", 100, 200), flight("BD", "B", "D", 260, 330)], offsets={})
+    assert [j.legs for j in world.search("A", "D", after=0, now=0, party=1, carriers={"DL"})] == [("AB", "BD")]

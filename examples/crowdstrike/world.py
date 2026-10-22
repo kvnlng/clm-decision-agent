@@ -171,7 +171,7 @@ class World:  # pylint: disable=too-many-instance-attributes
 
     def _departures(self, origin: str, dest: str, after: int, party: int, carriers: set[str]):
         found = self._routes.get((origin, dest), [])
-        for flight in found[bisect_left(self._leaving[(origin, dest)], after):]:
+        for flight in found[bisect_left(self._leaving.get((origin, dest), []), after):]:
             if flight.carrier in carriers and self._free[flight.id] >= party:
                 yield flight
 
