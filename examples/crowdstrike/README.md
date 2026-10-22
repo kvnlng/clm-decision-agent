@@ -142,7 +142,8 @@ day's right answers.
 |---|---|---|---|---|
 | Right route, of 600 | **494 (82%)** | 473 (79%) | 448 (75%) | 360 (60%) |
 | Day-weighted accuracy | **84%** | 81% | 76% | 61% |
-| Confidently wrong (an action runs on it) | 106 | 127 | **33** | 240 |
+| Wrong and not marked uncertain | 106 | 127 | **33** | 240 |
+| Unusable replies (counted as wrong) | 0 | 1 | 0 | 36 |
 | Time per decision | 267 ms | **266 ms** | 300 ms | 390 ms |
 | Cost of the whole day (99,806 decisions) | $158 | $15 | **$0** | **$0** |
 | Where the messages go | Anthropic | Anthropic | **this machine** | **this machine** |
@@ -156,18 +157,21 @@ Per route (right of 100):
 | CLM | 81 | 85 | 69 | 81 | 62 | 70 |
 | Qwen3-4B | 95 | 91 | 89 | 75 | 2 | 8 |
 
-- **On this Mac, Claude was both more accurate and faster.** Claude's calls take about 2 seconds each,
-  but 8 run at once; CLM's time is almost all encoding on the Mac's GPU. More concurrent calls would make
-  Claude faster still, up to its rate limits. Whether CLM is faster on a data-centre GPU is measured on
-  the A100 below.
+- **On this Mac, Claude was both more accurate and faster.** With 8 calls at once, Claude's calls work
+  out to about 2 seconds each; CLM's time is almost all encoding on the Mac's GPU. More concurrent calls
+  would make Claude faster still, up to its rate limits. Whether CLM is faster on a data-centre GPU will
+  be measured on an A100.
 - **CLM costs nothing per decision and keeps the messages on the machine.** Haiku would cost about $15
   for the day, Sonnet about $158.
-- **CLM knows when it is unsure.** 119 of its 152 wrong routes were marked uncertain, so no action ran
-  and they went to a person; the language models gave no such signal, so every wrong answer acted. The
-  price is that CLM hands many right answers to a person too (see the replay below).
-- **The language models do worst on Refund and Agent**, the routes that turn on what the passenger
-  wants (no longer to travel, or a message too vague to act on) or on a time nothing meets. CLM, trained
-  on the policy's examples, does better there and worse on the routes the models find easy.
+- **CLM marks answers it is unsure of.** 119 of its 152 wrong routes were marked uncertain, so no action
+  ran and they went to a person. The language models were not asked for a confidence, so none of their
+  answers is marked; asking them for one is a different harness, not measured here. Not every wrong
+  answer acts: an Agent answer hands over to a person, and an unusable reply runs nothing. The price of
+  CLM's marking is that it hands many right answers to a person too (see the replay below).
+- **Claude does worst on Refund and Agent**, the routes that turn on what the passenger wants (no
+  longer to travel, or a message too vague to act on) or on a time nothing meets. CLM, trained on the
+  policy's examples, does better there; its own weakest routes are Overnight (69) and No_Action (70).
+  Qwen3-4B almost never answers Agent (2) or No_Action (8), and 36 of its replies could not be used.
 - The comparison cost about $1.05 in API calls (600 cases on each Claude model, at about 1,370 input
   tokens a case, 852 of them cached).
 
@@ -178,21 +182,21 @@ Every booking starting at Atlanta, 9,704 bookings and 15,503 passengers, from 04
 
 | | |
 |---|---|
-| Time | about 45 minutes, 3.6 decisions a second |
+| Time | 44 minutes in the server's `decide_many` calls, 3.6 decisions a second |
 | Right route | 7,529 of 9,704 (78%) |
-| Confidently wrong (an action ran on it) | 465 (4.8%) |
+| Wrong and not marked uncertain | 465 (4.8%) |
 | Automatic | 5,050 (52%) |
 | To a person | 4,654 (48%): uncertain 4,142, Agent route 1,263, a hold lost 28 (a booking can have two reasons) |
 | Seat holds | 2,868 made, 28 lost to a passenger decided just before |
-| The coordinator's seats against the server's | the same throughout |
+| The coordinator's copy of the seats | took every hold the server made (checked one way only) |
 
 Per route: Rebook 3,860 of 4,558, Rebook_Partner 73 of 94, Overnight 282 of 433, Refund 1,240 of 1,633,
 Agent 812 of 1,454, No_Action 1,262 of 1,532.
 
 - **Encoding is all the time.** The trace puts 100% of each `decide_many` call in CLM's encoding; the
   tools (searching for alternatives, holding seats) take about 3 ms a call.
-- **Too many go to a person.** The confidence threshold of 0.6 keeps confidently wrong answers to 5%,
+- **Too many go to a person.** The confidence threshold of 0.6 keeps wrong answers not marked uncertain to 5%,
   but marks 43% of all bookings uncertain, most of them answered rightly. A lower threshold, chosen with
   `evaluate.py` on corrections, or better-trained heads would move that balance.
-- Seats lost to a race are real: 28 passengers were offered a journey whose last seats went to someone
+- Seats lost to a race are real: 28 bookings were offered a journey whose last seats went to someone
   decided a moment earlier, and their hold failed visibly, as it should.

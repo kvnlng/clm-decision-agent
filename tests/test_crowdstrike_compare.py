@@ -88,3 +88,19 @@ def test_credentials_are_checked_before_any_case(monkeypatch, capsys, tmp_path):
     assert compare_models.main([str(SCENARIO), "--models", "sonnet", "--limit", "1", "--runs", str(tmp_path)]) == 0
     assert "Skipping sonnet: no Anthropic credentials (RuntimeError: 401 for claude-sonnet-5-5)" in \
         capsys.readouterr().out
+
+
+def test_an_api_error_counts_as_unusable_and_the_run_carries_on(case):
+    class Flaky:
+        calls = 0
+
+        def decide(self, *_):
+            Flaky.calls += 1
+            if Flaky.calls == 1:
+                raise RuntimeError("529 overloaded")
+            return json.dumps({"route": "Refund", "option": ""}), {"input": 1, "output": 1, "cache_write": 0,
+                                                                    "cache_read": 0}
+
+    replies, usage, _ = compare_models._ask(Flaky(), [case, case], 1)  # pylint: disable=protected-access
+    assert [reply["route"] for reply in replies] == ["unusable", "Refund"]
+    assert usage[0] == {"input": 0, "output": 0, "cache_write": 0, "cache_read": 0}

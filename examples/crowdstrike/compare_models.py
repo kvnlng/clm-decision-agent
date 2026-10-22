@@ -148,7 +148,12 @@ def summary(name: str, cases: list[dict], replies: list[dict], usage: list[dict]
 def _ask(model, cases: list[dict], workers: int) -> tuple[list[dict], list[dict], float]:
     def one(case: dict) -> tuple[dict, dict]:
         found = inputs(case)
-        text, counts = model.decide(*prompt(found))
+        try:
+            text, counts = model.decide(*prompt(found))
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            # An API error after the SDK's own retries counts as an unusable answer; the run carries on
+            print(f"  {type(error).__name__}: {error}", flush=True)
+            text, counts = "", {"input": 0, "output": 0, "cache_write": 0, "cache_read": 0}
         return parse(text, found)[0], counts
 
     start = time.perf_counter()
