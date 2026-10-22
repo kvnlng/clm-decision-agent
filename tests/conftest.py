@@ -12,6 +12,7 @@ import pytest
 from scenario import load_scenario
 
 sys.path.append(str(Path(__file__).parent.parent / "examples" / "service_desk"))
+sys.path.append(str(Path(__file__).parent.parent / "examples" / "crowdstrike"))
 
 BASE_TOML = '''
 [clm]
