@@ -21,6 +21,7 @@ import decision
 import tracing
 from clm_common import ClmError
 from evaluate import agreement as replay_agreement
+from dataset import labels
 from record import load_records, record_key, save_correction
 from scenario import Scenario, ScenarioError, load_scenario
 from tools import check_tools, load_tools
@@ -46,6 +47,36 @@ class _OneAtATime:
                 tracing.add("lock_wait_ms", (time.perf_counter() - start) * 1000)
                 return method(*args, **kwargs)
         return locked
+
+
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def _corrected(scenario: Scenario, tools: dict[str, Callable], text: str, route: str, context: dict | None,
+               answers: dict | None, option: str | None, earlier: list[dict]) -> dict:
+    """The answers, facts, options and chosen option to save with a correction; ToolError if one is wrong."""
+    if answers is None and option is None:
+        return {}
+    if route not in scenario.routes:
+        raise ToolError(f"unknown route '{route}'; the routes are {', '.join(scenario.routes)}")
+    try:
+        labels(scenario, {"answers": answers or {}})
+    except ValueError as error:
+        raise ToolError(str(error)) from error
+    spec = scenario.routes[route].options
+    if option is not None and spec is None:
+        raise ToolError(f"routes.{route} has no options to choose among")
+    # The route's informing tools find the facts and options, as they do when deciding
+    request: dict[str, Any] = {"text": text, "route": route, "answers": {}, "rules": [], "facts": []}
+    if context is not None:
+        request["context"] = context
+    informed = decision.gather(request, scenario, tools, earlier)
+    more: dict[str, Any] = {"facts": request["facts"], **({"answers": answers} if answers is not None else {})}
+    if option is not None:
+        found = next((outcome for outcome in informed if outcome["tool"] == spec.tool), {})
+        offered = found.get("options", []) if found.get("status") == "done" else []
+        if option not in [candidate["id"] for candidate in offered]:
+            raise ToolError(f"option {option!r} was not among the options {spec.tool} found")
+        more.update(options=offered, option=option)
+    return more
 
 
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
@@ -110,16 +141,22 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         return server
 
     @server.tool(annotations=CHANGES)
-    def correct(text: str, route: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+    # pylint: disable-next=too-many-arguments,too-many-positional-arguments
+    def correct(text: str, route: str, context: dict[str, Any] | None = None, answers: dict[str, Any] | None = None,
+                option: str | None = None) -> dict[str, Any]:
         """Review mode: save the right route for a request, for training. Near-identical requests get it at once.
-        Send the same `context` as with decide, so the route is saved with the facts it was decided on."""
+        Send the same `context` as with decide, so the route is saved with the facts it was decided on.
+        Optionally also the right `answers` to the questions (true/false, a level's number, or a choice's key)
+        and the right `option`'s id, on a route with options."""
         def work() -> dict:
+            earlier = decision.route_facts(text, scenario, tools, context)
             # The route is saved and reused for the text it was decided on: the request and routing's facts
-            seen = decision.routed_text(text, decision.facts_of(decision.route_facts(text, scenario, tools, context)))
+            seen = decision.routed_text(text, decision.facts_of(earlier))
+            more = _corrected(scenario, tools, text, route, context, answers, option, earlier)
             made = router.route(seen, scenario)
             try:
                 save_correction(scenario, seen, route, {"route": made.get("clm_route", made["route"]),
-                                                        "confidence": made["confidence"]})
+                                                        "confidence": made["confidence"]}, more)
             except ValueError as error:
                 raise ToolError(str(error)) from error
             if scenario.live_corrections:

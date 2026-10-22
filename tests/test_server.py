@@ -231,3 +231,56 @@ async def test_decide_many_accepts_a_null_context_as_decide_does(parts):
     async with Client(server.build_server(*parts, review=False)) as client:
         result = await client.call_tool("decide_many", {"requests": [{"text": TEXT, "context": None}]})
     assert not result.is_error
+
+
+OPTIONS_TOML = BASE_TOML.replace('inform = ["lookup"]\n', '''inform = ["lookup", "alternatives"]
+
+[routes.Billing.options]
+tool = "alternatives"
+instructions = "Which refund suits them?"
+''')
+REFUNDS = [{"id": "card", "text": "Back to the card"}, {"id": "credit", "text": "Store credit"}]
+
+
+@pytest.fixture
+def offered(write_scenario):
+    """A review server whose Billing route ranks two refunds; -> (scenario, server)."""
+    fake_tools.OPTIONS["value"] = REFUNDS
+    scenario = load_scenario(write_scenario(OPTIONS_TOML))
+    yield scenario, server.build_server(scenario, FakeRouter(decision("Tech")), load_tools(scenario), review=True)
+    fake_tools.OPTIONS["value"] = []
+
+
+@pytest.mark.anyio
+async def test_correct_saves_answers_and_the_option(offered):
+    scenario, mcp = offered
+    async with Client(mcp) as client:
+        saved = await client.call_tool("correct", {"text": TEXT, "route": "Billing", "answers": {"urgent": True},
+                                                   "option": "credit", "context": {"booking": "B"}})
+    assert saved.structured_content == {"saved": True}
+    records, _ = load_records(scenario.record_path)
+    entry = records[0]
+    assert (entry["answers"], entry["option"], entry["options"]) == ({"urgent": True}, "credit", REFUNDS)
+    assert entry["facts"] == ["The queue is A."]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("answers, problem", [({"mood": True}, "unknown question 'mood'"),
+                                               ({"urgent": "yes"}, "questions.urgent: needs true or false")])
+async def test_correct_with_a_bad_answer_saves_nothing(offered, answers, problem):
+    scenario, mcp = offered
+    async with Client(mcp) as client:
+        result = await client.call_tool("correct", {"text": TEXT, "route": "Billing", "answers": answers})
+    assert result.is_error and problem in result.content[0].text
+    assert not scenario.record_path.exists()
+
+
+@pytest.mark.anyio
+async def test_correct_with_an_option_not_offered_saves_nothing(offered):
+    scenario, mcp = offered
+    async with Client(mcp) as client:
+        result = await client.call_tool("correct", {"text": TEXT, "route": "Billing", "option": "voucher"})
+        on_tech = await client.call_tool("correct", {"text": TEXT, "route": "Tech", "option": "card"})
+    assert result.is_error and "'voucher' was not among the options" in result.content[0].text
+    assert on_tech.is_error and "routes.Tech has no options" in on_tech.content[0].text
+    assert not scenario.record_path.exists()

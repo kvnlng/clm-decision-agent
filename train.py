@@ -272,7 +272,8 @@ def _drift(before: list[dict], after: list[dict]) -> dict[str, str]:
 
 def _question_text(row: dict, instructions: str) -> str:
     """The text CLM reads for a question about the row: the request, its facts, then the question."""
-    return clm_schema.state_text(routed_text(row["text"], row["facts"]), instructions)
+    # A correction's text may carry routing's facts; its own facts include them
+    return clm_schema.state_text(routed_text(row.get("message", row["text"]), row["facts"]), instructions)
 
 
 class _Candidates:  # pylint: disable=too-few-public-methods

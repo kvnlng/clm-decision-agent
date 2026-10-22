@@ -72,12 +72,13 @@ def _valid(entry) -> bool:
         and isinstance(clm.get("route"), str)
 
 
-def save_correction(scenario: Scenario, text: str, route: str, clm: dict) -> None:
-    """Save the owner's route for `text`, with what CLM had decided ({"route", "confidence"})."""
+def save_correction(scenario: Scenario, text: str, route: str, clm: dict, more: dict | None = None) -> None:
+    """Save the owner's route for `text`, with what CLM had decided ({"route", "confidence"}), and `more`: the
+    owner's answers, and the facts and options with the chosen option."""
     if route not in scenario.routes:
         raise ValueError(f"unknown route '{route}'; the routes are {', '.join(scenario.routes)}")
     entry = {"kind": "route", "state_text": text, "human": route,
-             "clm": {"route": clm["route"], "confidence": clm["confidence"]}}
+             "clm": {"route": clm["route"], "confidence": clm["confidence"]}, **(more or {})}
     append_record(scenario.record_path, entry, record_key(scenario))
 
 

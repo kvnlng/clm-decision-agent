@@ -232,7 +232,11 @@ match_threshold = 0.97     # how similar "near-identical" must be, 0 to 1
 In review mode the owner's corrections are saved to the record. Afterwards:
 
 - a request close enough to a corrected one gets the owner's route, whatever CLM says;
-- `evaluate.py` replays the corrections and suggests a confidence threshold;
+- `correct` can also say the right answers (`"answers": {"urgency": 2, "identifiable": true}`) and,
+  on a route with options, the right option's id. The route's informing tools run again to find
+  the facts and options, so send the same `context` as with `decide`;
+- `evaluate.py` replays the corrections, answers and options too, and suggests a confidence
+  threshold;
 - `train.py` learns from them.
 
 Where the record is kept and how to encrypt it: [data-handling.md](data-handling.md). The

@@ -51,7 +51,7 @@ def test_evaluate_replays_the_record_against_the_scenario(scenario):
     assert routing["confusion"] == {("Billing", "Billing"): 1, ("Tech", "Billing"): 1, ("Tech", "Tech"): 1}
     assert routing["misses"] == [{"state_text": "User: crash", "human": "Tech", "clm": "Billing", "confidence": 0.3}]
     assert routing["suggested_threshold"] == 0.7
-    assert set(result) == {"routing", "matching"}
+    assert set(result) == {"routing", "answers", "options", "matching"}
     # "User: slow" and "User: crash" are identical in vector space and the reviewer gave both the same route
     assert result["matching"] == {"n": 3, "matched": 2, "same_route": 2}
 
@@ -122,3 +122,17 @@ def test_main_when_clm_cannot_load_is_one_line(write_scenario, monkeypatch, caps
     assert main([str(path)]) == 2
     assert capsys.readouterr().err.strip() == \
         "error: CLM was set to run on cuda, which this machine does not have (available: cpu)"
+
+
+def test_evaluate_reports_corrected_answers_per_class(scenario):
+    def urgent(value):
+        return {"urgent": {"type": "noul", "noul": value}}
+    records = [dict(route_record("User: refund", "Billing", "Billing"), answers={"urgent": True}),
+               dict(route_record("User: crash", "Tech", "Tech"), answers={"urgent": True}),
+               dict(route_record("User: slow", "Tech", "Tech"), answers={"urgent": False})]
+    router = FakeRouter({r["state_text"]: decision(r["human"]) for r in records},
+                        asks=[urgent(0.9), urgent(0.2), urgent(0.1)],
+                        vectors={r["state_text"]: [1.0, 0.0] for r in records})
+    result = evaluate(records, scenario, router)
+    assert result["answers"] == {"urgent": {"true": [1, 2], "false": [1, 1]}}
+    assert "urgent" in format_report(result, scenario) and "1 of 2" in format_report(result, scenario)

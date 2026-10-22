@@ -133,7 +133,7 @@ Read [docs/data-handling.md](docs/data-handling.md) before any real text goes in
 | `decide_many(requests)` | The same as `decide` for up to 1000 requests (`{"text", "context"}`) at once, faster per request |
 | `check_call(text, call)` | CLM's opinion of a tool call the caller proposes: a probability and approved yes or no |
 | `describe()` | The scenario's routes and their options, questions and rules, and the tools whose facts the route considers |
-| `correct(text, route, context)` | Review mode only: save the right route for a request |
+| `correct(text, route, context, answers, option)` | Review mode only: save the right route for a request, and optionally the right answers and option |
 | `agreement()` | Review mode only: how often CLM's own route agrees with the saved corrections |
 
 ## What to expect

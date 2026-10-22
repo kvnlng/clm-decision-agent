@@ -120,3 +120,17 @@ def test_ranked_lines_carry_their_options_and_facts(questions):
                                                     facts=["The fare was refundable."])], [])
     row = (train + test)[0]
     assert (row["options"], row["option"], row["facts"]) == (REFUNDS, 1, ["The fare was refundable."])
+
+
+def test_reviewed_rows_carry_corrected_answers(questions):
+    records = [{"kind": "route", "state_text": "my card was charged twice", "human": "Billing",
+                "clm": {"route": "Tech", "confidence": 0.4}, "answers": {"urgent": True, "level": 1},
+                "facts": ["The queue is A."], "options": REFUNDS, "option": "credit"},
+               # a question the scenario no longer has is left out, not fatal
+               {"kind": "route", "state_text": "app down", "human": "Tech", "clm": {"route": "Tech", "confidence": 0.9},
+                "answers": {"gone": True}}]
+    _, reviewed, _ = training_rows(questions, [], records)
+    first, second = reviewed
+    assert (first["answers"], first["facts"], first["options"], first["option"]) == \
+        ({"urgent": 1, "level": 1}, ["The queue is A."], REFUNDS, 1)
+    assert second["answers"] == {}

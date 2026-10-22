@@ -9,6 +9,9 @@ import argparse
 import sys
 from collections import Counter
 
+import clm_schema
+from dataset import labels, message_of
+from decision import routed_text
 from record import route_verdicts, load_records, record_key
 from scenario import ScenarioError, load_scenario
 
@@ -74,6 +77,34 @@ def _replay_routing(route_records: list[dict], scenario, router) -> dict:
             "bands": confidence_bands(pairs), "suggested_threshold": suggest_threshold(pairs)}
 
 
+def _replay_answers(route_records: list[dict], scenario, router) -> tuple[dict, dict]:
+    """CLM's answers and option choices on the reviewed cases, against the owner's:
+    ({question: {class: [right, of]}}, {route: [right, of]})."""
+    answers: dict[str, dict] = {}
+    options: dict[str, list[int]] = {}
+    for case in route_verdicts(route_records, scenario):
+        text = routed_text(message_of(case["state_text"]), case.get("facts", []))
+        try:
+            wanted = labels(scenario, {"answers": {name: value for name, value in case.get("answers", {}).items()
+                                                   if name in scenario.questions}})
+        except ValueError:
+            wanted = {}          # the question changed since the correction
+        if wanted:
+            got = router.ask(text, {name: scenario.questions[name] for name in wanted})
+            for name, index in wanted.items():
+                key = clm_schema.candidates(scenario.questions[name])[0][index]
+                stats = answers.setdefault(name, {}).setdefault(key, [0, 0])
+                stats[0] += clm_schema.label_of(got[name]) == key
+                stats[1] += 1
+        spec = scenario.routes[case["human"]].options
+        if spec and case.get("options"):
+            ranked = router.rank(text, {o["id"]: o["text"] for o in case["options"]}, spec.instructions)
+            stats = options.setdefault(case["human"], [0, 0])
+            stats[0] += ranked["choice"] == case.get("option")
+            stats[1] += 1
+    return answers, options
+
+
 def agreement(records: list[dict], scenario, router) -> dict:
     """How often CLM's route agrees with the owner's corrections: {"n", "agree"}."""
     routing = _replay_routing(records, scenario, router)
@@ -83,8 +114,11 @@ def agreement(records: list[dict], scenario, router) -> dict:
 def evaluate(records: list[dict], scenario, router) -> dict:
     """Ask CLM again about every corrected case, with live corrections off, and compare with the owner."""
     route_records = [r for r in records if r["kind"] == "route"]
+    answers, options = _replay_answers(route_records, scenario, router)
     return {
         "routing": _replay_routing(route_records, scenario, router),
+        "answers": answers,
+        "options": options,
         # A CLM server gives no vectors, so there is nothing to measure: reuse is then by exact text
         "matching": None if getattr(router, "exact_match", False)
         else match_report([r for r in route_records if r["human"] in scenario.routes], scenario, router),
@@ -130,6 +164,13 @@ def _routing_lines(routing: dict, scenario) -> list[str]:
 def format_report(result: dict, scenario) -> str:
     """The evaluation result as text for the terminal."""
     lines = _routing_lines(result["routing"], scenario)
+    if result.get("answers"):
+        lines.append("Answers to the questions, by the reviewer's answer:")
+        for name, classes in result["answers"].items():
+            lines.append(f"  {name}")
+            lines += [f"    {key:<22}{right} of {of}" for key, (right, of) in classes.items()]
+    for route, (right, of) in result.get("options", {}).items():
+        lines.append(f"Options of {route}: the reviewer's choice {right} of {of}")
 
     matching = result["matching"]
     if matching is None:

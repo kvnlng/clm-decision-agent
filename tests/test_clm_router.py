@@ -291,7 +291,8 @@ def test_changing_a_trained_questions_wording_makes_heads_stale(write_scenario):
                           questions_sha={"urgent": scenario.question_sha("urgent")})
     (scenario.clm_heads / "training.json").write_text(json.dumps(facts))
     assert resolve_heads(scenario)[0] == scenario.clm_heads
-    changed = load_scenario(write_scenario(scenario.path.read_text(encoding="utf-8").replace("Is this urgent?", "Is it urgent?")))
+    changed = load_scenario(write_scenario(
+        scenario.path.read_text(encoding="utf-8").replace("Is this urgent?", "Is it urgent?")))
     assert resolve_heads(changed) == (None, "released heads (the question 'urgent' changed since my.heads was "
                                             "trained; run train.py again)")
 
@@ -300,7 +301,8 @@ def test_changing_an_untrained_question_does_not(write_scenario):
     scenario = heads_scenario(write_scenario)
     (scenario.clm_heads / "training.json").write_text(json.dumps(trained_facts(scenario, trained=["route"],
                                                                                questions_sha={})))
-    changed = load_scenario(write_scenario(scenario.path.read_text(encoding="utf-8").replace("Is this urgent?", "Is it urgent?")))
+    changed = load_scenario(write_scenario(
+        scenario.path.read_text(encoding="utf-8").replace("Is this urgent?", "Is it urgent?")))
     assert resolve_heads(changed)[0] == changed.clm_heads
 
 

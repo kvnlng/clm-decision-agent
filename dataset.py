@@ -97,10 +97,26 @@ def training_rows(scenario: Scenario, examples: list[dict], records: list[dict])
                 raise ValueError(f"line {number}: {error}") from error
             (test if split_of(example["text"]) == "test" else train).append(row)
     held_back = {row["text"] for row in test}
-    # A reviewed route's text may carry routing's facts after the message ("...\n\nKnown:\n- ..."); the
-    # message is what repeats an example
-    reviewed = [{"text": verdict["state_text"], "route": verdict["human"], "answers": {}, "facts": [],
-                 "options": None, "option": None}
-                for verdict in route_verdicts(records, scenario)
-                if verdict["state_text"].split("\n\nKnown:\n")[0] not in held_back]
+    # A reviewed route's text may carry routing's facts after the message; the message is what repeats an example
+    reviewed = [_reviewed(scenario, verdict) for verdict in route_verdicts(records, scenario)
+                if message_of(verdict["state_text"]) not in held_back]
     return train, reviewed, test
+
+
+def message_of(state_text: str) -> str:
+    """The request in a saved text, without routing's facts ("...\n\nKnown:\n- ...")."""
+    return state_text.split("\n\nKnown:\n")[0]
+
+
+def _reviewed(scenario: Scenario, verdict: dict) -> dict:
+    """A training row from the owner's correction. Answers and options the scenario can no longer take are left
+    out: the scenario may have changed since."""
+    answers = {name: value for name, value in verdict.get("answers", {}).items() if name in scenario.questions}
+    ranked = {key: verdict[key] for key in ("options", "option") if key in verdict} \
+        if scenario.routes[verdict["human"]].options else {}
+    example = {"route": verdict["human"], "answers": answers, "facts": verdict.get("facts", []), **ranked}
+    try:
+        row = _row(scenario, example, verdict["state_text"])
+    except ValueError:
+        row = _row(scenario, {"route": verdict["human"]}, verdict["state_text"])
+    return {**row, "message": message_of(verdict["state_text"])}

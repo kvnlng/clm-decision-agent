@@ -93,7 +93,7 @@ def _heard(scenario: Scenario, informed: list[dict]) -> dict[tuple, dict]:
     return groups
 
 
-def _gather(request: dict, scenario: Scenario, tools: dict[str, Callable], earlier: list[dict]) -> list[dict]:
+def gather(request: dict, scenario: Scenario, tools: dict[str, Callable], earlier: list[dict]) -> list[dict]:
     """Run the route's informing tools; their facts, and those of routing's tools in `earlier`, are added to
     `request`. A tool that already ran for routing is not run again."""
     informed = list(earlier)
@@ -208,7 +208,7 @@ def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable], co
     result = _route(scenario, router.decide(text, scenario),
                     router.route(routed_text(text, facts), scenario) if facts else None)
     request = _request(text, result, scenario, context)
-    informed = _gather(request, scenario, tools, earlier)
+    informed = gather(request, scenario, tools, earlier)
     _answer(request, scenario, router, _asks(request, scenario, informed))
     return _finish({"result": result, "request": request, "informed": informed}, scenario, router, tools)
 
@@ -231,7 +231,7 @@ def decide_many(requests: list[dict], scenario: Scenario, router, tools: dict[st
     for one in made:
         one["result"] = _route(scenario, one["decided"], one.get("rerouted"))
         one["request"] = _request(one["text"], one["result"], scenario, one["context"])
-        one["informed"] = _gather(one["request"], scenario, tools, one["earlier"])
+        one["informed"] = gather(one["request"], scenario, tools, one["earlier"])
         one["asks"] = _asks(one["request"], scenario, one["informed"])
     # Texts asked the same questions are encoded together
     together: dict[tuple, tuple[list[str], dict]] = {}
