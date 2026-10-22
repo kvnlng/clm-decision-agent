@@ -95,9 +95,11 @@ second (encoding's share of the time):
 | `decide_many`, 100 messages a call | 22.4 (93%) | 71.6 (87%) |
 
 - **Texts are packed end to end, with no padding**, on torch. A call's texts go into rows of up to
-  `batch_tokens` (4,096) tokens; an attention mask keeps each text to its own tokens, and positions
+  `batch_tokens` (2,048) tokens; an attention mask keeps each text to its own tokens, and positions
   restart for each, so every vector is the one the text would get alone. Rows go to the GPU one after
-  another without waiting, and the vectors come back together at the end.
+  another without waiting, and the vectors come back together at the end. On the A100, rows of 1,024
+  and 2,048 tokens were equally fast, 4,096 was 7% slower and 8,192 25% slower: the mask makes
+  attention cover the whole row.
 - **Each message is encoded once for all its questions** on torch. CLM reads a message with each
   question appended, so the texts start alike; within a row, the shared start comes once and each
   question's own tokens attend to it. Before packing, that halved the tokens. The MLX build has its

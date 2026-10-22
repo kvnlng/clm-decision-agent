@@ -138,7 +138,7 @@ class TorchEncoder:
 
     # pylint: disable-next=too-many-arguments,too-many-positional-arguments
     def __init__(self, repo: str, revision: str | None, device: str, max_tokens: int = 2048,
-                 batch_tokens: int = 4096, min_prefix: int | None = 8, loaded: tuple | None = None):
+                 batch_tokens: int = 2048, min_prefix: int | None = 8, loaded: tuple | None = None):
         # Texts are packed end to end in rows of up to `batch_tokens` tokens, with no padding. Texts that start
         # with the same `min_prefix` tokens or more share one encoding of that start in their row (None: never)
         self.device, self.max_tokens, self.batch_tokens = device, max_tokens, batch_tokens
