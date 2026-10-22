@@ -23,6 +23,9 @@ dependencies = [
 ]
 
 [dependency-groups]
+demo = [
+    "anthropic>=2.1.0,<3",
+]
 dev = [
     "pylint>=4.1.2",
     "pytest>=8",
