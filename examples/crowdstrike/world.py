@@ -169,11 +169,6 @@ class World:  # pylint: disable=too-many-instance-attributes
             self.holds[booking_id] = (tuple(legs), party)
             return True
 
-    def take(self, flight_id: str, seats: int) -> None:
-        """Seats sold before the day starts: the passengers' own bookings."""
-        with self._lock:
-            self._free[flight_id] -= seats
-
     def _departures(self, origin: str, dest: str, after: int, party: int, carriers: set[str]):
         found = self._routes.get((origin, dest), [])
         for flight in found[bisect_left(self._leaving[(origin, dest)], after):]:
