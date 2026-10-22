@@ -80,3 +80,18 @@ def test_example_scenario_loads(tmp_path):
     check_tools(scenario, load_tools(scenario))
     assert list(scenario.routes) == ["Data_Access", "Research_Support", "Information_Request", "Out_Of_Scope"]
     assert [action.tool for action in scenario.actions] == ["create_ticket"]
+
+
+def test_tracker_calls_reuse_one_client(configured, tracker_server, monkeypatch):
+    # A client per call costs about 17 ms on a cloud VM, more than CLM's share of a batched decision
+    def no_new_client(*args, **kwargs):
+        raise AssertionError("a new client was made for one call")
+    monkeypatch.setattr(desk.httpx, "request", no_new_client)
+    first, second = desk.create_ticket(request()), desk.create_ticket(request())
+    assert second["number"] == first["number"] + 1
+
+
+def test_configuring_again_closes_the_old_client(configured):
+    old = desk.CLIENT
+    desk.configure(dict(desk.SETTINGS), EXAMPLE)
+    assert old.is_closed and not desk.CLIENT.is_closed

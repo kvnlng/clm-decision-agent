@@ -116,6 +116,10 @@ It returns anything JSON can hold. To report a failure, raise an exception with 
 person can act on: the reply lists that tool as `failed` with the message, and the decision is
 still returned.
 
+Make clients and connections once, in `configure()`, and reuse them: an HTTP client made on every
+call can cost more than CLM's part of the decision. The server calls tools from several threads
+at once, so whatever they share must allow that, as an `httpx.Client` does.
+
 ### Informing tools
 
 An informing tool returns `{"facts": ["a plain sentence", ...]}`. Facts are added to what CLM

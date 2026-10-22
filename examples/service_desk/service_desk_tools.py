@@ -11,6 +11,7 @@ For another tracker, rewrite create_ticket and its helpers; nothing else depends
 """
 from __future__ import annotations
 
+import atexit
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,15 @@ from pathlib import Path
 import httpx
 
 SETTINGS: dict = {}
+# One client for every call: it keeps its connections open, and making a client per call costs about 17 ms on
+# a cloud VM, more than CLM's share of a batched decision. Tools run on several threads; a client can serve them
+CLIENT = httpx.Client(timeout=10)
+
+
+@atexit.register
+def _close_client() -> None:
+    CLIENT.close()      # whichever client configure() made last
+
 PATH_SETTINGS = ("queues_file",)
 TITLE_LENGTH = 60
 
@@ -28,6 +38,9 @@ class TrackerError(RuntimeError):
 
 def configure(settings: dict, scenario_dir: Path) -> None:
     """Take the scenario's settings, with file names taken as relative to the scenario's folder."""
+    global CLIENT  # pylint: disable=global-statement
+    CLIENT.close()
+    CLIENT = httpx.Client(timeout=10)
     SETTINGS.clear()
     SETTINGS.update(settings)
     for key in PATH_SETTINGS:
@@ -56,8 +69,8 @@ def _request(method: str, path: str, **kwargs) -> httpx.Response:
         headers["Authorization"] = f"token {token}"
     base = SETTINGS["tracker_url"].rstrip("/")
     try:
-        return httpx.request(method, f"{base}/api/v1/repos/{SETTINGS['repository']}{path}",
-                             headers=headers, timeout=10, **kwargs)
+        return CLIENT.request(method, f"{base}/api/v1/repos/{SETTINGS['repository']}{path}", headers=headers,
+                              **kwargs)
     except httpx.HTTPError as error:
         raise TrackerError(
             f"The tracker at {base} could not be reached ({type(error).__name__}). "
