@@ -1,341 +1,341 @@
-airport,utc_offset
-ABE,-240
-ABI,-300
-ABQ,-360
-ABR,-300
-ABY,-240
-ACK,-240
-ACT,-300
-ACV,-420
-ACY,-240
-ADK,-540
-ADQ,-480
-AEX,-300
-AGS,-240
-AKN,-480
-ALB,-240
-ALW,-420
-AMA,-300
-ANC,-480
-APN,-240
-ASE,-360
-ATL,-240
-ATW,-300
-AUS,-300
-AVL,-240
-AVP,-240
-AZA,-420
-AZO,-240
-BDL,-240
-BET,-480
-BFF,-360
-BFL,-420
-BGM,-240
-BGR,-240
-BHM,-300
-BIH,-420
-BIL,-360
-BIS,-300
-BJI,-300
-BLI,-420
-BLV,-300
-BMI,-300
-BNA,-300
-BOI,-360
-BOS,-240
-BPT,-300
-BQK,-240
-BQN,-240
-BRD,-300
-BRO,-300
-BRW,-480
-BTM,-360
-BTR,-300
-BTV,-240
-BUF,-240
-BUR,-420
-BWI,-240
-BZN,-360
-CAE,-240
-CAK,-240
-CDC,-360
-CDV,-480
-CHA,-240
-CHO,-240
-CHS,-240
-CID,-300
-CIU,-240
-CKB,-240
-CLE,-240
-CLL,-300
-CLT,-240
-CMH,-240
-CMI,-300
-CMX,-240
-COD,-360
-COS,-360
-COU,-300
-CPR,-360
-CRP,-300
-CRW,-240
-CSG,-240
-CVG,-240
-CWA,-300
-CYS,-360
-DAB,-240
-DAL,-300
-DAY,-240
-DCA,-240
-DDC,-300
-DEC,-300
-DEN,-360
-DFW,-300
-DHN,-300
-DIK,-360
-DLG,-480
-DLH,-300
-DRO,-360
-DSM,-300
-DTW,-240
-DVL,-300
-ECP,-300
-EGE,-360
-EKO,-420
-ELM,-240
-ELP,-360
-ESC,-240
-EUG,-420
-EVV,-300
-EWN,-240
-EWR,-240
-EYW,-240
-FAI,-480
-FAR,-300
-FAT,-420
-FAY,-240
-FCA,-360
-FLG,-420
-FLL,-240
-FNT,-240
-FOD,-300
-FSD,-300
-FSM,-300
-FWA,-240
-GCC,-360
-GCK,-300
-GEG,-420
-GFK,-300
-GGG,-300
-GJT,-360
-GNV,-240
-GPT,-300
-GRB,-300
-GRI,-300
-GRK,-300
-GRR,-240
-GSO,-240
-GSP,-240
-GST,-480
-GTF,-360
-GTR,-300
-GUC,-360
-GUM,-840
-HDN,-360
-HGR,-240
-HHH,-240
-HIB,-300
-HLN,-360
-HNL,-600
-HOB,-360
-HOU,-300
-HPN,-240
-HRL,-300
-HSV,-300
-HTS,-240
-HYA,-240
-HYS,-300
-IAD,-240
-IAG,-240
-IAH,-300
-ICT,-300
-IDA,-360
-ILM,-240
-IMT,-300
-IND,-240
-INL,-300
-ISP,-240
-ITH,-240
-ITO,-600
-JAC,-360
-JAN,-300
-JAX,-240
-JFK,-240
-JLN,-300
-JMS,-300
-JNU,-480
-JST,-240
-KOA,-600
-KTN,-480
-LAN,-240
-LAR,-360
-LAS,-420
-LAW,-300
-LAX,-420
-LBB,-300
-LBE,-240
-LBF,-300
-LBL,-300
-LCH,-300
-LCK,-240
-LEX,-240
-LFT,-300
-LGA,-240
-LGB,-420
-LIH,-600
-LIT,-300
-LNK,-300
-LRD,-300
-LSE,-300
-LWS,-420
-MAF,-300
-MBS,-240
-MCI,-300
-MCO,-240
-MCW,-300
-MDT,-240
-MDW,-300
-MEI,-300
-MEM,-300
-MFE,-300
-MFR,-420
-MGM,-300
-MHK,-300
-MHT,-240
-MIA,-240
-MKE,-300
-MLB,-240
-MLI,-300
-MLU,-300
-MOB,-300
-MOT,-300
-MQT,-240
-MRY,-420
-MSN,-300
-MSO,-360
-MSP,-300
-MSY,-300
-MTJ,-360
-MVY,-240
-MYR,-240
-OAJ,-240
-OAK,-420
-OGG,-600
-OKC,-300
-OMA,-300
-OME,-480
-ONT,-420
-ORD,-300
-ORF,-240
-ORH,-240
-OTH,-420
-OTZ,-480
-PAE,-420
-PBG,-240
-PBI,-240
-PDX,-420
-PGD,-240
-PHL,-240
-PHX,-420
-PIA,-300
-PIB,-300
-PIE,-240
-PIH,-360
-PIT,-240
-PLN,-240
-PNS,-300
-PRC,-420
-PSC,-420
-PSE,-240
-PSG,-480
-PSM,-240
-PSP,-420
-PVD,-240
-PVU,-360
-PWM,-240
-RAP,-360
-RDD,-420
-RDM,-420
-RDU,-240
-RFD,-300
-RHI,-300
-RIC,-240
-RIW,-360
-RKS,-360
-RNO,-420
-ROA,-240
-ROC,-240
-ROW,-360
-RST,-300
-RSW,-240
-SAF,-360
-SAN,-420
-SAT,-300
-SAV,-240
-SBA,-420
-SBN,-240
-SBP,-420
-SCC,-480
-SCE,-240
-SCK,-420
-SDF,-240
-SEA,-420
-SFB,-240
-SFO,-420
-SGF,-300
-SGU,-360
-SHR,-360
-SHV,-300
-SIT,-480
-SJC,-420
-SJT,-300
-SJU,-240
-SLC,-360
-SLN,-300
-SMF,-420
-SNA,-420
-SPI,-300
-SPN,-840
-SPS,-300
-SRQ,-240
-STC,-300
-STL,-300
-STS,-420
-STT,-240
-STX,-240
-SUN,-360
-SUX,-300
-SWF,-240
-SWO,-300
-SYR,-240
-TLH,-240
-TOL,-240
-TPA,-240
-TRI,-240
-TTN,-240
-TUL,-300
-TUS,-420
-TVC,-240
-TWF,-360
-TXK,-300
-TYR,-300
-TYS,-240
-USA,-240
-VCT,-300
-VLD,-240
-VPS,-300
-WRG,-480
-WYS,-360
-XNA,-300
-XWA,-300
-YAK,-480
-YUM,-420
+airport,utc_offset,city
+ABE,-240,Allentown/Bethlehem/Easton
+ABI,-300,Abilene
+ABQ,-360,Albuquerque
+ABR,-300,Aberdeen
+ABY,-240,Albany
+ACK,-240,Nantucket
+ACT,-300,Waco
+ACV,-420,Arcata/Eureka
+ACY,-240,Atlantic City
+ADK,-540,Adak Island
+ADQ,-480,Kodiak
+AEX,-300,Alexandria
+AGS,-240,Augusta
+AKN,-480,King Salmon
+ALB,-240,Albany
+ALW,-420,Walla Walla
+AMA,-300,Amarillo
+ANC,-480,Anchorage
+APN,-240,Alpena
+ASE,-360,Aspen
+ATL,-240,Atlanta
+ATW,-300,Appleton
+AUS,-300,Austin
+AVL,-240,Asheville
+AVP,-240,Scranton/Wilkes-Barre
+AZA,-420,Phoenix
+AZO,-240,Kalamazoo
+BDL,-240,Hartford
+BET,-480,Bethel
+BFF,-360,Scottsbluff
+BFL,-420,Bakersfield
+BGM,-240,Binghamton
+BGR,-240,Bangor
+BHM,-300,Birmingham
+BIH,-420,Bishop
+BIL,-360,Billings
+BIS,-300,Bismarck/Mandan
+BJI,-300,Bemidji
+BLI,-420,Bellingham
+BLV,-300,Belleville
+BMI,-300,Bloomington/Normal
+BNA,-300,Nashville
+BOI,-360,Boise
+BOS,-240,Boston
+BPT,-300,Beaumont/Port Arthur
+BQK,-240,Brunswick
+BQN,-240,Aguadilla
+BRD,-300,Brainerd
+BRO,-300,Brownsville
+BRW,-480,Barrow
+BTM,-360,Butte
+BTR,-300,Baton Rouge
+BTV,-240,Burlington
+BUF,-240,Buffalo
+BUR,-420,Burbank
+BWI,-240,Baltimore
+BZN,-360,Bozeman
+CAE,-240,Columbia
+CAK,-240,Akron
+CDC,-360,Cedar City
+CDV,-480,Cordova
+CHA,-240,Chattanooga
+CHO,-240,Charlottesville
+CHS,-240,Charleston
+CID,-300,Cedar Rapids/Iowa City
+CIU,-240,Sault Ste. Marie
+CKB,-240,Clarksburg/Fairmont
+CLE,-240,Cleveland
+CLL,-300,College Station/Bryan
+CLT,-240,Charlotte
+CMH,-240,Columbus
+CMI,-300,Champaign/Urbana
+CMX,-240,Hancock/Houghton
+COD,-360,Cody
+COS,-360,Colorado Springs
+COU,-300,Columbia
+CPR,-360,Casper
+CRP,-300,Corpus Christi
+CRW,-240,Charleston/Dunbar
+CSG,-240,Columbus
+CVG,-240,Cincinnati
+CWA,-300,Mosinee
+CYS,-360,Cheyenne
+DAB,-240,Daytona Beach
+DAL,-300,Dallas
+DAY,-240,Dayton
+DCA,-240,Washington
+DDC,-300,Dodge City
+DEC,-300,Decatur
+DEN,-360,Denver
+DFW,-300,Dallas/Fort Worth
+DHN,-300,Dothan
+DIK,-360,Dickinson
+DLG,-480,Dillingham
+DLH,-300,Duluth
+DRO,-360,Durango
+DSM,-300,Des Moines
+DTW,-240,Detroit
+DVL,-300,Devils Lake
+ECP,-300,Panama City
+EGE,-360,Eagle
+EKO,-420,Elko
+ELM,-240,Elmira/Corning
+ELP,-360,El Paso
+ESC,-240,Escanaba
+EUG,-420,Eugene
+EVV,-300,Evansville
+EWN,-240,New Bern/Morehead/Beaufort
+EWR,-240,Newark
+EYW,-240,Key West
+FAI,-480,Fairbanks
+FAR,-300,Fargo
+FAT,-420,Fresno
+FAY,-240,Fayetteville
+FCA,-360,Kalispell
+FLG,-420,Flagstaff
+FLL,-240,Fort Lauderdale
+FNT,-240,Flint
+FOD,-300,Fort Dodge
+FSD,-300,Sioux Falls
+FSM,-300,Fort Smith
+FWA,-240,Fort Wayne
+GCC,-360,Gillette
+GCK,-300,Garden City
+GEG,-420,Spokane
+GFK,-300,Grand Forks
+GGG,-300,Longview
+GJT,-360,Grand Junction
+GNV,-240,Gainesville
+GPT,-300,Gulfport/Biloxi
+GRB,-300,Green Bay
+GRI,-300,Grand Island
+GRK,-300,Killeen
+GRR,-240,Grand Rapids
+GSO,-240,Greensboro/High Point
+GSP,-240,Greer
+GST,-480,Gustavus
+GTF,-360,Great Falls
+GTR,-300,Columbus
+GUC,-360,Gunnison
+GUM,-840,Guam
+HDN,-360,Hayden
+HGR,-240,Hagerstown
+HHH,-240,Hilton Head
+HIB,-300,Hibbing
+HLN,-360,Helena
+HNL,-600,Honolulu
+HOB,-360,Hobbs
+HOU,-300,Houston
+HPN,-240,White Plains
+HRL,-300,Harlingen/San Benito
+HSV,-300,Huntsville
+HTS,-240,Ashland
+HYA,-240,Hyannis
+HYS,-300,Hays
+IAD,-240,Washington
+IAG,-240,Niagara Falls
+IAH,-300,Houston
+ICT,-300,Wichita
+IDA,-360,Idaho Falls
+ILM,-240,Wilmington
+IMT,-300,Iron Mountain/Kingsfd
+IND,-240,Indianapolis
+INL,-300,International Falls
+ISP,-240,Islip
+ITH,-240,Ithaca/Cortland
+ITO,-600,Hilo
+JAC,-360,Jackson
+JAN,-300,Jackson/Vicksburg
+JAX,-240,Jacksonville
+JFK,-240,New York
+JLN,-300,Joplin
+JMS,-300,Jamestown
+JNU,-480,Juneau
+JST,-240,Johnstown
+KOA,-600,Kona
+KTN,-480,Ketchikan
+LAN,-240,Lansing
+LAR,-360,Laramie
+LAS,-420,Las Vegas
+LAW,-300,Lawton/Fort Sill
+LAX,-420,Los Angeles
+LBB,-300,Lubbock
+LBE,-240,Latrobe
+LBF,-300,North Platte
+LBL,-300,Liberal
+LCH,-300,Lake Charles
+LCK,-240,Columbus
+LEX,-240,Lexington
+LFT,-300,Lafayette
+LGA,-240,New York
+LGB,-420,Long Beach
+LIH,-600,Lihue
+LIT,-300,Little Rock
+LNK,-300,Lincoln
+LRD,-300,Laredo
+LSE,-300,La Crosse
+LWS,-420,Lewiston
+MAF,-300,Midland/Odessa
+MBS,-240,Saginaw/Bay City/Midland
+MCI,-300,Kansas City
+MCO,-240,Orlando
+MCW,-300,Mason City
+MDT,-240,Harrisburg
+MDW,-300,Chicago
+MEI,-300,Meridian
+MEM,-300,Memphis
+MFE,-300,Mission/McAllen/Edinburg
+MFR,-420,Medford
+MGM,-300,Montgomery
+MHK,-300,Manhattan/Ft. Riley
+MHT,-240,Manchester
+MIA,-240,Miami
+MKE,-300,Milwaukee
+MLB,-240,Melbourne
+MLI,-300,Moline
+MLU,-300,Monroe
+MOB,-300,Mobile
+MOT,-300,Minot
+MQT,-240,Marquette
+MRY,-420,Monterey
+MSN,-300,Madison
+MSO,-360,Missoula
+MSP,-300,Minneapolis
+MSY,-300,New Orleans
+MTJ,-360,Montrose/Delta
+MVY,-240,Martha's Vineyard
+MYR,-240,Myrtle Beach
+OAJ,-240,Jacksonville/Camp Lejeune
+OAK,-420,Oakland
+OGG,-600,Kahului
+OKC,-300,Oklahoma City
+OMA,-300,Omaha
+OME,-480,Nome
+ONT,-420,Ontario
+ORD,-300,Chicago
+ORF,-240,Norfolk
+ORH,-240,Worcester
+OTH,-420,North Bend/Coos Bay
+OTZ,-480,Kotzebue
+PAE,-420,Everett
+PBG,-240,Plattsburgh
+PBI,-240,West Palm Beach/Palm Beach
+PDX,-420,Portland
+PGD,-240,Punta Gorda
+PHL,-240,Philadelphia
+PHX,-420,Phoenix
+PIA,-300,Peoria
+PIB,-300,Hattiesburg/Laurel
+PIE,-240,St. Petersburg
+PIH,-360,Pocatello
+PIT,-240,Pittsburgh
+PLN,-240,Pellston
+PNS,-300,Pensacola
+PRC,-420,Prescott
+PSC,-420,Pasco/Kennewick/Richland
+PSE,-240,Ponce
+PSG,-480,Petersburg
+PSM,-240,Portsmouth
+PSP,-420,Palm Springs
+PVD,-240,Providence
+PVU,-360,Provo
+PWM,-240,Portland
+RAP,-360,Rapid City
+RDD,-420,Redding
+RDM,-420,Bend/Redmond
+RDU,-240,Raleigh/Durham
+RFD,-300,Rockford
+RHI,-300,Rhinelander
+RIC,-240,Richmond
+RIW,-360,Riverton/Lander
+RKS,-360,Rock Springs
+RNO,-420,Reno
+ROA,-240,Roanoke
+ROC,-240,Rochester
+ROW,-360,Roswell
+RST,-300,Rochester
+RSW,-240,Fort Myers
+SAF,-360,Santa Fe
+SAN,-420,San Diego
+SAT,-300,San Antonio
+SAV,-240,Savannah
+SBA,-420,Santa Barbara
+SBN,-240,South Bend
+SBP,-420,San Luis Obispo
+SCC,-480,Deadhorse
+SCE,-240,State College
+SCK,-420,Stockton
+SDF,-240,Louisville
+SEA,-420,Seattle
+SFB,-240,Sanford
+SFO,-420,San Francisco
+SGF,-300,Springfield
+SGU,-360,St. George
+SHR,-360,Sheridan
+SHV,-300,Shreveport
+SIT,-480,Sitka
+SJC,-420,San Jose
+SJT,-300,San Angelo
+SJU,-240,San Juan
+SLC,-360,Salt Lake City
+SLN,-300,Salina
+SMF,-420,Sacramento
+SNA,-420,Santa Ana
+SPI,-300,Springfield
+SPN,-840,Saipan
+SPS,-300,Wichita Falls
+SRQ,-240,Sarasota/Bradenton
+STC,-300,St. Cloud
+STL,-300,St. Louis
+STS,-420,Santa Rosa
+STT,-240,Charlotte Amalie
+STX,-240,Christiansted
+SUN,-360,Sun Valley/Hailey/Ketchum
+SUX,-300,Sioux City
+SWF,-240,Newburgh/Poughkeepsie
+SWO,-300,Stillwater
+SYR,-240,Syracuse
+TLH,-240,Tallahassee
+TOL,-240,Toledo
+TPA,-240,Tampa
+TRI,-240,Bristol/Johnson City/Kingsport
+TTN,-240,Trenton
+TUL,-300,Tulsa
+TUS,-420,Tucson
+TVC,-240,Traverse City
+TWF,-360,Twin Falls
+TXK,-300,Texarkana
+TYR,-300,Tyler
+TYS,-240,Knoxville
+USA,-240,Concord
+VCT,-300,Victoria
+VLD,-240,Valdosta
+VPS,-300,Valparaiso
+WRG,-480,Wrangell
+WYS,-360,West Yellowstone
+XNA,-300,Fayetteville
+XWA,-300,Williston
+YAK,-480,Yakutat
+YUM,-420,Yuma

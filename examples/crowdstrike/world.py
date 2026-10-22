@@ -98,20 +98,23 @@ def capacity(flight_id: str, carrier: str, distance: int, seed: int) -> int:
 
 
 @cache
-def _rows() -> tuple[tuple[dict, ...], dict[str, int]]:
+def _rows() -> tuple[tuple[dict, ...], dict[str, int], dict[str, str]]:
     with gzip.open(HERE / "flights.csv.gz", "rt", encoding="utf-8", newline="") as file:
         rows = tuple(csv.DictReader(file))
     with open(HERE / "airports.csv", encoding="utf-8", newline="") as file:
-        offsets = {row["airport"]: int(row["utc_offset"]) for row in csv.DictReader(file)}
-    return rows, offsets
+        airports = list(csv.DictReader(file))
+    return rows, {row["airport"]: int(row["utc_offset"]) for row in airports}, \
+        {row["airport"]: row["city"] for row in airports}
 
 
 class World:  # pylint: disable=too-many-instance-attributes
     """The day's flights and the seats left on them, shared by every decision."""
 
-    def __init__(self, flights: list[Flight], offsets: dict[str, int], free: dict[str, int] | None = None):
+    def __init__(self, flights: list[Flight], offsets: dict[str, int], free: dict[str, int] | None = None,
+                 cities: dict[str, str] | None = None):
         self.flights = {flight.id: flight for flight in flights}
         self.offsets = offsets
+        self.cities = cities or {}
         self._free = {flight.id: flight.capacity - round(LOAD_FACTOR * flight.capacity) for flight in flights}
         self._free.update(free or {})
         self._lock = threading.Lock()
@@ -130,7 +133,7 @@ class World:  # pylint: disable=too-many-instance-attributes
     @classmethod
     def load(cls, seed: int) -> "World":
         """The real day, with capacities made up from `seed`."""
-        rows, offsets = _rows()
+        rows, offsets, cities = _rows()
         flights = [Flight(id=row["id"], carrier=row["carrier"], number=row["number"], tail=row["tail"],
                           origin=row["origin"], dest=row["dest"], sched_dep=int(row["sched_dep"]),
                           sched_arr=int(row["sched_arr"]), dep=int(row["dep"]) if row["dep"] else None,
@@ -138,7 +141,7 @@ class World:  # pylint: disable=too-many-instance-attributes
                           diverted=row["diverted"] == "1", distance=int(row["distance"]),
                           capacity=capacity(row["id"], row["carrier"], int(row["distance"]), seed))
                    for row in rows]
-        return cls(flights, offsets)
+        return cls(flights, offsets, cities=cities)
 
     def local(self, airport: str, minute: int) -> str:
         """A moment as the airport's clock shows it, with the date when it isn't 19 July."""

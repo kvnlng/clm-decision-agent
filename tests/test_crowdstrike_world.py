@@ -125,3 +125,8 @@ def test_airports_with_no_direct_flight_are_reached_by_a_connection(small):
     assert [j.legs for j in found] == [("AB",)]
     world = World([flight("AB", "A", "B", 100, 200), flight("BD", "B", "D", 260, 330)], offsets={})
     assert [j.legs for j in world.search("A", "D", after=0, now=0, party=1, carriers={"DL"})] == [("AB", "BD")]
+
+
+def test_airports_have_city_names():
+    day = World.load(0)
+    assert (day.cities["ATL"], day.cities["LAX"], day.cities["JFK"]) == ("Atlanta", "Los Angeles", "New York")

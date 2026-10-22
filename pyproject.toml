@@ -41,7 +41,7 @@ addopts = "-m 'not slow'"
 # Vendored unchanged from the CLM authors, so it keeps their style
 ignore = ["clm_schema.py"]
 # The tests import their shared helpers (conftest, routing_cases) the way pytest does
-init-hook = "import sys; sys.path[:0] = ['tests', 'examples/service_desk']"
+init-hook = "import sys; sys.path[:0] = ['.', 'tests', 'examples/service_desk', 'examples/crowdstrike']"
 
 [tool.pylint.format]
 max-line-length = 120

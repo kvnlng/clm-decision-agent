@@ -12,7 +12,7 @@ policy) is made up for the demo, generated from a seed so every run is the same.
 
 `flights.csv.gz` holds every US flight of 19 July 2024, and those of 20 July leaving before noon,
 with times as minutes from 19 July 00:00 UTC. `airports.csv` gives each airport's UTC offset in
-minutes, for showing local times.
+minutes and its city, for showing local times and places.
 
 Source: Bureau of Transportation Statistics, "Reporting Carrier On-Time Performance (1987-present)",
 July 2024. A U.S. Government Work, in the public domain.

@@ -62,6 +62,15 @@ def offsets(rows: list[dict]) -> dict[str, int]:
     return found
 
 
+def cities(rows: list[dict]) -> dict[str, str]:
+    """Each airport's city, as BTS names it most often, without the state ("Atlanta, GA" -> "Atlanta")."""
+    named: dict[str, Counter] = defaultdict(Counter)
+    for row in rows:
+        named[row["Origin"]][row["OriginCityName"].split(",")[0].strip()] += 1
+        named[row["Dest"]][row["DestCityName"].split(",")[0].strip()] += 1
+    return {airport: counted.most_common(1)[0][0] for airport, counted in named.items()}
+
+
 def extract(rows: list[dict], zone: dict[str, int]) -> tuple[list[dict], int]:
     """-> (the flights in the extract's columns, how many were dropped because their airports' offsets
     disagree with their schedule)."""
@@ -111,7 +120,11 @@ def main(argv: list[str] | None = None) -> int:
     flights, dropped = extract(rows, zone)
     write(flights)
     used = {flight["origin"] for flight in flights} | {flight["dest"] for flight in flights}
-    AIRPORTS.write_text("airport,utc_offset\n" + "".join(f"{a},{zone[a]}\n" for a in sorted(used)), encoding="utf-8")
+    city = cities(rows)
+    with open(AIRPORTS, "w", encoding="utf-8", newline="") as file:
+        out = csv.writer(file, lineterminator="\n")
+        out.writerow(["airport", "utc_offset", "city"])
+        out.writerows([airport, zone[airport], city[airport]] for airport in sorted(used))
     print(f"{len(flights)} flights written to {OUT.name}; {dropped} dropped (time zones disagree)")
     return 0
 
