@@ -8,10 +8,16 @@ minute.
 
 Only CLM's two small heads (about 75 MB together). The large encoder is untouched, which is
 why training takes seconds: every example is encoded once, and training only adjusts how
-those vectors are projected so that each message lands nearest the description of its route.
+those vectors are projected so that each message lands nearest the right answer.
 
-Only the routing decision is trained. The scenario's other questions and the tool check stay
-as released.
+The route is always trained. So is every question your examples label, and the choice among a
+route's options where examples say which option was right; all of them in the same heads.
+Questions no example labels, and the tool check, stay as released, and `train.py` reports how
+far training moved their answers.
+
+**Rare answers count as much as common ones.** If one example in ten is urgent, each urgent one
+weighs nine times as much in training, and every result is reported per answer ("4 of 5"):
+otherwise "never urgent" would score 90% and look like success.
 
 ## Steps
 
@@ -68,10 +74,25 @@ the test chat and correct its decisions, evaluate, adjust, and train again.
 
 ## What it did on the example
 
+On the 55 held-back generated examples, with the route, urgency and identifiable trained
+together (each count is right of all with that answer):
+
 | | Released | Trained |
 |---|---|---|
-| Held-back generated examples (55) | 51% | 98% |
-| Hand-written test messages (17), through the server | | 15 |
+| Route | 49% (balanced) | 96% (53 of 55) |
+| Urgency: no deadline | 9 of 49 | 47 of 49 |
+| Urgency: within weeks | 0 of 1 | 0 of 1 |
+| Urgency: within days | 5 of 5 | 4 of 5 |
+| Identifiable: no | 17 of 42 | 40 of 42 |
+| Identifiable: yes | 13 of 13 | 13 of 13 |
+| Hand-written test messages (17) through the server, route | | 15 |
+
+- Training the questions did not cost the route: trained on the route alone it was 54 of 55
+  and 15 of 17.
+- "Within weeks" has two examples in all, one held back, so it cannot be learned from them.
+  Label more of a rare answer before trusting it.
+- The released heads said "urgent" and "identifiable" far too often; the questions were
+  unusable before training and close to the route's accuracy after.
 
 Two earlier measurements on a similar problem (issue reports, 450 generated examples):
 
