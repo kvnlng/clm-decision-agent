@@ -20,6 +20,7 @@ ANCHOR = ("ATL", -240)                   # Atlanta keeps Eastern Daylight Time, 
 COLUMNS = ["id", "carrier", "number", "tail", "origin", "dest", "sched_dep", "sched_arr", "elapsed", "dep", "arr",
            "cancelled", "code", "diverted", "distance"]
 OUT = Path(__file__).with_name("flights.csv.gz")
+AIRPORTS = Path(__file__).with_name("airports.csv")
 
 
 def _minutes(hhmm: str) -> int:
@@ -61,10 +62,9 @@ def offsets(rows: list[dict]) -> dict[str, int]:
     return found
 
 
-def extract(rows: list[dict]) -> tuple[list[dict], int]:
+def extract(rows: list[dict], zone: dict[str, int]) -> tuple[list[dict], int]:
     """-> (the flights in the extract's columns, how many were dropped because their airports' offsets
     disagree with their schedule)."""
-    zone = offsets(rows)
     flights, dropped, seen = [], 0, Counter()
     for row in rows:
         origin, dest = row["Origin"], row["Dest"]
@@ -106,8 +106,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build the CrowdStrike example's flight extract from BTS data.")
     parser.add_argument("csv", help="BTS On-Time Performance CSV for July 2024")
     args = parser.parse_args(argv)
-    flights, dropped = extract(read(args.csv))
+    rows = read(args.csv)
+    zone = offsets(rows)
+    flights, dropped = extract(rows, zone)
     write(flights)
+    used = {flight["origin"] for flight in flights} | {flight["dest"] for flight in flights}
+    AIRPORTS.write_text("airport,utc_offset\n" + "".join(f"{a},{zone[a]}\n" for a in sorted(used)), encoding="utf-8")
     print(f"{len(flights)} flights written to {OUT.name}; {dropped} dropped (time zones disagree)")
     return 0
 
