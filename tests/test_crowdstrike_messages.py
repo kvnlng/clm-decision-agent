@@ -8,7 +8,7 @@ from dataclasses import replace
 import pytest
 from test_crowdstrike_passengers import small_world
 
-from messages import BUCKETS, COMPANIONS, POOL_PATH, Pool, bucket, fits, labels, message, sample
+from messages import BUCKETS, COMPANIONS, POOL_PATH, Pool, bucket, fits, labels, message, sample, split
 from passengers import make_bookings
 
 
@@ -134,3 +134,27 @@ def test_an_article_before_an_event_or_party_is_dropped(bookings):
                       still_travelling=True, vulnerable=False, travel_mode="air", upset="calm")
     pool = Pool([{"bucket": bucket(booking), "text": "My {party} and I hope to make the {purpose}."}])
     assert message(booking, world, 0, pool).startswith("the two of us and I hope to make a concert.")
+
+
+def test_message_does_not_contradict_the_disruption(bookings):
+    world, made = bookings
+    texts = ["{flight} was cancelled. Rebook me to {dest}.", "{flight} is delayed. Rebook me to {dest}.",
+             "{flight} is late. Rebook me to {dest}.", "{flight} let me down. Rebook me to {dest}."]
+    one = next(b for b in made if b.still_travelling and not b.vague)
+    mixed = Pool([{"bucket": bucket(one), "text": text} for text in texts])
+    cancelled = any(world.flights[leg].cancelled for leg in one.legs)
+    seen = {message(one, world, seed, mixed) for seed in range(40)}
+    wrong = ("delayed", "late") if cancelled else ("cancelled",)
+    assert seen and not any(word in text for text in seen for word in wrong)
+    # A bucket with only contradicting lines still gives a message
+    only = Pool([{"bucket": bucket(one), "text": texts[1 if cancelled else 0]}])
+    assert message(one, world, 0, only)
+
+
+def test_split_is_stable_and_about_a_fifth():
+    committed = Pool.load()
+    train, unseen = split(committed)
+    assert (train.lines, unseen.lines) == (split(committed)[0].lines, split(committed)[1].lines)
+    assert len(train.lines) + len(unseen.lines) == len(committed.lines)
+    assert 0.15 < len(unseen.lines) / len(committed.lines) < 0.25
+    assert not {line["text"] for line in train.lines} & {line["text"] for line in unseen.lines}

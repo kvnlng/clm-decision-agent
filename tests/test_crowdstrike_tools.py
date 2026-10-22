@@ -7,15 +7,19 @@ from pathlib import Path
 
 import pytest
 from conftest import FakeRouter
+from test_crowdstrike_messages import fixture_line
 from test_crowdstrike_policy import booking
 from test_crowdstrike_world import flight
 
 import crowdstrike_tools
+from messages import BUCKETS, Pool
 from passengers import Fare
 from policy import ROUTES, answer
 from world import World
+from write_examples import example
 
 import decision
+from dataset import training_rows
 from scenario import load_scenario
 from tools import load_tools
 
@@ -257,3 +261,30 @@ def test_no_hotel_or_booked_reply_when_the_hold_failed(world):
         crowdstrike_tools.book_hotel(request(one, "Overnight", option="M1"))
     with pytest.raises(ValueError, match="no seats are held"):
         crowdstrike_tools.draft_reply(request(one, "Overnight", option="M1"))
+
+
+def test_example_facts_match_the_server(world):
+    one = booking(fare=Fare(refundable=False, partner_ok=True))
+    use(world, one)
+    pool = Pool([{"bucket": key, "text": fixture_line(key)} for key in BUCKETS])
+    line = example(one, world, pool, 0)
+    assert (line["route"], line["option"]) == ("Rebook", "T1")
+    scenario = load_scenario(SCENARIO)
+    tools = load_tools(scenario)
+    use(world, one)
+    result = decision.decide(line["text"], scenario, router("Rebook"), tools, context=line["context"])
+    informed = {entry["tool"]: entry for entry in result["informed"]}
+    assert line["facts"] == {"situation": informed["situation"]["facts"]}
+    assert line["options"] == informed["alternatives"]["options"]
+
+
+def test_examples_load_in_train(world):
+    made = [booking(id=f"B{i}", legs=(legs,), dest=dest) for i, (legs, dest) in enumerate([("X", "B"), ("LATE", "D"),
+                                                                                         ("OK", "D")])]
+    use(world, *made)
+    pool = Pool([{"bucket": key, "text": fixture_line(key)} for key in BUCKETS])
+    lines = [example(one, world, pool, 0) for one in made]
+    train, _, test = training_rows(load_scenario(SCENARIO), lines, [])
+    rows = train + test
+    assert len(rows) == 3 and all("\n\nKnown:\n- The booking" in row["text"] for row in rows)
+    assert {row["route"] for row in rows} == {"Rebook", "No_Action"}

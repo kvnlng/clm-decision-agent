@@ -7,6 +7,7 @@ they are. A booking's message is a line from its bucket with the placeholders fi
 booking, now and then with a typo, in lower case, with an aside, or with a second, unrelated request.
 Every line says what its bucket needs (`fits`), so every label can be told from the message.
 """
+import hashlib
 import json
 import random
 import re
@@ -52,6 +53,8 @@ SOFT_WORDS = ("hope", "hoping", "would like", "i'd like", "we'd like", "ideally"
               "would be nice", "would be great", "prefer", "rather", "would love", "i'd love", "we'd love", "flexible",
               "okay if we", "fine if we", "okay missing", "not tied", "could miss", "might miss", "don't mind if",
               "not essential", "isn't essential", "can live with", "could live with", "would be a shame")
+CANCELLED = re.compile(r"\bcancel", re.IGNORECASE)
+DELAYED = re.compile(r"\b(?:delay\w*|late)\b", re.IGNORECASE)
 
 
 def _has(lower: str, words: tuple[str, ...]) -> bool:
@@ -125,6 +128,13 @@ class Pool:
             return cls([json.loads(line) for line in file if line.strip()])
 
 
+def split(pool: Pool) -> tuple[Pool, Pool]:
+    """The lines training may use, and the fifth kept unseen for checking, chosen by a hash of the text."""
+    unseen = [int(hashlib.sha1(line["text"].encode("utf-8")).hexdigest(), 16) % 5 == 0 for line in pool.lines]
+    return (Pool([line for line, out in zip(pool.lines, unseen) if not out]),
+            Pool([line for line, out in zip(pool.lines, unseen) if out]))
+
+
 @cache
 def _committed() -> Pool:
     return Pool.load(POOL_PATH)
@@ -144,7 +154,10 @@ def _typo(rng: random.Random, text: str) -> str:
 def message(booking: Booking, world: World, seed: int, pool: Pool | None = None) -> str:
     """The message the booking's passenger sends."""
     rng = random.Random(f"{seed}:{booking.id}")
-    text = rng.choice((pool or _committed()).by_bucket[bucket(booking)])
+    lines = (pool or _committed()).by_bucket[bucket(booking)]
+    # A line that calls a delayed flight cancelled, or the other way round, contradicts the facts
+    wrong = DELAYED if any(world.flights[leg].cancelled for leg in booking.legs) else CANCELLED
+    text = rng.choice([line for line in lines if not wrong.search(line)] or lines)
     if rng.random() < 0.05:
         text = _typo(rng, text)
     # The model sometimes writes "the {purpose}" or "my {party}", but both carry their own article
