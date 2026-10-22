@@ -398,3 +398,15 @@ def test_decide_many_batches_the_encoding(setup, options):
     decide_many(REQUESTS, scenario, router, tools)
     # The messages, then the messages with routing's facts, then the questions with facts, each in one pass
     assert [len(states) for states, _ in router.prefetched][:2] == [4, 3]
+
+
+def test_decide_many_ranks_options_in_the_questions_pass(setup, options):
+    options(FLIGHTS)
+    scenario, tools = setup(MANY_TOML)
+    router = many_router()
+    decide_many(REQUESTS, scenario, router, tools)
+    # Ranking each request's options would otherwise encode a few texts at a time, one request after another
+    assert router.rank_calls
+    last_states, ranks = router.prefetched[-1]
+    assert ranks == router.rank_calls
+    assert len(router.prefetched) == 3 and last_states

@@ -128,19 +128,31 @@ def _answer(request: dict, scenario: Scenario, router, asks: list[tuple[str, dic
         request.update(answers=answers, rules=_rules(scenario, answers))
 
 
-def _choose(request: dict, scenario: Scenario, router, informed: list[dict]) -> dict | None:
-    """CLM's choice among the options the route's options tool fetched, or None if there are none. The
-    acting tools get it as request["option"]."""
+def _offered(request: dict, scenario: Scenario, informed: list[dict]) -> list[dict] | None:
+    """The options the route's options tool fetched, or None if the route has none or the tool failed."""
     spec = scenario.routes[request["route"]].options
     if spec is None:
         return None
     found = next((outcome for outcome in informed if outcome["tool"] == spec.tool), {})
-    offered = found.get("options") if found.get("status") == "done" else None
+    return found.get("options") if found.get("status") == "done" else None
+
+
+def _rank(request: dict, scenario: Scenario, offered: list[dict]) -> tuple[str, dict[str, str], str]:
+    """What CLM ranks `offered` on: (state text, {id: description}, instructions)."""
+    return (routed_text(request["text"], request["facts"]), {option["id"]: option["text"] for option in offered},
+            scenario.routes[request["route"]].options.instructions)
+
+
+def _choose(request: dict, scenario: Scenario, router, informed: list[dict]) -> dict | None:
+    """CLM's choice among the options the route's options tool fetched, or None if there are none. The
+    acting tools get it as request["option"]."""
+    if scenario.routes[request["route"]].options is None:
+        return None
     request["option"] = None
+    offered = _offered(request, scenario, informed)
     if not offered:
         return None
-    ranked = router.rank(routed_text(request["text"], request["facts"]),
-                         {option["id"]: option["text"] for option in offered}, spec.instructions)
+    ranked = router.rank(*_rank(request, scenario, offered))
     chosen = next(option for option in offered if option["id"] == ranked["choice"])
     request["option"] = {"id": chosen["id"], "text": chosen["text"]}
     return {**request["option"], "confidence": ranked["confidence"], "probabilities": ranked["probabilities"],
@@ -238,12 +250,11 @@ def decide_many(requests: list[dict], scenario: Scenario, router, tools: dict[st
         one["request"] = _request(one["text"], one["result"], scenario, one["context"])
         one["informed"] = gather(one["request"], scenario, tools, one["earlier"])
         one["asks"] = _asks(one["request"], scenario, one["informed"])
-    # Texts asked the same questions are encoded together
-    together: dict[tuple, tuple[list[str], dict]] = {}
-    for text, questions in (pair for one in made for pair in one["asks"]):
-        together.setdefault(tuple(questions), ([], questions))[0].append(text)
-    for states, questions in together.values():
-        router.prefetch(states, questions)
+    # Every question and every ranking of options is encoded in one pass; the options were fetched above,
+    # before any acting tool ran, so ranking them now finds the same texts
+    ranks = [_rank(one["request"], scenario, offered) for one in made
+             if (offered := _offered(one["request"], scenario, one["informed"]))]
+    router.prefetch_asks([pair for one in made for pair in one["asks"]], ranks)
     for one in made:
         _answer(one["request"], scenario, router, one["asks"])
     return [_finish(one, scenario, router, tools) for one in made]

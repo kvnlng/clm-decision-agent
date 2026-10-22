@@ -7,6 +7,7 @@ import math
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from huggingface_hub import snapshot_download
@@ -47,9 +48,13 @@ class MlxEngine:
     def prefetch(self, states: list, questions: dict[str, dict]) -> None:
         """Encode, in one batched pass, every state text that answering `questions` about `states` will need, so
         those answers are found in the build's cache."""
-        if not states:
+        self.prefetch_asks([(state, questions) for state in states])
+
+    def prefetch_asks(self, asks: list[tuple[Any, dict[str, dict]]]) -> None:
+        """prefetch() for [(state, questions)], each state with its own questions, in one batched pass."""
+        if not asks:
             return
-        pairs = [pair for state in states for pair in clm_schema.build_pairs(state, questions).values()]
+        pairs = [pair for state, questions in asks for pair in clm_schema.build_pairs(state, questions).values()]
         texts = {"state": [pair[0] for pair in pairs], "action": [text for pair in pairs for text in pair[2]]}
         if tracing.active():
             tracing.add("texts_encoded", len({(which, text) for which, found in texts.items() for text in found
@@ -169,6 +174,10 @@ def make_router(scenario: Scenario):
     return LocalContrastiveRouter(engine=engine), f"its {note}"
 
 
+def _option_question(options: dict[str, str], instructions: str) -> dict:
+    return {"type": "choice", "instructions": instructions, "criteria": options}
+
+
 def _routing_question(scenario: Scenario) -> dict:
     return {"type": "choice", "instructions": scenario.routing_instructions,
             "criteria": {name: route.description for name, route in scenario.routes.items()}}
@@ -207,9 +216,15 @@ class LocalContrastiveRouter:
         answers = self.engine.answer(state_text, {ROUTE_QID: _routing_question(scenario)})["answers"]
         return self._routed(state_text, answers[ROUTE_QID], scenario)
 
+    def prefetch_asks(self, asks: list[tuple[str, dict]], ranks: list[tuple[str, dict[str, str], str]] = ()) -> None:
+        """Encode, in one batched pass, what answering `asks` ([(state text, questions)]) and ranking `ranks`
+        ([(state text, options, instructions)], as rank() takes them) will need."""
+        self.engine.prefetch_asks([*asks, *((state, {"option": _option_question(options, instructions)})
+                                            for state, options, instructions in ranks)])
+
     def rank(self, state_text: str, options: dict[str, str], instructions: str) -> dict:
         """Which of `options` ({id: description}) fits the state: {choice, confidence, probabilities}."""
-        question = {"type": "choice", "instructions": instructions, "criteria": options}
+        question = _option_question(options, instructions)
         answer = self.engine.answer(state_text, {"option": question})["answers"]["option"]
         return {key: answer[key] for key in ("choice", "confidence", "probabilities")}
 
