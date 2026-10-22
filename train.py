@@ -194,15 +194,15 @@ def train(scenario, engine, train_rows: list, reviewed: list, test_rows: list, w
 
     def encode(rows):
         # The same layout CLM is asked with: the request, a blank line, the routing question
-        texts = [f"{state.strip()}\n\n{scenario.routing_instructions.strip()}" for state, _ in rows]
-        return _embed(engine, texts), torch.tensor([names.index(route) for _, route in rows])
+        texts = [f"{row['text'].strip()}\n\n{scenario.routing_instructions.strip()}" for row in rows]
+        return _embed(engine, texts), torch.tensor([names.index(row["route"]) for row in rows])
 
     write(f"Encoding {len(train_rows)} examples and {len(reviewed)} reviewed routes for training, "
           f"and {len(test_rows)} held-back examples...")
     (train_states, train_labels), (test_states, test_labels) = encode(train_rows + reviewed), encode(test_rows)
     actions = _embed(engine, [route.description for route in scenario.routes.values()])
     model = HeadsModel.from_weights(engine.head_weights(), engine.head_config)
-    sample = [state for state, _ in test_rows[::max(1, len(test_rows) // 30)]]       # spread across the routes
+    sample = [row["text"] for row in test_rows[::max(1, len(test_rows) // 30)]]       # spread across the routes
 
     before, others_before = accuracy(model, test_states, test_labels, actions), _other_answers(engine, scenario, sample)
     info = fit(model, train_states, train_labels, actions, pinned=len(reviewed))
@@ -259,6 +259,9 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-retu
     except (KeyError, TypeError) as error:
         print(f"error: {examples_path(scenario).name}: every line needs \"text\" and \"route\" ({error!r})",
               file=sys.stderr)
+        return 2
+    except ValueError as error:
+        print(f"error: {examples_path(scenario).name}: {error}", file=sys.stderr)
         return 2
     if len(train_rows) < 20 or not test_rows:
         print(f"error: too few examples to train on ({len(train_rows)} for training, {len(test_rows)} held back). "

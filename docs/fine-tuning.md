@@ -25,6 +25,25 @@ as released.
 - Correct decisions in the test chat's review mode (`chat.py <scenario> --review`). Every route
   you correct is a real example.
 
+**Labelling the questions and options.** A line can also say the right answer to each question,
+and for a route with options, which option is right. Only what a line labels is trained from it:
+
+```json
+{"text": "Need the registry by Friday", "route": "Data_Access",
+ "answers": {"urgency": 2, "identifiable": true}}
+{"text": "My flight was cancelled; I must be in Denver tonight", "route": "Rebook",
+ "facts": ["The 18:05 to Denver has 3 free seats."],
+ "options": [{"id": "UA1234", "text": "Departs 18:05, arrives 21:40"},
+             {"id": "UA88", "text": "Departs tomorrow 07:10"}],
+ "option": "UA1234"}
+```
+
+- A yes/no answer is `true` or `false`, a score is the level's number counting from 0, and a
+  choice is the option's key.
+- `facts` are what CLM read with the request, as your tools would find them.
+- A line that names a question the scenario lacks, or an answer it cannot take, stops `train.py`
+  with the line's number.
+
 **2. Say where to save the result**, in the scenario:
 
 ```toml

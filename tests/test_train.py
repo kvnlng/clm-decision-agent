@@ -149,8 +149,8 @@ class FakeEngine:
 def test_train_pushes_trained_weights_into_the_engine(scenario):
     names = list(scenario.routes)
     engine = FakeEngine([route.description for route in scenario.routes.values()])
-    rows = [(f"{scenario.routes[name].description} case {i}", name) for i, name in
-            enumerate(names * 40)]
+    rows = [{"text": f"{scenario.routes[name].description} case {i}", "route": name, "answers": {}, "facts": [],
+             "options": None, "option": None} for i, name in enumerate(names * 40)]
     facts = train.train(scenario, engine, rows[:60], [], rows[60:], write=lambda line: None)
     assert facts["clm_backend"] == "mlx"
     assert facts["accuracy_after"] >= facts["accuracy_before"]
@@ -210,3 +210,13 @@ def test_the_optimizer_steps_as_mlx_adamw_does():
         m, v = 0.9 * m + 0.1 * g, 0.999 * v + 0.001 * g * g
         expected = expected - 0.1 * m / (np.sqrt(v) + 1e-8)
     np.testing.assert_allclose(param.data.numpy(), expected, rtol=1e-5)
+
+
+def test_a_bad_label_stops_training_naming_the_line(write_scenario, capsys):
+    from conftest import BASE_TOML  # pylint: disable=import-outside-toplevel
+    path = write_scenario(BASE_TOML.replace('model_id = "test/clm"', 'model_id = "test/clm"\nheads = "my.heads"'))
+    lines = [{"text": "charged twice", "route": "Billing"}, {"text": "app down", "route": "Tech",
+                                                           "answers": {"mood": True}}]
+    path.with_name("scenario.examples.jsonl").write_text("\n".join(json.dumps(line) for line in lines))
+    assert train.main([str(path)]) == 2
+    assert capsys.readouterr().err.strip() == "error: scenario.examples.jsonl: line 2: unknown question 'mood'"
