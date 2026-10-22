@@ -86,19 +86,25 @@ the cache hit rate, texts and tokens per call, and how much of what was encoded 
 
 ### One at a time or many at once
 
-Measured on an M5 Max with 64 GB, with MLX, on the example scenario's 318 example messages, each
-run in a fresh server:
+Measured on the example scenario's 318 example messages, each run in a fresh server, decisions a
+second (encoding's share of the time):
 
-| Calls | Decisions a second | Encoding's share of the time |
+| Calls | M5 Max, 64 GB, MLX | A100 80 GB, torch |
 |---|---|---|
-| `decide`, one message at a time | 14.7 | 95% |
-| `decide_many`, 100 messages a call | 22.4 | 93% |
+| `decide`, one message at a time | 14.7 (95%) | 20.1 (94%) |
+| `decide_many`, 100 messages a call | 22.4 (93%) | 55.2 (90%) |
 
-- Encoding is still almost all of the time, so that is where faster decisions will come from.
+- Encoding is still almost all of the time, so that is where faster decisions will come from. On
+  the A100, a fifth of what a batch encodes is padding, which sorting texts by length could cut.
+- Your tools' share grows as CLM gets faster. On the A100, the example's tools made a new HTTP
+  client per call at first, about 17 ms each; that held `decide_many` to 23 a second until they
+  shared one ([scenario.md](scenario.md#tools)).
 - Encoded together, a text's numbers come out very slightly different from encoded alone. A
-  decision on the edge between two routes can then go the other way: 2 of the 318 did. Both
-  were near ties (about 0.50 against 0.49), well below the confidence threshold, so both were
-  uncertain either way and no acting tool ran.
+  decision on the edge between two routes can then go the other way: 2 of the 318 did on the
+  Mac, 1 on the A100. They were near ties (about 0.50 against 0.49), well below the confidence
+  threshold, so they were uncertain either way and no acting tool ran.
+- A `decide_many` call holds CLM for its batch, so other calls wait: 1,000 requests take about
+  20 seconds on the A100.
 
 ## Where CLM runs
 
