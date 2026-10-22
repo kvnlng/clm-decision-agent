@@ -43,10 +43,10 @@ def _kept(booking: Booking, world: World) -> int | None:
     return legs[-1].lands
 
 
-def _first(world: World, booking: Booking, now: int, carriers: set[str],  # pylint: disable=too-many-arguments
-           by: int | None, *, day: int) -> Journey | None:
-    """The earliest-arriving journey leaving on `day` (0 for 19 July, 1 for the 20th, before noon)
-    from where the passenger is, arriving by `by` if given."""
+def _search(world: World, booking: Booking, now: int, carriers: set[str],  # pylint: disable=too-many-arguments
+            by: int | None, *, day: int, limit: int) -> tuple[Journey, ...]:
+    """Up to `limit` journeys leaving on `day` (0 for 19 July, 1 for the 20th, before noon) from where the
+    passenger is, earliest arrival first, arriving by `by` if given."""
     first = world.flights[booking.legs[0]]
     airport, after = booking.origin, now
     if not first.cancelled and now >= first.leaves:
@@ -64,9 +64,44 @@ def _first(world: World, booking: Booking, now: int, carriers: set[str],  # pyli
 
     if day == 1:
         after = max(after, midnight)
-    found = world.search(airport, booking.dest, after, now, booking.party, carriers, deadline=by, limit=1,
-                         accept=tomorrow_morning if day == 1 else today)
-    return found[0] if found else None
+    return tuple(world.search(airport, booking.dest, after, now, booking.party, carriers, deadline=by, limit=limit,
+                              accept=tomorrow_morning if day == 1 else today))
+
+
+@dataclass(frozen=True)
+class Situation:
+    """What the day left a booking with, from its record alone: how its own flights now go, and the
+    alternatives, each earliest arrival first. The searches are skipped when the flights are on plan."""
+    kept: int | None
+    on_plan: bool
+    own: tuple[Journey, ...] = ()
+    partner: tuple[Journey, ...] = ()
+    tomorrow: tuple[Journey, ...] = ()
+
+
+def situation(booking: Booking, world: World, now: int, limit: int = 3) -> Situation:
+    """The booking's situation at minute `now`. It reads only the record (legs, party, fare), never what
+    the passenger alone knows, so the tools may state it."""
+    kept = _kept(booking, world)
+    if kept is not None and kept <= world.flights[booking.legs[-1]].sched_arr + ON_TIME:
+        return Situation(kept, True)
+    # A new journey has to beat the one they have, if it still gets them there
+    by = None if kept is None else kept - 1
+    airline = group(world.flights[booking.legs[0]].carrier)
+    own = _search(world, booking, now, carriers_of(airline), by, day=0, limit=limit)
+    partner: tuple[Journey, ...] = ()
+    partners = set().union(*(carriers_of(group(code)) for code in PARTNERS.get(airline, ())))
+    if booking.fare.partner_ok and partners:
+        partner = _search(world, booking, now, partners, by, day=0, limit=limit)
+    tomorrow = _search(world, booking, now, carriers_of(airline), None, day=1, limit=limit)
+    return Situation(kept, False, own, partner, tomorrow)
+
+
+def _meets(journeys: tuple[Journey, ...], firm: int | None) -> Journey | None:
+    """The first journey, if it arrives by the firm deadline: none after it arrives sooner."""
+    if journeys and (firm is None or journeys[0].arr <= firm):
+        return journeys[0]
+    return None
 
 
 def answer(booking: Booking, world: World, now: int) -> Label:  # pylint: disable=too-many-return-statements
@@ -75,27 +110,17 @@ def answer(booking: Booking, world: World, now: int) -> Label:  # pylint: disabl
         return Label("Agent", None)
     if not booking.still_travelling:
         return Label("Refund", None)
-    kept = _kept(booking, world)
-    if kept is not None and kept <= world.flights[booking.legs[-1]].sched_arr + ON_TIME:
+    found = situation(booking, world, now)
+    if found.on_plan:
         return Label("No_Action", None)
     firm = booking.deadline if booking.deadline_kind == "firm" else None
-    # A new journey has to beat the one they have, if it still gets them there
-    limits = [time for time in (firm, None if kept is None else kept - 1) if time is not None]
-    by = min(limits) if limits else None
-    airline = group(world.flights[booking.legs[0]].carrier)
-    own = carriers_of(airline)
-    journey = _first(world, booking, now, own, by, day=0)
-    if journey:
+    if journey := _meets(found.own, firm):
         return Label("Rebook", journey.legs)
-    partners = set().union(*(carriers_of(group(code)) for code in PARTNERS.get(airline, ())))
-    if booking.fare.partner_ok and partners:
-        journey = _first(world, booking, now, partners, by, day=0)
-        if journey:
-            return Label("Rebook_Partner", journey.legs)
-    if kept is not None and (firm is None or kept <= firm):
+    if journey := _meets(found.partner, firm):
+        return Label("Rebook_Partner", journey.legs)
+    if found.kept is not None and (firm is None or found.kept <= firm):
         return Label("No_Action", None)
-    journey = _first(world, booking, now, own, firm, day=1)
-    if journey:
+    if journey := _meets(found.tomorrow, firm):
         return Label("Overnight", journey.legs)
     if firm is not None:
         return Label("Refund" if booking.fare.refundable else "Agent", None)

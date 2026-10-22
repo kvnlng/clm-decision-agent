@@ -1,13 +1,14 @@
 """Tests for the CrowdStrike example's policy: the right answer for each booking."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import random
 from dataclasses import replace
 
 import pytest
 from test_crowdstrike_world import flight
 
-from passengers import Booking, Fare
-from policy import ROUTES, Label, answer
+from passengers import Booking, Fare, make_bookings
+from policy import ROUTES, Label, answer, situation
 from world import World
 
 ROUTE_NAMES = ["Rebook", "Rebook_Partner", "Overnight", "Refund", "Agent", "No_Action"]
@@ -119,3 +120,23 @@ def test_rule_4_today_means_every_flight_leaves_today():
                    flight("MB", "M", "B", 1500, 1560), flight("M1", "A", "B", 1500, 1600)],
                   offsets={"A": 0, "B": 0, "M": 0})
     assert answer(booking(), world, 0) == Label("Overnight", ("M1",))
+
+
+def test_situation_reads_no_hidden_attribute(world):
+    plain = booking(fare=Fare(refundable=True, partner_ok=True))
+    hidden = replace(plain, deadline=870, deadline_kind="firm", purpose="a wedding", still_travelling=False,
+                     vulnerable=True, travel_mode="rail", upset="angry", vague=True)
+    assert situation(plain, world, 0) == situation(hidden, world, 0)
+
+
+def test_the_label_is_the_first_journey_of_its_kind():
+    day = World.load(0)
+    sample = random.Random(0).sample(make_bookings(day, 0), 2000)
+    kinds = {"Rebook": "own", "Rebook_Partner": "partner", "Overnight": "tomorrow"}
+    seen = set()
+    for one in sample:
+        label = answer(one, day, one.sent // 60)
+        if label.route in kinds:
+            seen.add(label.route)
+            assert label.option == getattr(situation(one, day, one.sent // 60), kinds[label.route])[0].legs
+    assert seen == set(kinds)
