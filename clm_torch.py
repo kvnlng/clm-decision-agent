@@ -138,10 +138,13 @@ class TorchEncoder:
 
     # pylint: disable-next=too-many-arguments,too-many-positional-arguments
     def __init__(self, repo: str, revision: str | None, device: str, max_tokens: int = 2048,
-                 batch_tokens: int = 4096, min_prefix: int | None = 8, loaded: tuple | None = None):
+                 batch_tokens: int = 4096, min_prefix: int | None = 8, share_from_tokens: int = 1024,
+                 loaded: tuple | None = None):
         self.device, self.max_tokens, self.batch_tokens = device, max_tokens, batch_tokens
-        # Texts that start with the same `min_prefix` tokens or more share one encoding of that start; None: never
-        self.min_prefix = min_prefix
+        # Texts that start with the same `min_prefix` tokens or more share one encoding of that start (None: never),
+        # when there are `share_from_tokens` tokens or more to encode. Sharing takes two passes, which only pays
+        # when the GPU has enough to compute: on an A100 it slowed a single decision from 20 to 11 a second
+        self.min_prefix, self.share_from_tokens = min_prefix, share_from_tokens
         if loaded is None:
             # pylint: disable-next=import-outside-toplevel
             from transformers import AutoModel, AutoTokenizer, logging as transformers_logging
@@ -194,6 +197,8 @@ class TorchEncoder:
         """The vectors for lists of token ids. Texts that start alike, such as one message asked several questions,
         have their start encoded once and each rest encoded on its cached keys and values."""
         out: list = [None] * len(id_lists)
+        if sum(map(len, id_lists)) < self.share_from_tokens:
+            return np.stack(self._encode(id_lists)) if id_lists else np.zeros((0, 0), dtype=np.float32)
         groups = self._groups(id_lists)
         alone = [k for prefix, group in groups if not prefix for k in group]
         for k, vector in zip(alone, self._encode([id_lists[k] for k in alone])):

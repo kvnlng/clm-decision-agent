@@ -254,15 +254,25 @@ SHARED = ["Please give me access to the oncology registry for an audit next week
 
 
 def test_shared_prefixes_give_the_same_vectors_as_encoding_in_full():
-    shared = TorchEncoder("test/encoder", None, "cpu", loaded=(tiny_qwen(), StubTokenizer()))
+    shared = TorchEncoder("test/encoder", None, "cpu", share_from_tokens=0, loaded=(tiny_qwen(), StubTokenizer()))
     full = TorchEncoder("test/encoder", None, "cpu", min_prefix=None, loaded=(shared.model, StubTokenizer()))
     np.testing.assert_allclose(shared.embed(SHARED), full.embed(SHARED), atol=1e-5)
 
 
-def test_a_shared_prefix_is_encoded_once(tmp_path):
-    encoder = TorchEncoder("test/encoder", None, "cpu", loaded=(tiny_qwen(), StubTokenizer()))
+def encoded_tokens(encoder, texts, tmp_path):
     writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
     with writer.call("decide") as record:
-        encoder.embed(SHARED[2:4])
+        encoder.embed(texts)
+    return record["counts"]["tokens"]
+
+
+def test_a_shared_prefix_is_encoded_once(tmp_path):
+    encoder = TorchEncoder("test/encoder", None, "cpu", share_from_tokens=0, loaded=(tiny_qwen(), StubTokenizer()))
     # The message and its blank line once, then each question's own tokens
-    assert record["counts"]["tokens"] == len(SHARED[2]) + len("Which team?")
+    assert encoded_tokens(encoder, SHARED[2:4], tmp_path) == len(SHARED[2]) + len("Which team?")
+
+
+def test_a_little_work_is_encoded_in_one_pass(tmp_path):
+    # Two passes cost more than the tokens they save when the GPU is waiting rather than computing
+    encoder = TorchEncoder("test/encoder", None, "cpu", share_from_tokens=1024, loaded=(tiny_qwen(), StubTokenizer()))
+    assert encoded_tokens(encoder, SHARED[2:4], tmp_path) == len(SHARED[2]) + len(SHARED[3])
