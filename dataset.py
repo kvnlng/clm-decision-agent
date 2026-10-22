@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import clm_schema
+from decision import heard
 from record import route_verdicts
 from scenario import Scenario
 
@@ -53,6 +54,8 @@ def labels(scenario: Scenario, example: dict) -> dict[str, int]:
                 raise ValueError(f"{where}: needs true or false, not {value!r}")
             found[name] = keys.index("true" if value else "false")
         elif question["type"] == "score":
+            # Some clients send whole numbers as floats
+            value = int(value) if isinstance(value, float) and value.is_integer() else value
             if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < len(keys):
                 raise ValueError(f"{where}: {value!r} is not a level (0 to {len(keys) - 1})")
             found[name] = value
@@ -65,8 +68,17 @@ def labels(scenario: Scenario, example: dict) -> dict[str, int]:
 
 def _row(scenario: Scenario, example: dict, text: str | None = None) -> dict:
     """A training row from an examples line or a correction: the text, route, answers, facts and options."""
+    facts = example.get("facts", [])
+    if isinstance(facts, dict):
+        # A correction saves facts by tool, so each question hears only what it hears when deciding
+        outcomes = [{"tool": tool, "status": "done", "facts": found} for tool, found in facts.items()]
+        hearing, everything = heard(scenario, outcomes), [fact for found in facts.values() for fact in found]
+    else:
+        # An examples line's facts are heard by every question
+        everything = list(facts)
+        hearing = {name: everything for name in scenario.questions}
     row = {"text": text if text is not None else example["text"], "route": example["route"],
-           "answers": labels(scenario, example), "facts": list(example.get("facts", [])), "options": None,
+           "answers": labels(scenario, example), "facts": everything, "heard": hearing, "options": None,
            "option": None}
     if "options" in example or "option" in example:
         if scenario.routes[example["route"]].options is None:
@@ -98,7 +110,7 @@ def training_rows(scenario: Scenario, examples: list[dict], records: list[dict])
             (test if split_of(example["text"]) == "test" else train).append(row)
     held_back = {row["text"] for row in test}
     # A reviewed route's text may carry routing's facts after the message; the message is what repeats an example
-    reviewed = [_reviewed(scenario, verdict) for verdict in route_verdicts(records, scenario)
+    reviewed = [reviewed_row(scenario, verdict) for verdict in route_verdicts(records, scenario)
                 if message_of(verdict["state_text"]) not in held_back]
     return train, reviewed, test
 
@@ -108,7 +120,7 @@ def message_of(state_text: str) -> str:
     return state_text.split("\n\nKnown:\n")[0]
 
 
-def _reviewed(scenario: Scenario, verdict: dict) -> dict:
+def reviewed_row(scenario: Scenario, verdict: dict) -> dict:
     """A training row from the owner's correction. Answers and options the scenario can no longer take are left
     out: the scenario may have changed since."""
     answers = {name: value for name, value in verdict.get("answers", {}).items() if name in scenario.questions}

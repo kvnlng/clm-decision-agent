@@ -134,3 +134,22 @@ def test_reviewed_rows_carry_corrected_answers(questions):
     assert (first["answers"], first["facts"], first["options"], first["option"]) == \
         ({"urgent": 1, "level": 1}, ["The queue is A."], REFUNDS, 1)
     assert second["answers"] == {}
+
+
+def test_each_question_hears_only_the_facts_it_hears_when_deciding(questions):
+    # lookup informs only urgent ([tools.inform.lookup] questions = ["urgent"])
+    record = {"kind": "route", "state_text": "my card was charged twice", "human": "Billing",
+              "clm": {"route": "Tech", "confidence": 0.4}, "answers": {"urgent": True, "level": 1},
+              "facts": {"lookup": ["The queue is A."]}}
+    _, [row], _ = training_rows(questions, [], [record])
+    assert row["facts"] == ["The queue is A."]
+    assert (row["heard"]["urgent"], row["heard"]["level"]) == (["The queue is A."], [])
+    # facts given as a plain list in an examples line are heard by every question
+    train, _, test = training_rows(questions, [line(facts=["The fare was refundable."])], [])
+    assert (train + test)[0]["heard"]["level"] == ["The fare was refundable."]
+
+
+def test_a_whole_number_sent_as_a_float_is_a_level(questions):
+    assert labels(questions, line(answers={"level": 2.0})) == {"level": 2}
+    with pytest.raises(ValueError, match=re.escape("questions.level: 1.5 is not a level")):
+        labels(questions, line(answers={"level": 1.5}))

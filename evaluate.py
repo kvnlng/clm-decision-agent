@@ -10,7 +10,7 @@ import sys
 from collections import Counter
 
 import clm_schema
-from dataset import labels, message_of
+from dataset import reviewed_row
 from decision import routed_text
 from record import route_verdicts, load_records, record_key
 from scenario import ScenarioError, load_scenario
@@ -77,30 +77,34 @@ def _replay_routing(route_records: list[dict], scenario, router) -> dict:
             "bands": confidence_bands(pairs), "suggested_threshold": suggest_threshold(pairs)}
 
 
+def _replay_row_answers(row: dict, scenario, router, answers: dict) -> None:
+    """Ask the questions a reviewed row answers, grouped by the facts each hears; count into `answers`."""
+    groups: dict[tuple, dict] = {}
+    for name in row["answers"]:
+        groups.setdefault(tuple(row["heard"].get(name, [])), {})[name] = scenario.questions[name]
+    for facts, asked in groups.items():
+        got = router.ask(routed_text(row["message"], list(facts)), asked)
+        for name in asked:
+            key = clm_schema.candidates(scenario.questions[name])[0][row["answers"][name]]
+            stats = answers.setdefault(name, {}).setdefault(key, [0, 0])
+            stats[0] += clm_schema.label_of(got[name]) == key
+            stats[1] += 1
+
+
 def _replay_answers(route_records: list[dict], scenario, router) -> tuple[dict, dict]:
-    """CLM's answers and option choices on the reviewed cases, against the owner's:
-    ({question: {class: [right, of]}}, {route: [right, of]})."""
+    """CLM's answers and option choices on the reviewed cases, against the owner's, each question asked with
+    the facts it hears when deciding: ({question: {class: [right, of]}}, {route: [right, of]})."""
     answers: dict[str, dict] = {}
     options: dict[str, list[int]] = {}
     for case in route_verdicts(route_records, scenario):
-        text = routed_text(message_of(case["state_text"]), case.get("facts", []))
-        try:
-            wanted = labels(scenario, {"answers": {name: value for name, value in case.get("answers", {}).items()
-                                                   if name in scenario.questions}})
-        except ValueError:
-            wanted = {}          # the question changed since the correction
-        if wanted:
-            got = router.ask(text, {name: scenario.questions[name] for name in wanted})
-            for name, index in wanted.items():
-                key = clm_schema.candidates(scenario.questions[name])[0][index]
-                stats = answers.setdefault(name, {}).setdefault(key, [0, 0])
-                stats[0] += clm_schema.label_of(got[name]) == key
-                stats[1] += 1
+        row = reviewed_row(scenario, case)
+        _replay_row_answers(row, scenario, router, answers)
         spec = scenario.routes[case["human"]].options
-        if spec and case.get("options"):
-            ranked = router.rank(text, {o["id"]: o["text"] for o in case["options"]}, spec.instructions)
+        if spec and row["options"]:
+            ranked = router.rank(routed_text(row["message"], row["facts"]),
+                                 {o["id"]: o["text"] for o in row["options"]}, spec.instructions)
             stats = options.setdefault(case["human"], [0, 0])
-            stats[0] += ranked["choice"] == case.get("option")
+            stats[0] += ranked["choice"] == row["options"][row["option"]]["id"]
             stats[1] += 1
     return answers, options
 

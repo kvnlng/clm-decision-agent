@@ -311,3 +311,30 @@ def test_training_records_each_trained_questions_wording(scenario, monkeypatch):
     engine = FakeEngine([route.description for route in scenario.routes.values()] + ["URGENT"])
     facts, _ = quiet_train(scenario, engine, question_rows(scenario))
     assert facts["questions_sha"] == {"urgent": scenario.question_sha("urgent")}
+
+
+def test_a_question_labelled_only_by_corrections_trains(scenario, monkeypatch):
+    fast(monkeypatch)
+    engine = FakeEngine([route.description for route in scenario.routes.values()] + ["URGENT"])
+    rows = question_rows(scenario)
+    plain = [dict(one, answers={}) for one in rows]
+    lines = []
+    facts = train.train(scenario, engine, plain[:60], rows[:20], plain[80:], write=lines.append)
+    assert facts["trained"] == ["route", "urgent"]
+    assert any("urgent" in line and "no held-back examples" in line for line in lines)
+    assert facts["per_class"]["urgent"] == {"before": {}, "after": {}}
+
+
+def test_a_ranking_with_no_held_back_rows_trains(write_scenario, monkeypatch):
+    from conftest import BASE_TOML  # pylint: disable=import-outside-toplevel
+    fast(monkeypatch)
+    scenario = load_scenario(write_scenario(BASE_TOML.replace(
+        'inform = ["lookup"]\n', 'inform = ["lookup", "alternatives"]\n\n[routes.Billing.options]\n'
+        'tool = "alternatives"\ninstructions = "Which refund suits them?"\n')))
+    engine = FakeEngine(["Charges and refunds", "Bugs and outages", "ALPHA", "BETA"])
+    options = [{"id": "a", "text": "ALPHA refund"}, {"id": "b", "text": "BETA refund"}]
+    ranked = [row(f"Charges and refunds case {i} ALPHA", "Billing", options=options, option=0) for i in range(20)]
+    plain = [row(f"{d} case {i}", r) for i, (r, d) in
+             enumerate([("Billing", "Charges and refunds"), ("Tech", "Bugs and outages")] * 40)]
+    facts = train.train(scenario, engine, ranked + plain[:40], [], plain[40:], write=lambda line: None)
+    assert "options of Billing" in facts["trained"]

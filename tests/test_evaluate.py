@@ -136,3 +136,14 @@ def test_evaluate_reports_corrected_answers_per_class(scenario):
     result = evaluate(records, scenario, router)
     assert result["answers"] == {"urgent": {"true": [1, 2], "false": [1, 1]}}
     assert "urgent" in format_report(result, scenario) and "1 of 2" in format_report(result, scenario)
+
+
+def test_a_corrected_answer_is_replayed_with_only_the_facts_its_question_hears(write_scenario):
+    from conftest import BASE_TOML  # pylint: disable=import-outside-toplevel
+    scenario = load_scenario(write_scenario(BASE_TOML.replace('questions = ["urgent"]', "questions = []")))
+    records = [dict(route_record("User: refund", "Billing", "Billing"), answers={"urgent": True},
+                    facts={"lookup": ["The queue is A."]})]
+    router = FakeRouter({"User: refund": decision("Billing")}, asks=[{"urgent": {"type": "noul", "noul": 0.9}}],
+                        vectors={"User: refund": [1.0, 0.0]})
+    evaluate(records, scenario, router)
+    assert router.ask_calls[0][0] == "User: refund"

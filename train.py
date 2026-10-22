@@ -155,8 +155,8 @@ class Task:
 
     def balanced(self, model: HeadsModel, entries: torch.Tensor | None = None) -> float:
         """The mean of each class's share answered right, so "always the common answer" scores low."""
-        found = self.per_class(model, entries)
-        return sum(right / total for right, total in found.values()) / len(found) if found else 0.0
+        found = [(right, total) for right, total in self.per_class(model, entries).values() if total]
+        return sum(right / total for right, total in found) / len(found) if found else 0.0
 
 
 def class_weights(labels: torch.Tensor, classes: int) -> torch.Tensor:
@@ -270,10 +270,12 @@ def _drift(before: list[dict], after: list[dict]) -> dict[str, str]:
     return report
 
 
-def _question_text(row: dict, instructions: str) -> str:
-    """The text CLM reads for a question about the row: the request, its facts, then the question."""
+def _question_text(row: dict, instructions: str, question: str | None = None) -> str:
+    """The text CLM reads for a question about the row: the request, the facts that question hears (all the
+    row's facts for ranking), then the question."""
+    facts = row.get("heard", {}).get(question, row["facts"]) if question else row["facts"]
     # A correction's text may carry routing's facts; its own facts include them
-    return clm_schema.state_text(routed_text(row.get("message", row["text"]), row["facts"]), instructions)
+    return clm_schema.state_text(routed_text(row.get("message", row["text"]), facts), instructions)
 
 
 class _Candidates:  # pylint: disable=too-few-public-methods
@@ -292,16 +294,14 @@ def _question_task(name: str, question: dict, engine, rows: list[dict], candidat
     keys, texts = clm_schema.candidates(question)
     mine = [i for i, row in enumerate(rows) if name in row["answers"]]
     labels = torch.tensor([rows[i]["answers"][name] for i in mine], dtype=torch.long)
-    states = _embed(engine, [_question_text(rows[i], question["instructions"]) for i in mine]) if mine \
-        else torch.zeros(0)
+    states = _embed(engine, [_question_text(rows[i], question["instructions"], name) for i in mine])
     return Task(name, torch.tensor(mine, dtype=torch.long), states, labels, candidates(texts), classes=keys,
-                weights=class_weights(labels, len(keys)) if mine else None)
+                weights=class_weights(labels, len(keys)))
 
 
 def _ranking_task(route, engine, rows: list[dict], candidates: _Candidates) -> Task:
     mine = [i for i, row in enumerate(rows) if row["options"] and row["route"] == route.name]
-    states = _embed(engine, [_question_text(rows[i], route.options.instructions) for i in mine]) if mine \
-        else torch.zeros(0)
+    states = _embed(engine, [_question_text(rows[i], route.options.instructions) for i in mine])
     return Task(f"options of {route.name}", torch.tensor(mine, dtype=torch.long), states,
                 torch.tensor([rows[i]["option"] for i in mine], dtype=torch.long),
                 [candidates([option["text"] for option in rows[i]["options"]]) for i in mine])
@@ -318,23 +318,26 @@ def _tasks(scenario, engine, rows: list[dict], candidates: _Candidates, trained:
                                   for row in rows]),
                   labels, candidates([route.description for route in scenario.routes.values()]), classes=names,
                   weights=class_weights(labels, len(names)))]
+    # A task needs labelled rows: the held-back ones may have none for a question only corrections label
     for name, question in scenario.questions.items():
-        if (name in trained) if trained is not None else any(name in row["answers"] for row in rows):
+        if (trained is None or name in trained) and any(name in row["answers"] for row in rows):
             tasks.append(_question_task(name, question, engine, rows, candidates))
     for route in scenario.routes.values():
-        wanted = f"options of {route.name}"
-        if route.options and ((wanted in trained) if trained is not None
-                              else any(row["options"] and row["route"] == route.name for row in rows)):
+        if route.options and (trained is None or f"options of {route.name}" in trained) and \
+                any(row["options"] and row["route"] == route.name for row in rows):
             tasks.append(_ranking_task(route, engine, rows, candidates))
     return tasks
 
 
-def _write_results(write, tasks: list[Task], before: dict, after: dict) -> None:
-    for task in tasks:
-        write(f"  {task.name:<24}released {before[task.name]['score']:.0%}   "
-              f"trained {after[task.name]['score']:.0%}   (balanced: each class counts the same)")
-        for name, (right, total) in after[task.name]["per_class"].items():
-            was = before[task.name]["per_class"].get(name, [0, total])[0]
+def _write_results(write, trained: list[str], before: dict, after: dict) -> None:
+    for task in trained:
+        if task not in after:
+            write(f"  {task:<24}no held-back examples to test it on")
+            continue
+        write(f"  {task:<24}released {before[task]['score']:.0%}   "
+              f"trained {after[task]['score']:.0%}   (balanced: each class counts the same)")
+        for name, (right, total) in after[task]["per_class"].items():
+            was = before[task]["per_class"].get(name, [0, total])[0]
             write(f"    {name:<22}released {was:>3} of {total:<4} trained {right:>3} of {total}")
 
 
@@ -366,7 +369,7 @@ def train(scenario, engine, train_rows: list, reviewed: list, test_rows: list, w
 
     write(f"Results on {len(test_rows)} held-back generated examples "
           f"(kept after pass {info['best_epoch']} of {info['epochs']} over the training examples):")
-    _write_results(write, test_tasks, before, after)
+    _write_results(write, trained, before, after)
     write(f"  simple classifier for the route {baseline:.0%}   (a baseline on the encoder's vectors; "
           f"not used by the server)")
     drift = _drift(others_before, _other_answers(engine, untrained, sample))
@@ -385,7 +388,7 @@ def train(scenario, engine, train_rows: list, reviewed: list, test_rows: list, w
             "accuracy_after": _plain(after["route"]["per_class"]),
             "score_before": score_before, "score_after": score_after, "accuracy_simple_classifier": baseline,
             "per_class": {name: {"before": before[name]["per_class"], "after": after[name]["per_class"]}
-                          for name in trained},
+                          if name in after else {"before": {}, "after": {}} for name in trained},
             "other_questions": drift, **info}
 
 

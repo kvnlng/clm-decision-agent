@@ -76,18 +76,23 @@ def route_facts(text: str, scenario: Scenario, tools: dict[str, Callable], conte
     return [{"tool": name, **_facts(_run(tools[name], dict(request), "inform"))} for name in scenario.route_inform]
 
 
-def _heard(scenario: Scenario, informed: list[dict]) -> dict[tuple, dict]:
-    """{facts: the questions that hear exactly those facts}, from the informing tools' outcomes."""
+def heard(scenario: Scenario, informed: list[dict]) -> dict[str, list[str]]:
+    """{question: the facts it hears}, from the informing tools' outcomes."""
     # Each question hears only the facts of the tools that inform it, since facts sway questions they have
     # nothing to do with
-    heard: dict[str, list] = {name: [] for name in scenario.questions}
+    found: dict[str, list] = {name: [] for name in scenario.questions}
     for outcome in informed:
         if outcome["status"] == "done" and outcome["facts"]:
             chosen = scenario.informs[outcome["tool"]].questions if outcome["tool"] in scenario.informs else None
             for question in scenario.questions if chosen is None else chosen:
-                heard[question] += outcome["facts"]
+                found[question] += outcome["facts"]
+    return found
+
+
+def _heard(scenario: Scenario, informed: list[dict]) -> dict[tuple, dict]:
+    """{facts: the questions that hear exactly those facts}, from the informing tools' outcomes."""
     groups: dict[tuple, dict] = {}
-    for name, facts in heard.items():
+    for name, facts in heard(scenario, informed).items():
         if facts:
             groups.setdefault(tuple(facts), {})[name] = scenario.questions[name]
     return groups

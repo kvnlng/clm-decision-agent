@@ -69,7 +69,9 @@ def _corrected(scenario: Scenario, tools: dict[str, Callable], text: str, route:
     if context is not None:
         request["context"] = context
     informed = decision.gather(request, scenario, tools, earlier)
-    more: dict[str, Any] = {"facts": request["facts"], **({"answers": answers} if answers is not None else {})}
+    more: dict[str, Any] = {"facts": {outcome["tool"]: outcome["facts"] for outcome in informed
+                                      if outcome["status"] == "done" and outcome.get("facts")},
+                            **({"answers": answers} if answers is not None else {})}
     if option is not None:
         found = next((outcome for outcome in informed if outcome["tool"] == spec.tool), {})
         offered = found.get("options", []) if found.get("status") == "done" else []

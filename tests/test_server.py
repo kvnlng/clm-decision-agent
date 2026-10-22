@@ -261,7 +261,8 @@ async def test_correct_saves_answers_and_the_option(offered):
     records, _ = load_records(scenario.record_path)
     entry = records[0]
     assert (entry["answers"], entry["option"], entry["options"]) == ({"urgent": True}, "credit", REFUNDS)
-    assert entry["facts"] == ["The queue is A."]
+    # Saved by tool, so training gives each question only the facts it hears when deciding
+    assert entry["facts"] == {"lookup": ["The queue is A."]}
 
 
 @pytest.mark.anyio

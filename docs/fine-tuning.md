@@ -46,7 +46,9 @@ and for a route with options, which option is right. Only what a line labels is 
 
 - A yes/no answer is `true` or `false`, a score is the level's number counting from 0, and a
   choice is the option's key.
-- `facts` are what CLM read with the request, as your tools would find them.
+- `facts` are what CLM read with the request, as your tools would find them. Every question
+  hears a line's facts; corrections save them by tool, so each question hears only the facts
+  its `[tools.inform]` settings give it, as when deciding.
 - A line that names a question the scenario lacks, or an answer it cannot take, stops `train.py`
   with the line's number.
 
