@@ -162,20 +162,11 @@ def test_long_text_keeps_its_last_tokens():
     assert encoder.ids("abcdef") == [ord("d"), ord("e"), ord("f")]
 
 
-class TinyModel(torch.nn.Module):
-    """Stands in for the encoder: each position's hidden state depends on the tokens up to it."""
-
-    def forward(self, input_ids, attention_mask):  # pylint: disable=arguments-differ
-        x = torch.nn.functional.one_hot(  # pylint: disable=not-callable
-            input_ids % HIDDEN, HIDDEN).float().cumsum(dim=1)
-        return type("Out", (), {"last_hidden_state": x.to(torch.bfloat16)})()
-
-
-def test_padding_does_not_change_a_text_vector():
-    encoder = TorchEncoder("test/encoder", None, "cpu", loaded=(TinyModel(), StubTokenizer()))
-    alone = encoder.embed(["ab"])
+def test_a_texts_vector_does_not_depend_on_what_shares_its_row():
+    encoder = TorchEncoder("test/encoder", None, "cpu", loaded=(tiny_qwen(), StubTokenizer()))
+    alone_ = encoder.embed(["ab"])
     together = encoder.embed(["ab", "a much longer text"])
-    np.testing.assert_allclose(together[0], alone[0], atol=1e-6)
+    np.testing.assert_allclose(together[0], alone_[0], atol=1e-6)
     assert together.dtype == np.float32
     np.testing.assert_allclose(np.linalg.norm(together, axis=1), 1.0, atol=1e-5)
 
@@ -261,26 +252,73 @@ SHARED = ["Please give me access to the oncology registry for an audit next week
           "My bill is wrong\n\nIs it urgent?", "My bill is wrong\n\nWhich team?"]
 
 
-def test_shared_prefixes_give_the_same_vectors_as_encoding_in_full():
-    shared = TorchEncoder("test/encoder", None, "cpu", share_from_tokens=0, loaded=(tiny_qwen(), StubTokenizer()))
-    full = TorchEncoder("test/encoder", None, "cpu", min_prefix=None, loaded=(shared.model, StubTokenizer()))
-    np.testing.assert_allclose(shared.embed(SHARED), full.embed(SHARED), atol=1e-5)
+class RowLengths:
+    """The model, recording the length of every row it is given."""
+
+    def __init__(self, model):
+        self.model, self.lengths = model, []
+
+    def __call__(self, **kwargs):
+        self.lengths += [kwargs["input_ids"].shape[1]] * kwargs["input_ids"].shape[0]
+        return self.model(**kwargs)
 
 
-def encoded_tokens(encoder, texts, tmp_path):
+def alone(model, texts):
+    """Each text encoded by itself, straight through the model: the vectors packing must reproduce."""
+    with torch.inference_mode():
+        return np.stack([clm_torch._unit(model(input_ids=torch.tensor([[ord(c) for c in text]]))  # pylint: disable=protected-access
+                                         .last_hidden_state[0, -1].float()).numpy() for text in texts])
+
+
+def packing(budget=4096, **kwargs):
+    model = tiny_qwen()
+    return TorchEncoder("test/encoder", None, "cpu", batch_tokens=budget, loaded=(RowLengths(model), StubTokenizer()),
+                        **kwargs), model
+
+
+def counts(encoder, texts, tmp_path):
     writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
     with writer.call("decide") as record:
-        encoder.embed(texts)
-    return record["counts"]["tokens"]
+        vectors = encoder.embed(texts)
+    return vectors, record["counts"]
+
+
+def test_packed_rows_give_the_same_vectors_as_encoding_each_text_alone():
+    encoder, model = packing()
+    np.testing.assert_allclose(encoder.embed(SHARED), alone(model, SHARED), atol=1e-5)
+
+
+def test_without_sharing_packed_rows_give_the_same_vectors():
+    encoder, model = packing(min_prefix=None)
+    np.testing.assert_allclose(encoder.embed(SHARED), alone(model, SHARED), atol=1e-5)
+
+
+def test_one_call_that_fits_is_one_row_with_no_padding(tmp_path):
+    encoder, _ = packing()
+    _, found = counts(encoder, SHARED, tmp_path)
+    assert found["encoder_batches"] == 1 and found["padded_tokens"] == found["tokens"]
+    assert encoder.model.lengths == [found["tokens"]]
 
 
 def test_a_shared_prefix_is_encoded_once(tmp_path):
-    encoder = TorchEncoder("test/encoder", None, "cpu", share_from_tokens=0, loaded=(tiny_qwen(), StubTokenizer()))
+    encoder, _ = packing()
     # The message and its blank line once, then each question's own tokens
-    assert encoded_tokens(encoder, SHARED[2:4], tmp_path) == len(SHARED[2]) + len("Which team?")
+    assert counts(encoder, SHARED[2:4], tmp_path)[1]["tokens"] == len(SHARED[2]) + len("Which team?")
 
 
-def test_a_little_work_is_encoded_in_one_pass(tmp_path):
-    # Two passes cost more than the tokens they save when the GPU is waiting rather than computing
-    encoder = TorchEncoder("test/encoder", None, "cpu", share_from_tokens=1024, loaded=(tiny_qwen(), StubTokenizer()))
-    assert encoded_tokens(encoder, SHARED[2:4], tmp_path) == len(SHARED[2]) + len(SHARED[3])
+def test_rows_stay_within_the_budget(tmp_path):
+    encoder, model = packing(budget=100)
+    vectors, found = counts(encoder, SHARED, tmp_path)
+    assert max(encoder.model.lengths) <= 100 and len(encoder.model.lengths) == found["encoder_batches"] > 1
+    assert found["padded_tokens"] == found["tokens"]
+    np.testing.assert_allclose(vectors, alone(model, SHARED), atol=1e-5)
+
+
+def test_a_group_too_big_for_a_row_is_split_with_its_start_repeated(tmp_path):
+    texts = SHARED[2:4] + [SHARED[0] + "\n\nWho asked?"]
+    encoder, model = packing(budget=len(texts[0]) + 3)
+    vectors, found = counts(encoder, texts, tmp_path)
+    assert max(encoder.model.lengths) <= len(texts[0]) + 3
+    # Each row repeats the message's start, so more tokens are encoded than when they share one row
+    assert found["tokens"] > len(texts[0]) + len("Which team?") + len("Who asked?")
+    np.testing.assert_allclose(vectors, alone(model, texts), atol=1e-5)

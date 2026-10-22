@@ -94,15 +94,14 @@ second (encoding's share of the time):
 | `decide`, one message at a time | 14.7 (95%) | 19.8 (94%) |
 | `decide_many`, 100 messages a call | 22.4 (93%) | 71.6 (87%) |
 
+- **Texts are packed end to end, with no padding**, on torch. A call's texts go into rows of up to
+  `batch_tokens` (4,096) tokens; an attention mask keeps each text to its own tokens, and positions
+  restart for each, so every vector is the one the text would get alone. Rows go to the GPU one after
+  another without waiting, and the vectors come back together at the end.
 - **Each message is encoded once for all its questions** on torch. CLM reads a message with each
-  question appended, so the texts start alike; the encoder runs the shared start once and each
-  question on its cached keys and values. That halved the tokens and took `decide_many` on the
-  A100 from 55 to 72 a second, with vectors matching the full encoding to a cosine of 0.9998.
-  It takes two passes, which only pays with enough to compute, so it is used from 1,024 tokens
-  at once: a single decision is about 120, and sharing slowed it from 20 to 11 a second. The
-  MLX build has its own encoder and does not do this.
-- **Batch size made no difference**: batches of 1,024 to 4,096 tokens took the same time, and
-  larger ones were slower, because they pad more.
+  question appended, so the texts start alike; within a row, the shared start comes once and each
+  question's own tokens attend to it. Before packing, that halved the tokens. The MLX build has its
+  own encoder and does neither.
 - Your tools' share grows as CLM gets faster. On the A100, the example's tools made a new HTTP
   client per call at first, about 17 ms each; that held `decide_many` to 23 a second until they
   shared one ([scenario.md](scenario.md#tools)).

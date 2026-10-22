@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from conftest import BASE_TOML, FakeRouter, decision
 from mcp import Client
-from test_clm_torch import CONFIG, FakeEncoder, StubTokenizer, TinyModel, tiny_weights
+from test_clm_torch import CONFIG, FakeEncoder, StubTokenizer, tiny_qwen, tiny_weights
 
 import clm_router
 import server
@@ -169,13 +169,14 @@ def test_the_torch_engine_counts_cache_texts_tokens_and_padding(tmp_path):
     # The second "new" is served by the first one's encoding
     assert (duplicates["cache_hits"], duplicates["cache_misses"]) == (1, 1)
 
-    encoder = TorchEncoder("test/encoder", None, "cpu", loaded=(TinyModel(), StubTokenizer()))
+    encoder = TorchEncoder("test/encoder", None, "cpu", loaded=(tiny_qwen(), StubTokenizer()))
     writer = tracing.TraceWriter(tmp_path / "encode.jsonl")
     with writer.call("encode"):
         encoder.embed(["ab", "abcd"])
     counts = lines(tmp_path / "encode.jsonl", writer)[0]["counts"]
+    # Both texts packed in one row, with no padding
     assert (counts["encoder_batches"], counts["texts_encoded"], counts["tokens"], counts["padded_tokens"]) == \
-        (1, 2, 6, 8)
+        (1, 2, 6, 6)
     assert counts["encode_ms"] >= 0
 
 

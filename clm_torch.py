@@ -138,13 +138,11 @@ class TorchEncoder:
 
     # pylint: disable-next=too-many-arguments,too-many-positional-arguments
     def __init__(self, repo: str, revision: str | None, device: str, max_tokens: int = 2048,
-                 batch_tokens: int = 4096, min_prefix: int | None = 8, share_from_tokens: int = 1024,
-                 loaded: tuple | None = None):
+                 batch_tokens: int = 4096, min_prefix: int | None = 8, loaded: tuple | None = None):
+        # Texts are packed end to end in rows of up to `batch_tokens` tokens, with no padding. Texts that start
+        # with the same `min_prefix` tokens or more share one encoding of that start in their row (None: never)
         self.device, self.max_tokens, self.batch_tokens = device, max_tokens, batch_tokens
-        # Texts that start with the same `min_prefix` tokens or more share one encoding of that start (None: never),
-        # when there are `share_from_tokens` tokens or more to encode. Sharing takes two passes, which only pays
-        # when the GPU has enough to compute: on an A100 it slowed a single decision from 20 to 11 a second
-        self.min_prefix, self.share_from_tokens = min_prefix, share_from_tokens
+        self.min_prefix = min_prefix
         if loaded is None:
             # pylint: disable-next=import-outside-toplevel
             from transformers import AutoModel, AutoTokenizer, logging as transformers_logging
@@ -158,17 +156,6 @@ class TorchEncoder:
         """Token ids, keeping the last `max_tokens`: the authors trained the heads on the end of long states."""
         ids = list(self.tokenizer(text)["input_ids"]) or list(self.tokenizer(" ")["input_ids"])
         return ids[-self.max_tokens:]
-
-    def _batches(self, id_lists: list[list[int]]):
-        """Groups of indexes into `id_lists`, shortest first, each within `batch_tokens` once padded."""
-        order = sorted(range(len(id_lists)), key=lambda i: len(id_lists[i]))
-        start = 0
-        while start < len(order):
-            end = start + 1            # in ascending length, the newest row is the longest in the batch
-            while end < len(order) and (end - start + 1) * len(id_lists[order[end]]) <= self.batch_tokens:
-                end += 1
-            yield order[start:end]
-            start = end
 
     def embed(self, texts: list[str]) -> np.ndarray:
         """[n, hidden] float32 unit vectors, in the order of `texts`."""
@@ -193,75 +180,96 @@ class TorchEncoder:
             start = end
         return found
 
+    def _units(self, id_lists: list[list[int]]) -> list[tuple[int, list[int]]]:
+        """[(shared start length, indexes into `id_lists`)], each within `batch_tokens` where it can be: a group
+        too big for one row is split, each part repeating the start. A text alone is a unit with a start of 0."""
+        units = []
+        for prefix, group in self._groups(id_lists):
+            part, size = [], prefix
+            for k in group:
+                rest = len(id_lists[k]) - prefix
+                if part and size + rest > self.batch_tokens:
+                    units.append((prefix, part))
+                    part, size = [], prefix
+                part, size = part + [k], size + rest
+            units.append((prefix, part))
+        return units
+
+    def _rows(self, units: list[tuple[int, list[int]]], id_lists: list[list[int]]) -> list[list[tuple[int, list[int]]]]:
+        """The units packed into rows of up to `batch_tokens` tokens: largest first, each into the first row
+        with room. A unit bigger than the budget (one text longer than it) gets a row of its own."""
+        def size(unit):
+            prefix, group = unit
+            return prefix + sum(len(id_lists[k]) - prefix for k in group)
+
+        rows: list[list] = []
+        room: list[int] = []
+        for unit in sorted(units, key=size, reverse=True):
+            row = next((r for r, left in enumerate(room) if size(unit) <= left), None)
+            if row is None:
+                rows.append([])
+                room.append(self.batch_tokens)
+                row = len(rows) - 1
+            rows[row].append(unit)
+            room[row] -= size(unit)
+        return rows
+
     def _embed(self, id_lists: list[list[int]]) -> np.ndarray:
-        """The vectors for lists of token ids. Texts that start alike, such as one message asked several questions,
-        have their start encoded once and each rest encoded on its cached keys and values."""
+        """The vectors for lists of token ids. Each row is sent to the GPU without waiting for the one before;
+        the vectors come back together at the end, so the CPU prepares a row while the GPU computes another."""
+        if not id_lists:
+            return np.zeros((0, 0), dtype=np.float32)
+        order, found = [], []
+        for row in self._rows(self._units(id_lists), id_lists):
+            order += [k for _, group in row for k in group]
+            found.append(self._encode_row(row, id_lists))
+        vectors = torch.cat(found).cpu().numpy()
         out: list = [None] * len(id_lists)
-        if sum(map(len, id_lists)) < self.share_from_tokens:
-            return np.stack(self._encode(id_lists)) if id_lists else np.zeros((0, 0), dtype=np.float32)
-        groups = self._groups(id_lists)
-        alone = [k for prefix, group in groups if not prefix for k in group]
-        for k, vector in zip(alone, self._encode([id_lists[k] for k in alone])):
+        for k, vector in zip(order, vectors):
             out[k] = vector
-        shared = [(prefix, group) for prefix, group in groups if prefix]
-        for batch in self._batches([id_lists[group[0]][:prefix] for prefix, group in shared]):
-            self._encode_shared([shared[k] for k in batch], id_lists, out)
-        return np.stack(out) if out else np.zeros((0, 0), dtype=np.float32)
+        return np.stack(out)
 
-    # One pass over prefixes and one over the rests, each needing its ids, masks and rows
+    def _on_device(self, values: list[int]) -> torch.Tensor:
+        # Pinned memory lets the copy to an NVIDIA GPU run without the CPU waiting for it
+        tensor = torch.tensor(values)
+        if str(self.device).startswith("cuda"):
+            tensor = tensor.pin_memory()
+        return tensor.to(self.device, non_blocking=True)
+
+    # Each token needs its id, position, unit, text and whether it is a shared start
     # pylint: disable-next=too-many-locals
-    def _encode_shared(self, groups: list[tuple[int, list[int]]], id_lists: list[list[int]], out: list) -> None:
-        """Encode each group's prefix once, then every text's rest on the prefix's cached keys and values."""
-        prefixes = [id_lists[group[0]][:prefix] for prefix, group in groups]
-        rows = [(g, k) for g, (_, group) in enumerate(groups) for k in group]
-        rests = [id_lists[k][groups[g][0]:] for g, k in rows]
-        tracing.add("encoder_batches", 2)
-        tracing.add("texts_encoded", len(rows))
-        tracing.add("tokens", sum(map(len, prefixes)) + sum(map(len, rests)))
-        tracing.add("padded_tokens", len(prefixes) * max(map(len, prefixes)) + len(rests) * max(map(len, rests)))
-        which = torch.tensor([g for g, _ in rows], device=self.device)
-        # Padding goes after each prefix and each rest; the masks keep the rests from attending to it, and
-        # explicit positions carry on from each prefix's own length
-        prefix_ids, prefix_mask = self._padded(prefixes)
-        rest_ids, rest_mask = self._padded(rests)
-        positions = (torch.tensor([groups[g][0] for g, _ in rows], device=self.device)[:, None]
-                     + torch.arange(rest_ids.shape[1], device=self.device)[None])
+    def _encode_row(self, row: list[tuple[int, list[int]]], id_lists: list[list[int]]) -> torch.Tensor:
+        """One row's vectors, on the device, in the row's order. Each unit's start comes first, then each text's
+        rest; a token attends to earlier tokens of its own text and of its unit's start, and to nothing else.
+        Positions carry on from the start, as if each text were encoded alone."""
+        ids, positions, units, texts, starts, last = [], [], [], [], [], []
+        for u, (prefix, group) in enumerate(row):
+            if prefix:
+                ids += id_lists[group[0]][:prefix]
+                positions += range(prefix)
+                units += [u] * prefix
+                texts += [-1] * prefix
+                starts += [1] * prefix
+            for k in group:
+                rest = id_lists[k][prefix:]
+                ids += rest
+                positions += range(prefix, prefix + len(rest))
+                units += [u] * len(rest)
+                texts += [k] * len(rest)
+                starts += [0] * len(rest)
+                last.append(len(ids) - 1)
+        tracing.add("encoder_batches")
+        tracing.add("texts_encoded", len(last))
+        tracing.add("tokens", len(ids))
+        tracing.add("padded_tokens", len(ids))
+        unit, text, start = self._on_device(units), self._on_device(texts), self._on_device(starts).bool()
+        index = torch.arange(len(ids), device=self.device)
+        mask = ((unit[:, None] == unit[None, :]) & (index[:, None] >= index[None, :])
+                & (start[None, :] | (text[:, None] == text[None, :])))
         with torch.inference_mode():
-            cache = self.model(input_ids=prefix_ids, attention_mask=prefix_mask, use_cache=True).past_key_values
-            cache.batch_select_indices(which)       # each text gets its group's prefix
-            hidden = self.model(input_ids=rest_ids, attention_mask=torch.cat([prefix_mask[which], rest_mask], dim=1),
-                                position_ids=positions, past_key_values=cache, use_cache=True).last_hidden_state
-            last = torch.tensor([len(r) - 1 for r in rests], device=self.device)
-            vectors = _unit(hidden[torch.arange(len(rows), device=self.device), last].float()).cpu().numpy()
-        for (_, k), vector in zip(rows, vectors):
-            out[k] = vector
-
-    def _padded(self, id_lists: list[list[int]]) -> tuple[torch.Tensor, torch.Tensor]:
-        """(ids, mask), each row padded at its end to the longest."""
-        longest = max(map(len, id_lists))
-        return (torch.tensor([ids + [0] * (longest - len(ids)) for ids in id_lists], device=self.device),
-                torch.tensor([[1] * len(ids) + [0] * (longest - len(ids)) for ids in id_lists], device=self.device))
-
-    def _encode(self, id_lists: list[list[int]]) -> list[np.ndarray]:
-        """The vectors for lists of token ids, each encoded in full, in batches of similar length."""
-        out: list = [None] * len(id_lists)
-        for batch in self._batches(id_lists):
-            rows = [id_lists[k] for k in batch]
-            longest = len(rows[-1])
-            tracing.add("encoder_batches")
-            tracing.add("texts_encoded", len(rows))
-            tracing.add("tokens", sum(map(len, rows)))
-            tracing.add("padded_tokens", len(rows) * longest)
-            # Padding goes after each text: attention is causal, so it cannot change a text's last token
-            ids = torch.tensor([row + [0] * (longest - len(row)) for row in rows], device=self.device)
-            mask = torch.tensor([[1] * len(row) + [0] * (longest - len(row)) for row in rows], device=self.device)
-            last = torch.tensor([len(row) - 1 for row in rows], device=self.device)
-            with torch.inference_mode():
-                hidden = self.model(input_ids=ids, attention_mask=mask).last_hidden_state
-                vectors = _unit(hidden[torch.arange(len(rows), device=self.device), last].float()).cpu().numpy()
-            for k, vector in zip(batch, vectors):
-                out[k] = vector
-        return out
+            hidden = self.model(input_ids=self._on_device(ids)[None], position_ids=self._on_device(positions)[None],
+                                attention_mask=mask[None, None]).last_hidden_state[0]
+            return _unit(hidden[self._on_device(last)].float())
 
 
 class TorchEngine:
