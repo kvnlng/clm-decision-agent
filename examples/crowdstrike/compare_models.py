@@ -30,8 +30,11 @@ CLAUDE = {"sonnet": "claude-sonnet-5-5", "haiku": "claude-haiku-5-5"}
 LOCAL = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
 # US dollars per million tokens, from https://platform.claude.com/docs/en/about-claude/pricing on the date
 # given; filled in on the day of the run, never from memory
-PRICES: dict[str, dict[str, float]] = {}
-PRICES_DATE = ""
+PRICES: dict[str, dict[str, float]] = {
+    "claude-sonnet-5-5": {"input": 2.0, "output": 10.0, "cache_write": 2.5, "cache_read": 0.10},
+    "claude-haiku-5-5": {"input": 0.10, "output": 0.50, "cache_write": 0.125, "cache_read": 0.01},   # prompts to 100k
+}
+PRICES_DATE = "2026-10-22"
 FORMAT = {"type": "json_schema", "schema": {
     "type": "object", "properties": {"route": {"type": "string", "enum": list(ROUTES)}, "option": {"type": "string"}},
     "required": ["route", "option"], "additionalProperties": False}}
