@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import clm_schema
-from decision import heard
+from decision import heard, routed_text
 from record import route_verdicts
 from scenario import Scenario
 
@@ -80,6 +80,11 @@ def _row(scenario: Scenario, example: dict, text: str | None = None) -> dict:
     row = {"text": text if text is not None else example["text"], "route": example["route"],
            "answers": labels(scenario, example), "facts": everything, "heard": hearing, "options": None,
            "option": None}
+    if isinstance(facts, dict) and text is None:
+        # The server routes on the message and routing's facts, so the route trains on the same text
+        routing = [fact for tool in scenario.route_inform for fact in facts.get(tool, [])]
+        if routing:
+            row.update(text=routed_text(example["text"], routing), message=example["text"])
     if "options" in example or "option" in example:
         if scenario.routes[example["route"]].options is None:
             raise ValueError(f"routes.{example['route']} has no options to choose among")
@@ -108,7 +113,7 @@ def training_rows(scenario: Scenario, examples: list[dict], records: list[dict])
             except ValueError as error:
                 raise ValueError(f"line {number}: {error}") from error
             (test if split_of(example["text"]) == "test" else train).append(row)
-    held_back = {row["text"] for row in test}
+    held_back = {row.get("message", row["text"]) for row in test}
     # A reviewed route's text may carry routing's facts after the message; the message is what repeats an example
     reviewed = [reviewed_row(scenario, verdict) for verdict in route_verdicts(records, scenario)
                 if message_of(verdict["state_text"]) not in held_back]

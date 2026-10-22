@@ -153,3 +153,24 @@ def test_a_whole_number_sent_as_a_float_is_a_level(questions):
     assert labels(questions, line(answers={"level": 2.0})) == {"level": 2}
     with pytest.raises(ValueError, match=re.escape("questions.level: 1.5 is not a level")):
         labels(questions, line(answers={"level": 1.5}))
+
+
+ROUTING = QUESTIONS.replace('confidence_threshold = 0.6\n', 'confidence_threshold = 0.6\ninform = ["flaky"]\n')
+
+
+def test_an_examples_lines_routing_facts_are_in_the_text_the_route_reads(write_scenario):
+    # The server routes on the message and routing's facts, so an examples line trains the route on the same
+    routing = load_scenario(write_scenario(ROUTING))
+    texts = [f"message number {i}" for i in range(40)]
+    lines = [line(text=t, facts={"flaky": ["The fare is refundable."], "lookup": ["The queue is A."]})
+             for t in texts]
+    train, _, test = training_rows(routing, lines, [])
+    rows = train + test
+    assert {row["text"] for row in rows} == {f"{t}\n\nKnown:\n- The fare is refundable." for t in texts}
+    assert {row["message"] for row in test} == {t for t in texts if split_of(t) == "test"}
+    assert rows[0]["facts"] == ["The fare is refundable.", "The queue is A."]
+    # a reviewed route repeating a held-back example's message is still left out
+    held = next(t for t in texts if split_of(t) == "test")
+    records = [{"kind": "route", "state_text": f"{held}\n\nKnown:\n- The fare is refundable.", "human": "Billing",
+                "clm": {"route": "Tech", "confidence": 0.8, "probabilities": {}}}]
+    assert training_rows(routing, lines, records)[1] == []
