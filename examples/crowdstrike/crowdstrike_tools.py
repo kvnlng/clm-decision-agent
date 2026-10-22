@@ -102,13 +102,17 @@ def _alternatives(booking: Booking, world: World, found: Situation, deadlines: l
             return f"The soonest {whose} {seats} {_lands(journeys[0].arr, booking, world, deadlines)}{sooner}."
         return f"{none} {seats} {there}."
 
+    def enough(journeys: tuple[Journey, ...]) -> bool:
+        # The next kind matters only if this one has nothing, or lands after a time the message mentions
+        return bool(journeys) and all(journeys[0].arr <= by for _, by in deadlines)
+
     facts = [soonest(found.own, "of our own flights today", "None of our own flights today")]
-    if found.own:
+    if enough(found.own):
         return facts
     airline = group(world.flights[booking.legs[0]].carrier)
     if booking.fare.partner_ok and PARTNERS.get(airline):
         facts.append(soonest(found.partner, "partner flight today", "No partner flight today"))
-        if found.partner:
+        if enough(found.partner):
             return facts
     if found.tomorrow:
         facts.append(f"Our first flight tomorrow morning {seats} "

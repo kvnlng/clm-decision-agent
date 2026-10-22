@@ -310,3 +310,16 @@ def test_check_reports_per_class():
     assert found["answers"]["travel_mode"] == {"air": (0, 1)}
     assert found["answers"]["upset"] == {2: (0, 1)}
     assert "Rebook" in report(found) and "2 of 2" in report(found)
+
+
+def test_a_time_ours_misses_brings_the_partner_and_tomorrow(world):
+    # Our T1 lands 09:00, after the 08:30 mentioned, so the partner's P1 (08:10) is what the label turns on
+    one = booking(fare=Fare(refundable=False, partner_ok=True))
+    use(world, one)
+    found = facts(one, "I must be in B by 08:30")
+    assert "The soonest partner flight today with seats for all of them lands at 08:10, before the 08:30 they " \
+           "mention." in found
+    assert not any("tomorrow" in fact for fact in found)
+    # Without a partner, tomorrow is stated too
+    use(world, replace(one, fare=Fare(refundable=False, partner_ok=False)))
+    assert any("tomorrow morning" in fact for fact in facts(one, "I must be in B by 08:30"))
