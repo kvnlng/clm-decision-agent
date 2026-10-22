@@ -1,0 +1,78 @@
+# Decisions for the CrowdStrike day, 19 July 2024: every passenger whose flight was cancelled or badly
+# delayed writes in, and the server decides what to do for them under this demo's policy (policy.md).
+# The routes' descriptions are policy.md's sections, word for word: a test checks that they match.
+# Run with the context {"booking": "<id>", "now": <minute>}: the tools find the booking from it.
+
+# Keep one of the two blocks below and comment out the other.
+[clm]
+# On a Mac with Apple Silicon: the MLX build
+backend = "mlx"
+model_id = "mlx-community/CLM-v0.1-8B-MLX-8bit"
+# On Linux with an NVIDIA GPU: the authors' release with PyTorch
+# backend = "torch"
+# model_id = "Contrastive-LM/CLM-v0.1-8B"
+heads = "scenario.heads"            # trained heads, made by train.py; the released ones are used until then
+
+[routing]
+instructions = "What should we do for this passenger?"
+confidence_threshold = 0.6          # below this the decision is marked uncertain and no action runs
+inform = ["situation"]              # the route hears the passenger's situation: what happened, and what is possible
+
+[tools]
+module = "crowdstrike_tools"        # a Python file beside this scenario
+
+[tools.settings]
+seed = 0                            # the day's seats and passengers; the training examples use seed 1
+
+# Flight facts would sway how upset or vulnerable a passenger seems, so no question hears them
+[tools.inform.situation]
+questions = []
+
+[routes.Rebook]
+description = "The passenger still wants to travel, and one of our own airline's flights today has seats for the whole party and gets them there sooner than their own flight now will, in time for anything they must not miss. Book them on the flight that arrives first."
+
+[routes.Rebook_Partner]
+description = "The passenger still wants to travel and none of our own flights today will do: none has seats, or none arrives in time for something they must not miss. A partner airline's flight today will, and their fare allows partner airlines. Book them on the partner flight that arrives first."
+
+[routes.Overnight]
+description = "The passenger still wants to travel, but no flight today has seats for the whole party, and nothing they mention needs them to arrive tonight. Book a hotel for tonight and our first flight tomorrow morning."
+
+[routes.Refund]
+description = "The passenger no longer wants to travel, or they must arrive by a time that no flight can meet and their fare is refundable. Refund the fare."
+
+[routes.Agent]
+description = "The message is too vague to tell what the passenger needs, or nothing else fits: they must arrive by a time no flight meets and the fare can't be refunded, or there are no seats today or tomorrow morning. Hand the case to a person."
+
+[routes.No_Action]
+description = "The passenger's own flights still go and still get them there soonest: a short delay, or a longer one with nothing faster, and any connection still works. Nothing needs changing."
+
+[questions.deadline]
+type = "score"
+instructions = "Is there a time the passenger needs to arrive by, and how firm is it?"
+criteria = ["No time they need to arrive by", "A time they would like to arrive by", "A time they must arrive by"]
+
+[questions.vulnerable]
+type = "noul"
+instructions = "Is someone in the party who needs special care: a small child, an elderly or disabled person, or someone pregnant?"
+
+[questions.travel_mode]
+type = "choice"
+instructions = "How would the passenger like to travel?"
+criteria = { air = "By air", rail = "By train", either = "By train or by air, either will do" }
+
+[questions.upset]
+type = "score"
+instructions = "How upset is the passenger?"
+criteria = ["Calm", "Annoyed", "Angry"]
+
+[[rules]]
+when = "upset >= 1.5"
+tell = "Apologise first and offer a meal voucher."
+
+[[rules]]
+when = "vulnerable >= 0.5"
+tell = "Offer assistance at the airport and priority boarding."
+
+[[rules]]
+when = "travel_mode == rail"
+tell = "Say that this policy rebooks on flights only."
