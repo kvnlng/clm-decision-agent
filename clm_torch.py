@@ -147,10 +147,16 @@ class TorchEncoder:
             # pylint: disable-next=import-outside-toplevel
             from transformers import AutoModel, AutoTokenizer, logging as transformers_logging
             transformers_logging.set_verbosity_error()
-            model = AutoModel.from_pretrained(repo, revision=revision, dtype=torch.bfloat16).to(device)
+            model = AutoModel.from_pretrained(repo, revision=revision, dtype=torch.bfloat16,
+                                              attn_implementation="sdpa").to(device)
             model.eval()
             loaded = (model, AutoTokenizer.from_pretrained(repo, revision=revision))
         self.model, self.tokenizer = loaded
+        # Packed rows rely on SDPA taking a true/false mask; eager attention would add it to its scores and
+        # mask nothing, and flash attention takes only padding masks
+        attention = getattr(getattr(self.model, "config", None), "_attn_implementation", "sdpa")
+        if attention != "sdpa":
+            raise ClmError(f"The encoder must use sdpa attention for packed rows, not {attention}")
 
     def ids(self, text: str) -> list[int]:
         """Token ids, keeping the last `max_tokens`: the authors trained the heads on the end of long states."""

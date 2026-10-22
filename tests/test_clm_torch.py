@@ -233,14 +233,14 @@ def test_prefetch_encodes_states_in_one_call():
     assert len(encoder.asked) == asked
 
 
-def tiny_qwen():
+def tiny_qwen(attention="sdpa"):
     """A small random Qwen3, CLM's encoder architecture, to check against the real attention and cache."""
     from transformers import AutoModel, Qwen3Config  # pylint: disable=import-outside-toplevel
     torch.manual_seed(0)
     config = Qwen3Config(  # pylint: disable=unexpected-keyword-arg
         vocab_size=128, hidden_size=HIDDEN, intermediate_size=64, num_hidden_layers=2, num_attention_heads=4,
         num_key_value_heads=2, head_dim=8, max_position_embeddings=256)
-    return AutoModel.from_config(config).eval()
+    return AutoModel.from_config(config, attn_implementation=attention).eval()
 
 
 SHARED = ["Please give me access to the oncology registry for an audit next week",
@@ -298,6 +298,12 @@ def test_one_call_that_fits_is_one_row_with_no_padding(tmp_path):
     _, found = counts(encoder, SHARED, tmp_path)
     assert found["encoder_batches"] == 1 and found["padded_tokens"] == found["tokens"]
     assert encoder.model.lengths == [found["tokens"]]
+
+
+def test_an_encoder_whose_attention_ignores_the_packing_mask_is_refused():
+    # Eager attention adds a ready-made mask to its scores, so a true/false mask would mask nothing
+    with pytest.raises(ClmError, match="sdpa"):
+        TorchEncoder("test/encoder", None, "cpu", loaded=(tiny_qwen("eager"), StubTokenizer()))
 
 
 def test_a_shared_prefix_is_encoded_once(tmp_path):
