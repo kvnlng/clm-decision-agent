@@ -177,6 +177,32 @@ Per route (right of 100):
 - The comparison cost about $1.05 in API calls (600 cases on each Claude model, at about 1,370 input
   tokens a case, 852 of them cached).
 
+### An agent's proposals, checked
+
+```bash
+uv run python examples/crowdstrike/check_calls.py examples/crowdstrike/scenario.toml
+```
+
+Another airline's agent, run by its own AI, proposes both a rebooking (`hold_seats`) and a refund
+(`issue_refund`) for the same passenger, and asks `check_call` about each: the message and the proposed
+call, nothing else. On the 200 check cases whose right answer is Rebook or Refund (the M5 Max, trained
+heads, approved at 0.5):
+
+| Right answer | Rebooking approved | Refund approved | Caught: right approved, wrong refused | Right call has the higher probability |
+|---|---|---|---|---|
+| Rebook (100) | 62 | 29 | 36 | 82 |
+| Refund (100) | 15 | 83 | 78 | 87 |
+
+- **As a yes or no, `check_call` is weak here:** it caught 114 of 200. It approved the refund for 29
+  passengers who wanted to travel, and refused the rebooking for 38 of them. No threshold does better:
+  0.4 caught 111, 0.6 caught 103. Training covered the route and the questions, not `check_call`'s own
+  question.
+- **Compared with each other, the two proposals are told apart in 169 of 200.** An agent unsure between
+  calls can ask about each and take the more probable one.
+- **`decide` is the better check.** Its route was right for 162 of the same 200, and across all 600 check
+  cases 119 of its 152 wrong routes were marked uncertain, so no action ran. An agent that wants a second opinion on a
+  refund does better asking what to do than asking whether its own plan is right.
+
 ### The day at Atlanta, replayed
 
 Every booking starting at Atlanta, 9,704 bookings and 15,503 passengers, from 04:10 UTC on 19 July to
@@ -198,8 +224,9 @@ Agent 812 of 1,454, No_Action 1,262 of 1,532.
 - **Encoding is all the time.** The trace puts 100% of each `decide_many` call in CLM's encoding; the
   tools (searching for alternatives, holding seats) take about 3 ms a call.
 - **Too many go to a person.** The confidence threshold of 0.6 keeps wrong answers not marked uncertain to 5%,
-  but marks 43% of all bookings uncertain, most of them answered rightly. A lower threshold, chosen with
-  `evaluate.py` on corrections, or better-trained heads would move that balance.
+  but marks 43% of all bookings uncertain, most of them answered rightly. Lowering it is not the answer:
+  on the check cases `evaluate.py --cases` suggests 0.63 as the lowest threshold at which the routes kept
+  are 90% right. Better-trained heads are what would move that balance.
 - Seats lost to a race are real: 28 bookings were offered a journey whose last seats went to someone
   decided a moment earlier, and their hold failed visibly, as it should.
 
