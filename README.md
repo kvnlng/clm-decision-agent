@@ -104,10 +104,10 @@ decision. The correction is saved, and a near-identical request gets your route 
 train CLM on them and on your corrections, and see agreement rise:
 
 ```bash
-uv run python synthesize.py my_scenario.toml      # optional; needs a language model
-uv run python train.py my_scenario.toml
-uv run python evaluate.py my_scenario.toml                     # the corrections
-uv run python evaluate.py my_scenario.toml --cases cases.jsonl   # labelled cases, per class
+uv run python synthesize.py my_scenario/scenario.toml      # optional; needs a language model
+uv run python train.py my_scenario/scenario.toml
+uv run python evaluate.py my_scenario/scenario.toml        # the corrections
+uv run python evaluate.py my_scenario/scenario.toml --cases my_scenario/scenario.cases.jsonl
 ```
 
 [docs/fine-tuning.md](docs/fine-tuning.md) has the details.
@@ -117,7 +117,7 @@ uv run python evaluate.py my_scenario.toml --cases cases.jsonl   # labelled case
 
 ```bash
 export DECISION_SERVER_KEY=<a long random key>
-uv run python server.py my_scenario.toml --http
+uv run python server.py my_scenario/scenario.toml --http
 ```
 
 **The server acts without asking.** When a decision calls for an acting tool, the tool runs

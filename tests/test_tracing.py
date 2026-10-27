@@ -74,7 +74,8 @@ def test_counting_outside_a_traced_call_does_nothing(tmp_path):
 
 
 def test_a_trace_that_cannot_be_written_leaves_calls_working(tmp_path, capsys):
-    writer = tracing.TraceWriter(tmp_path / "missing" / "trace.jsonl")
+    (tmp_path / "taken").write_text("a file where the folder should be")
+    writer = tracing.TraceWriter(tmp_path / "taken" / "trace.jsonl")
     for _ in range(3):
         with writer.call("decide"):
             pass
@@ -342,3 +343,10 @@ def test_the_report_counts_decisions_for_decide_many():
     summary = trace_report.summarise(records)["decide_many"]
     assert summary["decisions"] == 100 and summary["per_second"] == pytest.approx(100 / 2.0)
     assert "100 decisions" in trace_report.report({"decide_many": summary})
+
+
+def test_the_trace_file_s_folder_is_made_if_missing(tmp_path):
+    writer = tracing.TraceWriter(tmp_path / "runs" / "trace.jsonl")
+    with writer.call("decide", TEXT):
+        pass
+    assert len(lines(tmp_path / "runs" / "trace.jsonl", writer)) == 1

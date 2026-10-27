@@ -75,6 +75,8 @@ class TraceWriter:
             try:
                 line = json.dumps(record) + "\n"
                 # Opened once and kept open for the writer's life, so it is closed below, not by a with
+                if file is None:
+                    self.path.parent.mkdir(parents=True, exist_ok=True)
                 file = file or self.path.open("a", encoding="utf-8")  # pylint: disable=consider-using-with
                 file.write(line)
                 if self._records.empty():

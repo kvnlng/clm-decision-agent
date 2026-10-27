@@ -204,3 +204,19 @@ def test_main_scores_a_cases_file_through_the_tools_without_actions(write_scenar
     assert "Route: 1 of 2 (50%): Billing 1 of 1, Tech 0 of 1" in out
     assert "urgent: 1 of 1" in out
     assert [name for name, _ in fake_tools.CALLS] == ["lookup", "lookup"]   # informed, and no action ran
+
+
+@pytest.mark.parametrize("lines, message", [
+    ([], "has no cases"),
+    (['{"text": "charged twice"}'], "line 1: a case needs"),
+    (['{"text": "charged twice", "route": "Billing"}', '{"text": "x", "route": "Refnd"}'],
+     "line 2: route 'Refnd' is not one of the scenario's routes"),
+    (['["not", "a", "case"]'], "line 1: a case needs"),
+    (['{"text": "a", "route": "Billing"}', "not json"], "line 2:")])
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def test_bad_cases_are_one_line_before_clm_loads(write_scenario, tmp_path, monkeypatch, capsys, lines, message):
+    cases = tmp_path / "cases.jsonl"
+    cases.write_text("".join(line + "\n" for line in lines))
+    monkeypatch.setattr(clm_router, "make_router", lambda scenario: pytest.fail("CLM loaded"))
+    assert main([str(write_scenario()), "--cases", str(cases)]) == 2
+    assert message in capsys.readouterr().err

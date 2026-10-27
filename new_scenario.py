@@ -40,6 +40,7 @@ messages = "messages that customers might send to an online shop's help desk"
 [routing]
 instructions = "What does the customer need?"
 confidence_threshold = 0.6          # below this the decision is marked uncertain and no action runs
+inform = ["order_status"]           # run first: the route is decided with the order's facts
 
 [tools]
 module = "{module}"                 # {module}.py beside this file
@@ -47,19 +48,17 @@ module = "{module}"                 # {module}.py beside this file
 [tools.settings]
 backend = "mock"                    # "live" once its functions in {module}.py are written
 
-# The order's facts bear on the route's question, not on how urgent the customer is
+# The order's facts go to the route, not to the question of how urgent the customer is
 [tools.inform.order_status]
 questions = []
 
 [routes.Refund]
 description = "The customer wants their money back for an order."
 examples = ["The kettle arrived broken, I want a refund"]
-inform = ["order_status"]
 
 [routes.Where_Is_It]
 description = "The customer is asking where their order is or when it will arrive."
 examples = ["My parcel was due on Monday and still hasn't come"]
-inform = ["order_status"]
 
 # CLM always picks one of the routes, so a scenario needs one for requests it does not cover.
 [routes.Other]
@@ -209,7 +208,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Start a new scenario in a folder of its own.")
     parser.add_argument("folder", type=Path, help="the folder to create; it must be new or empty")
     args = parser.parse_args(argv)
-    if args.folder.exists() and (not args.folder.is_dir() or any(args.folder.iterdir())):
+    if args.folder.exists() and not args.folder.is_dir():
+        print(f"error: {args.folder} is a file; choose a new folder", file=sys.stderr)
+        return 2
+    if args.folder.exists() and any(args.folder.iterdir()):
         print(f"error: {args.folder} is not empty; choose a new folder", file=sys.stderr)
         return 2
     scenario = write(args.folder)

@@ -40,6 +40,7 @@ def test_the_mock_tools_inform_and_act(made):
     reply = decision.decide_many([{"text": "It arrived broken, I want my money back", "context": {"order": "A100"}}],
                                  scenario, router, load_tools(scenario))[0]
     assert any("A100" in fact for fact in reply["informed"][0]["facts"])
+    assert "delivered 2 days ago" in router.states[-1]          # the route was decided with the order's facts
     assert reply["actions"][0]["tool"] == "open_case" and reply["actions"][0]["status"] == "done"
 
 

@@ -18,8 +18,8 @@ This writes a small scenario that works straight away, for a shop's customer mes
 - `scenario.cases.jsonl`, a few labelled cases to check it on.
 
 The `[clm]` block suits the machine: MLX on a Mac with Apple Silicon, torch elsewhere. Run
-`evaluate.py my_scenario/scenario.toml --cases my_scenario/scenario.cases.jsonl` to see it decide
-before you change anything. Then edit each part into your own.
+`uv run python evaluate.py my_scenario/scenario.toml --cases my_scenario/scenario.cases.jsonl` to see
+it decide before you change anything. Then edit each part into your own.
 
 ## 2. Write the policy as routes
 

@@ -274,11 +274,32 @@ def format_report(result: dict, scenario) -> str:
     return "\n".join(lines)
 
 
+def load_cases(path: Path, scenario) -> list[dict]:
+    """The labelled cases of a file, checked: a ScenarioError names the first bad line."""
+    cases = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            case = json.loads(line)
+        except ValueError as error:
+            raise ScenarioError(f"{path.name} line {number}: not JSON ({error})") from error
+        if not isinstance(case, dict) or not isinstance(case.get("text"), str) or "route" not in case:
+            raise ScenarioError(f"{path.name} line {number}: a case needs \"text\" and \"route\"")
+        if case["route"] not in scenario.routes:
+            raise ScenarioError(f"{path.name} line {number}: route {case['route']!r} is not one of the scenario's "
+                                f"routes")
+        cases.append(case)
+    if not cases:
+        raise ScenarioError(f"{path.name} has no cases")
+    return cases
+
+
 def _main_cases(path: Path, scenario_path: str) -> int:
     try:
         scenario = replace(load_scenario(scenario_path), actions=())
+        cases = load_cases(path, scenario)
         tools = load_tools(scenario)
-        cases = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     except (ScenarioError, OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

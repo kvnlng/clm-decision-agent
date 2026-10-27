@@ -69,10 +69,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         scenario = load_scenario(args.scenario)
-    except ScenarioError as error:
+        cases = [json.loads(line) for line in args.cases.read_text(encoding="utf-8").splitlines() if line.strip()]
+    except (ScenarioError, OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    cases = [json.loads(line) for line in args.cases.read_text(encoding="utf-8").splitlines() if line]
     from clm_router import ClmError, make_router  # pylint: disable=import-outside-toplevel
     try:
         router, note = make_router(scenario)

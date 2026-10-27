@@ -194,8 +194,8 @@ heads, approved at 0.5):
 | Refund (100) | 15 | 83 | 78 | 87 |
 
 - **As a yes or no, `check_call` is weak here:** it caught 114 of 200. It approved the refund for 29
-  passengers who wanted to travel, and refused the rebooking for 38 of them. No threshold does better:
-  0.4 caught 111, 0.6 caught 103. Training covered the route and the questions, not `check_call`'s own
+  passengers who wanted to travel, and refused the rebooking for 38 of them. No threshold does
+  materially better: the best, about 0.49, caught 116; 0.4 caught 111, 0.6 caught 103. Training covered the route and the questions, not `check_call`'s own
   question.
 - **Compared with each other, the two proposals are told apart in 169 of 200.** An agent unsure between
   calls can ask about each and take the more probable one.
@@ -247,15 +247,15 @@ The Mac's rate is from Atlanta's replay, the A100's from the first 27,511 bookin
 run was stopped to change machines), the H100's from the whole day: 32.5 minutes for all 99,806.
 "Falls behind" is a queue, minute by minute, of the day's arrivals at each rate.
 
-- **One A100 keeps up with the whole day; an H100 has almost five times the busiest minute to
-  spare.** The Mac does not keep up at the peaks: a passenger writing then would wait up to 4.5
+- **One A100 keeps up with the whole day; an H100 decides 4.8 times as many as the busiest minute
+  needs.** The Mac does not keep up at the peaks: a passenger writing then would wait up to 4.5
   minutes.
 - **On the first 3,000 bookings**, rows of 1,024, 2,048 and 4,096 tokens gave 18.8, 18.8 and 17.5 a
   second on the A100 and 45.4, 46.6 and 43.7 on the H100: about 2.5 times as fast, with 2,048 (the
-  default) best on both. The A100 managed 10.8 a second before texts were packed into rows without
-  padding and every request's options were ranked in one pass.
-- **The GPU is the limit.** Encoding is 96% of each call on both GPUs. The H100 was busy 85% of the
-  run on average, drawing about 480 of its 700 W when sampled and using 16 GB of its 80; the server used one CPU core,
+  default) best on both. Before texts were packed into rows without padding and every request's options
+  were ranked in one pass, the A100 managed 11.0 a second over the day's first 40,717 bookings.
+- **The GPU is the limit.** Encoding is 96% of each call on both GPUs. The H100 was busy 82% of the
+  run on average (sampled every 5 seconds), drawing about 480 of its 700 W when sampled and using 16 GB of its 80; the server used one CPU core,
   most of it waiting for the GPU.
 - **Two copies of the model on one H100 are not faster.** Run side by side on the same 3,000 bookings
   they made 24.2 and 24.1 a second, 48.3 together against one copy's 46.6: one copy already fills the
