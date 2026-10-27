@@ -88,9 +88,10 @@ you> I need access to the oncology registry for an audit, needed this week
 `/routes` shows the scenario's routes and questions, and `/quit` ends the chat.
 [examples/service_desk/README.md](examples/service_desk/README.md) walks through it.
 
-**3. Write your own scenario.** Copy `examples/service_desk/` to a folder of your own and edit
-`scenario.toml` and the tools file beside it: [docs/scenario.md](docs/scenario.md) explains
-every part.
+**3. Write your own scenario.** `uv run python new_scenario.py my_scenario` starts a folder with a
+working scenario, a tools module with mock backends and labelled cases to edit into your own.
+[docs/walkthrough.md](docs/walkthrough.md) goes through building one step by step, and
+[docs/scenario.md](docs/scenario.md) explains every part.
 
 **4. Check it.** Start the chat with your scenario. A mistake in the file stops start-up with
 one line naming the setting.
@@ -105,7 +106,8 @@ train CLM on them and on your corrections, and see agreement rise:
 ```bash
 uv run python synthesize.py my_scenario.toml      # optional; needs a language model
 uv run python train.py my_scenario.toml
-uv run python evaluate.py my_scenario.toml
+uv run python evaluate.py my_scenario.toml                     # the corrections
+uv run python evaluate.py my_scenario.toml --cases cases.jsonl   # labelled cases, per class
 ```
 
 [docs/fine-tuning.md](docs/fine-tuning.md) has the details.
@@ -165,10 +167,12 @@ Measured on the example scenario, on an M5 Max with 64 GB:
 | `clm_router.py` | Loads CLM with either backend; routing and the reuse of corrections |
 | `clm_torch.py`, `clm_schema.py`, `clm_common.py` | CLM with PyTorch; the authors' question format, copied unchanged; what both share |
 | `tools.py` | Loads a scenario's tools |
-| `record.py`, `evaluate.py` | The corrections record and its replay |
+| `record.py`, `evaluate.py` | The corrections record; its replay, or a file of labelled cases, scored per class |
+| `new_scenario.py` | Starts a scenario folder: scenario, tools with mock backends, labelled cases |
 | `tracing.py`, `trace_report.py` | `server.py --trace`: where each call's time went, and its summary |
 | `dataset.py`, `synthesize.py`, `train.py`, `generator.py` | Training, and the language model that writes examples |
 | `examples/service_desk/` | The worked example, with a stand-in issue tracker |
+| `examples/crowdstrike/` | A whole day of a real disruption, replayed through the server: the benchmark ([docs/findings.md](docs/findings.md)) |
 | `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads CLM; `CLM_TEST_BACKEND=torch` for the torch backend) |
 | `Dockerfile` | The project on Linux, for the torch backend |
 

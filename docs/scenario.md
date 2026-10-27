@@ -116,6 +116,10 @@ It returns anything JSON can hold. To report a failure, raise an exception with 
 person can act on: the reply lists that tool as `failed` with the message, and the decision is
 still returned.
 
+Give each tool a mock backend as well as the live one, switched by a setting such as
+`backend = "mock"`, so the scenario can be trained and checked before real systems are connected:
+`new_scenario.py` writes tools that way ([walkthrough.md](walkthrough.md#4-act-on-it-acting-tools)).
+
 Make clients and connections once, in `configure()`, and reuse them: an HTTP client made on every
 call can cost more than CLM's part of the decision. The server calls tools from several threads
 at once, so whatever they share must allow that, as an `httpx.Client` does.
