@@ -16,7 +16,6 @@ from messages import BUCKETS, Pool
 from passengers import Fare
 from policy import ROUTES, answer
 from world import World
-from check import report, score
 from write_examples import example
 
 import decision
@@ -289,27 +288,6 @@ def test_examples_load_in_train(world):
     rows = train + test
     assert len(rows) == 3 and all("\n\nKnown:\n- The booking" in row["text"] for row in rows)
     assert {row["route"] for row in rows} == {"Rebook", "No_Action"}
-
-
-def test_check_reports_per_class():
-    cases = [{"route": "Rebook", "option": "T1", "answers": {"deadline": 2, "vulnerable": True, "travel_mode": "air"}},
-             {"route": "Rebook", "option": "T1", "answers": {"deadline": 0, "vulnerable": False}},
-             {"route": "Refund", "answers": {"upset": 2}}]
-    replies = [{"route": "Rebook", "uncertain": False, "option": {"id": "T1"},
-                "answers": {"deadline": {"type": "score", "score": 1.6}, "vulnerable": {"type": "noul", "noul": 0.7},
-                            "travel_mode": {"type": "choice", "choice": "rail"}}},
-               {"route": "Rebook", "uncertain": False, "option": {"id": "T2"},
-                "answers": {"deadline": {"type": "score", "score": 0.4}, "vulnerable": {"type": "noul", "noul": 0.6}}},
-               {"route": "Agent", "uncertain": True, "answers": {"upset": {"type": "score", "score": 1.2}}}]
-    found = score(cases, replies)
-    assert found["route"] == {"Rebook": (2, 2), "Refund": (0, 1)}
-    assert found["option"] == {"Rebook": (1, 2)}
-    assert found["wrong_uncertain"] == (1, 1)
-    assert found["answers"]["deadline"] == {0: (1, 1), 2: (1, 1)}
-    assert found["answers"]["vulnerable"] == {True: (1, 1), False: (0, 1)}
-    assert found["answers"]["travel_mode"] == {"air": (0, 1)}
-    assert found["answers"]["upset"] == {2: (0, 1)}
-    assert "Rebook" in report(found) and "2 of 2" in report(found)
 
 
 def test_a_time_ours_misses_brings_the_partner_and_tomorrow(world):

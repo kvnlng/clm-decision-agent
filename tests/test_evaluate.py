@@ -3,11 +3,14 @@
 # Fakes mirror real interfaces (so some arguments go unused) and note what they were called with.
 # pylint: disable=missing-function-docstring,missing-class-docstring,redefined-outer-name
 # pylint: disable=unused-argument,attribute-defined-outside-init,use-implicit-booleaness-not-comparison
+import json
+
 import pytest
 from conftest import FakeRouter, decision
 
 import clm_router
-from evaluate import agreement, confidence_bands, evaluate, format_report, main, match_report, suggest_threshold
+from evaluate import (agreement, confidence_bands, evaluate, format_cases_report, format_report, main, match_report,
+                      score_cases, suggest_threshold)
 from record import save_correction
 from scenario import load_scenario
 
@@ -147,3 +150,57 @@ def test_a_corrected_answer_is_replayed_with_only_the_facts_its_question_hears(w
                         vectors={"User: refund": [1.0, 0.0]})
     evaluate(records, scenario, router)
     assert router.ask_calls[0][0] == "User: refund"
+
+
+def test_cases_are_scored_per_class():
+    cases = [{"route": "Rebook", "option": "T1", "answers": {"deadline": 2, "vulnerable": True, "travel_mode": "air"}},
+             {"route": "Rebook", "option": "T1", "answers": {"deadline": 0, "vulnerable": False}},
+             {"route": "Refund", "answers": {"upset": 2}}]
+    replies = [{"route": "Rebook", "uncertain": False, "option": {"id": "T1"},
+                "answers": {"deadline": {"type": "score", "score": 1.6}, "vulnerable": {"type": "noul", "noul": 0.7},
+                            "travel_mode": {"type": "choice", "choice": "rail"}}},
+               {"route": "Rebook", "uncertain": False, "option": {"id": "T2"},
+                "answers": {"deadline": {"type": "score", "score": 0.4}, "vulnerable": {"type": "noul", "noul": 0.6}}},
+               {"route": "Agent", "uncertain": True, "answers": {"upset": {"type": "score", "score": 1.2}}}]
+    found = score_cases(cases, replies)
+    assert found["route"] == {"Rebook": (2, 2), "Refund": (0, 1)}
+    assert found["option"] == {"Rebook": (1, 2)}
+    assert found["wrong_uncertain"] == (1, 1)
+    assert found["answers"]["deadline"] == {0: (1, 1), 2: (1, 1)}
+    assert found["answers"]["vulnerable"] == {True: (1, 1), False: (0, 1)}
+    assert found["answers"]["travel_mode"] == {"air": (0, 1)}
+    assert found["answers"]["upset"] == {2: (0, 1)}
+    assert "Rebook" in format_cases_report(found) and "2 of 2" in format_cases_report(found)
+
+
+def test_cases_suggest_a_threshold_from_the_route_confidence():
+    cases = [{"route": "Billing"}] * 4
+    replies = [{"route": route, "uncertain": confidence < 0.6, "confidence": confidence, "answers": {}}
+               for route, confidence in (("Billing", 0.95), ("Billing", 0.7), ("Tech", 0.65), ("Billing", 0.4))]
+    found = score_cases(cases, replies)
+    assert found["threshold"] == 0.7
+    assert "Suggested confidence_threshold: 0.70" in format_cases_report(found)
+
+
+def test_cases_without_confidence_suggest_no_threshold():
+    found = score_cases([{"route": "Billing"}], [{"route": "Billing", "uncertain": False, "answers": {}}])
+    assert found["threshold"] is None and "threshold" not in format_cases_report(found)
+
+
+def test_main_scores_a_cases_file_through_the_tools_without_actions(write_scenario, tmp_path, monkeypatch, capsys):
+    import fake_tools  # pylint: disable=import-outside-toplevel
+    cases = tmp_path / "check.cases.jsonl"
+    cases.write_text(json.dumps({"text": "charged twice", "context": {"user": 1}, "route": "Billing",
+                                 "answers": {"urgent": True}}) + "\n"
+                     + json.dumps({"text": "app crashed", "route": "Tech"}) + "\n")
+    router = FakeRouter({"route": "Billing", "confidence": 0.9, "probabilities": {"Billing": 0.9, "Tech": 0.1},
+                         "answers": {"urgent": {"type": "noul", "noul": 0.8}}, "source": "clm"},
+                        asks=[{"urgent": {"type": "noul", "noul": 0.8}}] * 2)  # both routed Billing: asked again
+                                                                               # with the lookup's facts
+    monkeypatch.setattr(clm_router, "make_router", lambda scenario: (router, "test heads"))
+    fake_tools.CALLS.clear()
+    assert main([str(write_scenario()), "--cases", str(cases)]) == 0
+    out = capsys.readouterr().out
+    assert "Route: 1 of 2 (50%): Billing 1 of 1, Tech 0 of 1" in out
+    assert "urgent: 1 of 1" in out
+    assert [name for name, _ in fake_tools.CALLS] == ["lookup", "lookup"]   # informed, and no action ran

@@ -1,4 +1,12 @@
-"""Replay the record against the current scenario: did an edit to scenario.toml make routing better?"""
+"""Did an edit to scenario.toml, or training, make the decisions better?
+
+    uv run python evaluate.py SCENARIO                     # replay the record of corrections
+    uv run python evaluate.py SCENARIO --cases FILE        # score a file of labelled cases
+
+A labelled case is one JSON line: {"text", "context" (optional), "route", "option" (optional, the right
+option's id), "answers" (optional, {question: the right answer})}. The cases go through the server's own
+steps with the scenario's tools, but no acting tool runs. Every score is per class ("41 of 50"), so a
+route or an answer that is never chosen cannot hide behind the others."""
 import os
 # Set before huggingface_hub is imported, which reads it at import time
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
@@ -6,14 +14,20 @@ os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 # pylint: disable=wrong-import-position
 
 import argparse
+import json
 import sys
 from collections import Counter
+from dataclasses import replace
+from pathlib import Path
 
 import clm_schema
 from dataset import reviewed_row
-from decision import routed_text
+from decision import decide_many, routed_text
 from record import route_verdicts, load_records, record_key
 from scenario import ScenarioError, load_scenario
+from tools import load_tools
+
+CASES_BATCH = 32
 
 
 def suggest_threshold(pairs: list[tuple[float, bool]], target: float = 0.9) -> float | None:
@@ -165,6 +179,80 @@ def _routing_lines(routing: dict, scenario) -> list[str]:
     return lines
 
 
+def _count(table: dict, key, right: bool) -> None:
+    hits, total = table.get(key, (0, 0))
+    table[key] = (hits + right, total + 1)
+
+
+def _value(answer: dict):
+    """A reply's answer as the cases write it: true or false, a level, or a choice's key."""
+    kind = answer["type"]
+    if kind == "noul":
+        return answer["noul"] >= 0.5
+    if kind == "score":
+        return round(answer["score"])
+    return answer["choice"]
+
+
+def score_cases(cases: list[dict], replies: list[dict]) -> dict:
+    """Per class, (right, of): the route, the option where the route was right, and each question's answers;
+    how many wrong routes were marked uncertain, so no action would have run; and the confidence threshold
+    that would make the routes kept 90% right, when the replies carry a confidence."""
+    found: dict = {"route": {}, "option": {}, "answers": {}, "wrong_uncertain": (0, 0)}
+    pairs = []
+    for case, reply in zip(cases, replies):
+        right = reply["route"] == case["route"]
+        _count(found["route"], case["route"], right)
+        if "confidence" in reply:
+            pairs.append((reply["confidence"], right))
+        if not right:
+            uncertain, wrong = found["wrong_uncertain"]
+            found["wrong_uncertain"] = (uncertain + bool(reply["uncertain"]), wrong + 1)
+        elif case.get("option") is not None:
+            _count(found["option"], case["route"], (reply.get("option") or {}).get("id") == case["option"])
+        for name, expected in case.get("answers", {}).items():
+            if name in reply["answers"]:
+                _count(found["answers"].setdefault(name, {}), expected, _value(reply["answers"][name]) == expected)
+    found["threshold"] = suggest_threshold(pairs) if pairs else None
+    found["bands"] = confidence_bands(pairs) if pairs else []
+    return found
+
+
+def _line(table: dict) -> str:
+    hits = sum(right for right, _ in table.values())
+    total = sum(of for _, of in table.values())
+    parts = ", ".join(f"{key} {right} of {of}" for key, (right, of) in table.items())
+    return f"{hits} of {total} ({hits / total:.0%}): {parts}" if total else "none"
+
+
+def format_cases_report(found: dict) -> str:
+    """The scores of a cases file as lines of text."""
+    uncertain, wrong = found["wrong_uncertain"]
+    lines = [f"Route: {_line(found['route'])}",
+             f"Wrong routes marked uncertain (no action would run): {uncertain} of {wrong}",
+             f"Option, where the route was right: {_line(found['option'])}"]
+    lines += [f"{name}: {_line(table)}" for name, table in found["answers"].items()]
+    if found.get("bands"):
+        lines.append("Routing accuracy by CLM confidence:")
+        lines += [f"  {band['low']:.1f}-{band['high']:.1f}  {band['correct']:>4} / {band['n']:<4} "
+                  f"{_share(band['correct'], band['n'])}" for band in found["bands"] if band["n"]]
+    if found.get("threshold") is not None:
+        lines.append(f"Suggested confidence_threshold: {found['threshold']:.2f} (the lowest at which the routes "
+                     f"kept are 90% right)")
+    return "\n".join(lines)
+
+
+def decide_cases(cases: list[dict], scenario, router, tools) -> list[dict]:
+    """Each case decided through the server's own steps, a batch at a time. Pass a scenario without actions."""
+    replies: list[dict] = []
+    for start in range(0, len(cases), CASES_BATCH):
+        batch = cases[start:start + CASES_BATCH]
+        replies += decide_many([{"text": case["text"], **({"context": case["context"]}
+                                                                   if "context" in case else {})}
+                                         for case in batch], scenario, router, tools)
+    return replies
+
+
 def format_report(result: dict, scenario) -> str:
     """The evaluation result as text for the terminal."""
     lines = _routing_lines(result["routing"], scenario)
@@ -186,11 +274,34 @@ def format_report(result: dict, scenario) -> str:
     return "\n".join(lines)
 
 
+def _main_cases(path: Path, scenario_path: str) -> int:
+    try:
+        scenario = replace(load_scenario(scenario_path), actions=())
+        tools = load_tools(scenario)
+        cases = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    except (ScenarioError, OSError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    from clm_router import ClmError, make_router  # pylint: disable=import-outside-toplevel
+    try:
+        router, clm_note = make_router(scenario)
+    except ClmError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    print(f"CLM is using {clm_note}.")
+    print(format_cases_report(score_cases(cases, decide_cases(cases, scenario, router, tools))))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Command-line entry point; returns the process exit code."""
-    parser = argparse.ArgumentParser(description="Replay the review record against the current scenario.")
+    parser = argparse.ArgumentParser(description="Replay the review record, or score a file of labelled cases, "
+                                                 "against the current scenario.")
     parser.add_argument("scenario", help="path to the scenario file")
+    parser.add_argument("--cases", type=Path, help="a file of labelled cases to score instead of the record")
     args = parser.parse_args(argv)
+    if args.cases:
+        return _main_cases(args.cases, args.scenario)
     try:
         scenario = load_scenario(args.scenario)
     except ScenarioError as error:

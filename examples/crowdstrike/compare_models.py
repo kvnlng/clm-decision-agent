@@ -6,7 +6,7 @@
 Each language model reads the policy's route descriptions, the passenger's message, the situation's facts
 and the journeys every rebooking route could book, fetched beforehand; it answers with a route and, where
 it applies, a journey. It calls no tools. CLM decides the same cases through the server's own steps, without
-actions. Scores are per route, as check.py gives them, plus an accuracy weighted by each route's share of
+actions. Scores are per route, as evaluate.py --cases gives them, plus an accuracy weighted by each route's share of
 the day; time and cost are scaled to the day's 99,806 decisions. Results go to runs/, which git ignores.
 """
 import argparse
@@ -17,11 +17,15 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
-import crowdstrike_tools
-from check import score
-from policy import ROUTES
-
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parents[1]))
+
+# pylint: disable=wrong-import-position
+import crowdstrike_tools  # noqa: E402
+from policy import ROUTES  # noqa: E402
+
+from evaluate import score_cases  # noqa: E402
+
 DAY = 99806
 # Each route's share of the day's right answers (seed 0, no seats held: Stage 3's count)
 SHARES = {"Rebook": 0.469, "No_Action": 0.183, "Agent": 0.162, "Refund": 0.158, "Overnight": 0.022,
@@ -130,7 +134,7 @@ def summary(name: str, cases: list[dict], replies: list[dict], usage: list[dict]
             day: int = DAY) -> dict:
     """The scores per route, the accuracy weighted by the day's shares, and time and cost, per decision and
     for the day."""
-    found = score(cases, replies)
+    found = score_cases(cases, replies)
     count = len(cases)
     price = PRICES.get(name)
     cost = (sum(sum(one[kind] * price[kind] for kind in price) for one in usage) / 1e6 / count) if price else 0.0
@@ -225,5 +229,4 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-loca
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, str(HERE.parents[1]))
     sys.exit(main())

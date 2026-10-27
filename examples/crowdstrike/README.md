@@ -73,14 +73,15 @@ Two calls worth knowing about:
 ```bash
 uv run python examples/crowdstrike/write_examples.py      # 1,500 examples and 600 check cases
 uv run python train.py examples/crowdstrike/scenario.toml
-uv run python examples/crowdstrike/check.py examples/crowdstrike/scenario.toml
+uv run python evaluate.py examples/crowdstrike/scenario.toml --cases examples/crowdstrike/check.cases.jsonl
 ```
 
 `write_examples.py` writes 250 examples of each route from seed 1's day, with the facts and
 options the scenario's own tools give, and 100 check cases of each route from seed 0's day, the
 demo's. A fifth of the message pool's lines, chosen by a hash of the text, is kept out of training
-and used only for the check cases, so the check is on wording CLM never saw. `check.py` runs them
-through the server's own steps, without actions, and reports every result per class.
+and used only for the check cases, so the check is on wording CLM never saw. `evaluate.py --cases` runs them
+through the server's own steps, without actions, reports every result per class and suggests a
+confidence threshold.
 
 ### What it did
 
