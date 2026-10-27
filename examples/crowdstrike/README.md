@@ -159,8 +159,9 @@ Per route (right of 100):
 
 - **On this Mac, Claude was both more accurate and faster.** With 8 calls at once, Claude's calls work
   out to about 2 seconds each; CLM's time is almost all encoding on the Mac's GPU. More concurrent calls
-  would make Claude faster still, up to its rate limits. Whether CLM is faster on a data-centre GPU will
-  be measured on an A100.
+  would make Claude faster still, up to its rate limits. On a data-centre GPU CLM is much faster (see
+  [the whole day](#the-whole-day-on-a-data-centre-gpu)), but that was measured on the replay, not on
+  this comparison.
 - **CLM costs nothing per decision and keeps the messages on the machine.** Haiku would cost about $15
   for the day, Sonnet about $158.
 - **CLM marks answers it is unsure of.** 119 of its 152 wrong routes were marked uncertain, so no action
@@ -200,3 +201,42 @@ Agent 812 of 1,454, No_Action 1,262 of 1,532.
   `evaluate.py` on corrections, or better-trained heads would move that balance.
 - Seats lost to a race are real: 28 bookings were offered a journey whose last seats went to someone
   decided a moment earlier, and their hold failed visibly, as it should.
+
+### The whole day on a data-centre GPU
+
+The day's 99,806 decisions arrive over 41.5 hours. What matters for a server is whether it keeps up
+with them as they arrive, so the table puts the day's demand next to what each machine decided a
+second (the trained heads, `decide_many` with every tool and action, as in the replay):
+
+| | Decisions a second | Busiest minute's share of it | Falls behind |
+|---|---|---|---|
+| The day: average / busiest hour / busiest minute | 0.67 / 1.79 / 10.7 | | |
+| Apple M5 Max (MLX, 8-bit) | 3.6 | 297% | in 84 minutes; at most 979 waiting, 4.5 minutes |
+| NVIDIA A100 80 GB (torch, bf16) | 19.2 | 56% | never |
+| NVIDIA H100 80 GB SXM (torch, bf16) | 51.1 | 21% | never |
+
+The Mac's rate is from Atlanta's replay, the A100's from the first 27,511 bookings of the day (the
+run was stopped to change machines), the H100's from the whole day: 32.5 minutes for all 99,806.
+"Falls behind" is a queue, minute by minute, of the day's arrivals at each rate.
+
+- **One A100 keeps up with the whole day; an H100 has almost five times the busiest minute to
+  spare.** The Mac does not keep up at the peaks: a passenger writing then would wait up to 4.5
+  minutes.
+- **On the first 3,000 bookings**, rows of 1,024, 2,048 and 4,096 tokens gave 18.8, 18.8 and 17.5 a
+  second on the A100 and 45.4, 46.6 and 43.7 on the H100: about 2.5 times as fast, with 2,048 (the
+  default) best on both. The A100 managed 10.8 a second before texts were packed into rows without
+  padding and every request's options were ranked in one pass.
+- **The GPU is the limit.** Encoding is 96% of each call on both GPUs. The H100 was busy 85% of the
+  run on average, drawing about 480 of its 700 W when sampled and using 16 GB of its 80; the server used one CPU core,
+  most of it waiting for the GPU.
+- **Two copies of the model on one H100 are not faster.** Run side by side on the same 3,000 bookings
+  they made 24.2 and 24.1 a second, 48.3 together against one copy's 46.6: one copy already fills the
+  GPU. More copies only make sense for different scenarios.
+- **The H100 got slightly fewer right.** On the same 3,000 bookings, 2,379 right routes against the
+  A100's 2,399, with heads trained again on each machine (2 minutes 40 seconds on the H100, the model's
+  download included). Training on a different GPU and its rounding could each account for it; which it
+  is was not measured.
+- Over the whole day 75,615 routes were right (76%) and 5,216 (5.2%) were wrong and not marked
+  uncertain; 46,030 (46%) were marked uncertain and went to a person (43% at Atlanta). Seat holds:
+  23,050 made, 123 lost to a passenger decided just before. The later hours are harder than the
+  first: the A100's first 27,511 bookings were 79% right.

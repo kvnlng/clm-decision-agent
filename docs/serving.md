@@ -95,8 +95,8 @@ second (encoding's share of the time):
 | `decide_many`, 100 messages a call | 22.4 (93%) | 71.6 (87%) |
 
 - **Texts are packed end to end, with no padding**, on torch. A call's texts go into rows of up to
-  `batch_tokens` (2,048) tokens; an attention mask keeps each text to its own tokens, and positions
-  restart for each, so every vector is the one the text would get alone. Rows go to the GPU one after
+  `batch_tokens` (2,048) tokens; an attention mask keeps each text to its own tokens (and a shared start, below), and
+  positions count as if the text were alone, so every vector is the one the text would get alone. Rows go to the GPU one after
   another without waiting, and the vectors come back together at the end. On the A100, rows of 1,024
   and 2,048 tokens were equally fast, 4,096 was 7% slower and 8,192 25% slower: the mask makes
   attention cover the whole row.
@@ -113,6 +113,10 @@ second (encoding's share of the time):
   threshold, so they were uncertain either way and no acting tool ran.
 - A `decide_many` call holds CLM for its batch, so other calls wait: 1,000 requests take about
   20 seconds on the A100.
+- On an H100 80 GB (SXM) the CrowdStrike example decided 2.5 times as fast as on the A100, 46.6
+  against 18.8 a second on the same 3,000 bookings, and the whole day of 99,806 in 32.5 minutes
+  ([its README](../examples/crowdstrike/README.md#the-whole-day-on-a-data-centre-gpu)). The table above
+  was measured before packing and has not been measured again.
 
 ## Where CLM runs
 
