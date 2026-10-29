@@ -4,6 +4,7 @@
 from pathlib import Path
 
 import pytest
+from conftest import limit_dmn
 
 from dmn import DmnError, evaluate, load_table
 
@@ -52,8 +53,20 @@ def test_a_missing_input_is_named():
 
 
 def test_an_unsupported_expression_is_refused_at_load():
-    with pytest.raises(DmnError, match=r"unsupported.dmn rule r1"):
+    with pytest.raises(DmnError, match=r'unsupported.dmn rule r1: unsupported expression "date\("2026-01-01"\)"'):
         load_table(TABLES / "unsupported.dmn")
+
+
+@pytest.mark.parametrize("table, problem", [
+    (limit_dmn("not()"), r'rule fine: unsupported expression "not\(\)"'),
+    (limit_dmn("not(-)"), r'rule fine: unsupported expression "not\(-\)"'),
+    (limit_dmn("[5..1]"), r'rule fine: unsupported expression "\[5\.\.1\]"'),
+    (limit_dmn().replace("<text>true</text>", "<text></text>"), r"rule fine: empty entry"),
+], ids=["not", "not_dash", "backwards_range", "empty_output"])
+def test_a_bad_entry_is_refused_at_load(tmp_path, table, problem):
+    (tmp_path / "bad.dmn").write_text(table, encoding="utf-8")
+    with pytest.raises(DmnError, match="bad.dmn " + problem):
+        load_table(tmp_path / "bad.dmn")
 
 
 def test_a_number_test_on_text_is_an_error():

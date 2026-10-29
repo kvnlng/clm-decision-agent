@@ -8,7 +8,8 @@ variable it reads; each output's name is the key of the result. Supported:
                     ranges [a..b] (a..b) [a..b) (a..b]   comma-separated lists of these   not(...)
     output entries  number, string and boolean literals
 
-Anything else is refused when the table is loaded, naming the file and rule, so a table never half-works.
+Anything else is refused when the table is loaded, naming the file and rule, so a table never half-works; so are an
+empty output entry, not() and not(-), and a range whose low end is above its high end.
 """
 from __future__ import annotations
 
@@ -107,6 +108,8 @@ def _one(text: str) -> Callable[[Any], bool]:
     match = _RANGE.fullmatch(text)
     if match:
         low, high = float(match.group(2)), float(match.group(3))
+        if low > high:
+            raise ValueError(text)
         low_open, high_open = match.group(1) == "(", match.group(4) == ")"
         def within(value) -> bool:
             value = _number(value)
@@ -125,6 +128,9 @@ def _test(text: str) -> Callable[[Any], bool]:
         return lambda _: True
     match = re.fullmatch(r"not\s*\((.*)\)", text)
     if match:
+        # not() and not(-) would match nothing, which is never what a rule means
+        if match.group(1).strip() in ("", "-"):
+            raise ValueError(text)
         inner = _test(match.group(1))
         return lambda value: not inner(value)
     tests = [_one(part) for part in _split(text)]
@@ -151,11 +157,14 @@ def _rules(path: Path, table, inputs: int, outputs: int) -> list[Rule]:
         entries, values = _children(row, "inputEntry"), _children(row, "outputEntry")
         if len(entries) != inputs or len(values) != outputs:
             raise DmnError(f"{path.name} rule {rule_id}: needs {inputs} input and {outputs} output entries")
+        # An empty input entry is "-", as in DMN; an empty output entry has no value to give
+        if any(not _text(value).strip() for value in values):
+            raise DmnError(f"{path.name} rule {rule_id}: empty entry; every output needs a value")
         try:
             tests = tuple(_test(_text(entry)) for entry in entries)
             results = tuple(_literal(_text(value)) for value in values)
         except ValueError as error:
-            raise DmnError(f"{path.name} rule {rule_id}: unsupported expression {error}") from error
+            raise DmnError(f'{path.name} rule {rule_id}: unsupported expression "{error}"') from error
         rules.append(Rule(rule_id, tests, results))
     return rules
 

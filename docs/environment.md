@@ -99,8 +99,8 @@ Each evaluation records its inputs, its outputs and, for a table, the rules that
   the ranges `[a..b]`, `(a..b)`, `[a..b)` and `(a..b]`; comma-separated lists of these; `not(...)`.
 - **Output entries:** number, string and boolean literals.
 
-Anything else is refused when the table loads, naming the file and rule. `not(...)` wraps a whole entry, not one item
-of a list. When no rule matches, or two do under `UNIQUE`, the evaluation is an error, never a silent "allowed"; so is
+Anything else is refused when the table loads, naming the file and rule; so are an empty output entry, `not()` and
+`not(-)`, and a range whose low end is above its high end. `not(...)` wraps a whole entry, not one item of a list. When no rule matches, or two do under `UNIQUE`, the evaluation is an error, never a silent "allowed"; so is
 text given to an entry that tests a number. An input's `typeRef` gives its parameter's type; an input without one
 accepts anything, and is still refused by any number test. Input names must be lower-case identifiers, since they
 become the tool's arguments. An input entry compares with a literal, so a limit that
