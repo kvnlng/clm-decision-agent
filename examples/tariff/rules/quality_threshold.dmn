@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="quality_threshold_definitions" name="Quality threshold" namespace="https://example.org/tariff">
+  <decision id="quality_threshold" name="quality_threshold">
+    <decisionTable id="quality_threshold_table" hitPolicy="FIRST">
+      <input id="quality_threshold_in1" label="defect_rate"><inputExpression typeRef="number"><text>defect_rate</text></inputExpression></input>
+      <output id="quality_threshold_out1" name="allowed" typeRef="boolean"/>
+      <output id="quality_threshold_out2" name="reason" typeRef="string"/>
+      <rule id="too_many_defects"><inputEntry><text>&gt; 0.015</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"Product Line X allows a defect rate of at most 1.5%"</text></outputEntry></rule>
+      <rule id="within"><inputEntry><text>-</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>"Within Product Line X's defect limit"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

@@ -14,8 +14,10 @@ from environment import Environment
 
 _CHECKS = {"string": lambda v: isinstance(v, str), "boolean": lambda v: isinstance(v, bool),
            "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
-           "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool), "any": lambda v: True}
-_ARTICLES = {"string": "text", "boolean": "true or false", "integer": "a whole number", "number": "a number"}
+           "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+           "list": lambda v: isinstance(v, list), "any": lambda _: True}
+_ARTICLES = {"string": "text", "boolean": "true or false", "integer": "a whole number", "number": "a number",
+             "list": "a list"}
 
 
 class StepError(ValueError):

@@ -77,3 +77,10 @@ def test_a_failing_step_fails_only_its_branch(write_environment):
     by_share = {branch["levers"]["share"]: branch for branch in result["branches"]}
     assert by_share[0]["status"] == "failed" and "share_limit: no rule matches share=0" in by_share[0]["error"]
     assert by_share[0.5]["status"] == "kept" and by_share[1.0]["status"] == "rejected"
+
+
+def test_a_list_parameter_must_be_a_list(write_environment):
+    toml = ENV_TOML.replace('params = { share = "number", cost_a', 'params = { share = "list", cost_a')
+    env = load_environment(write_environment(toml))
+    with pytest.raises(StepError, match="calculation cost: share must be a list"):
+        run_calculation(env, "cost", {"share": 0.5, "cost_a": 10, "cost_b": 6})

@@ -1,0 +1,21 @@
+id,kind,name,category,q3_units,unit_price,lead_time_days,defect_rate,freight_per_unit,tier
+PX,product,Product Line X,,10000,250,,,,
+C1,component,Housing,plastics,,,,,,
+C2,component,Controller board,electronics,,,,,,
+C3,component,Drive motor,electromechanical,,,,,,
+RA,region,Region A,,,,,,,
+RB,region,Region B,,,,,,,
+RC,region,Region C,,,,,,,
+SA1,supplier,Arden Plastics,,,,10,0.008,4,
+SA2,supplier,Arden Circuits,,,,10,0.007,4,
+SA3,supplier,Aster Motors,,,,9,0.009,4,
+SB1,supplier,Bayline Components,,,,14,0.012,9,
+SB2,supplier,Borealis Motors,,,,13,0.013,9,
+RM1,provider,Altamira Resins,,,,,,,
+RM2,provider,Coriander Metals,,,,,,,
+RM3,provider,Halden Steel,,,,,,,
+RM4,provider,Kestrel Polymers,,,,,,,
+K1,client,Northwind Hospitals,,,,,,,strategic
+K2,client,Bluepeak Retail,,,,,,,standard
+K3,client,Corvid Logistics,,,,,,,strategic
+K4,client,Harbour Schools,,,,,,,

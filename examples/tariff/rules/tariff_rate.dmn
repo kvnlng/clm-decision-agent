@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="tariff_rate_definitions" name="Tariff rates" namespace="https://example.org/tariff">
+  <decision id="tariff_rate" name="tariff_rate">
+    <decisionTable id="tariff_rate_table" hitPolicy="UNIQUE">
+      <input id="tariff_rate_in1" label="region"><inputExpression typeRef="string"><text>region</text></inputExpression></input>
+      <input id="tariff_rate_in2" label="category"><inputExpression typeRef="string"><text>category</text></inputExpression></input>
+      <output id="tariff_rate_out1" name="rate" typeRef="number"/>
+      <rule id="a_plastics"><inputEntry><text>"Region A"</text></inputEntry><inputEntry><text>"plastics"</text></inputEntry><outputEntry><text>0.25</text></outputEntry></rule>
+      <rule id="a_electronics"><inputEntry><text>"Region A"</text></inputEntry><inputEntry><text>"electronics"</text></inputEntry><outputEntry><text>0.30</text></outputEntry></rule>
+      <rule id="a_electromechanical"><inputEntry><text>"Region A"</text></inputEntry><inputEntry><text>"electromechanical"</text></inputEntry><outputEntry><text>0.25</text></outputEntry></rule>
+      <rule id="b_plastics"><inputEntry><text>"Region B"</text></inputEntry><inputEntry><text>"plastics"</text></inputEntry><outputEntry><text>0.05</text></outputEntry></rule>
+      <rule id="b_electronics"><inputEntry><text>"Region B"</text></inputEntry><inputEntry><text>"electronics"</text></inputEntry><outputEntry><text>0.08</text></outputEntry></rule>
+      <rule id="b_electromechanical"><inputEntry><text>"Region B"</text></inputEntry><inputEntry><text>"electromechanical"</text></inputEntry><outputEntry><text>0.06</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

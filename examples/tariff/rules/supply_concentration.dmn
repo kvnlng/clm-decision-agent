@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="supply_concentration_definitions" name="Supply concentration" namespace="https://example.org/tariff">
+  <decision id="supply_concentration" name="supply_concentration">
+    <decisionTable id="supply_concentration_table" hitPolicy="FIRST">
+      <input id="supply_concentration_in1" label="share"><inputExpression typeRef="number"><text>share</text></inputExpression></input>
+      <input id="supply_concentration_in2" label="provider"><inputExpression typeRef="string"><text>provider</text></inputExpression></input>
+      <output id="supply_concentration_out1" name="allowed" typeRef="boolean"/>
+      <output id="supply_concentration_out2" name="reason" typeRef="string"/>
+      <rule id="concentrated"><inputEntry><text>&gt; 0.6</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"More than 60% of supply would depend on one raw-material provider"</text></outputEntry></rule>
+      <rule id="spread"><inputEntry><text>-</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>"No raw-material provider carries more than 60% of supply"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

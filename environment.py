@@ -19,7 +19,7 @@ from dmn import DmnError, Table, load_table
 from graph import Graph
 from scenario import ScenarioError
 
-TYPES = ("string", "number", "integer", "boolean")
+TYPES = ("string", "number", "integer", "boolean", "list")
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
 # A DMN input's typeRef, as a parameter type; "any" is not checked
 _DMN_TYPES = {"number": "number", "integer": "number", "string": "string", "boolean": "boolean"}

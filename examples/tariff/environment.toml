@@ -1,0 +1,81 @@
+# A made-up manufacturer deciding where to buy Product Line X's components after Region A raised its tariffs.
+# The owner writes everything here; an agent can only choose among it. docs/environment.md explains every part.
+
+[environment]
+name = "Component sourcing"
+description = """Sourcing decisions for a manufacturer that buys components in Region A and Region B. Product Line X \
+is the product to ask about (id PX). Run scenario_sourcing to compare sourcing Region B's share at 0, 50% or 100%: \
+it reports each branch's Q3 margin, delivery extension and defect rate, which limits rejected it, and why."""
+functions = "tariff_functions"
+
+[graph]
+backend = "builtin"
+nodes = "graph/nodes.csv"
+edges = "graph/edges.csv"
+
+[queries.product_facts]
+description = "A product's name, Q3 unit volume and unit price."
+params = { product = "string" }
+function = "product_facts"
+
+[queries.components_of]
+description = "The components a product is built from, with their category and units per product."
+params = { product = "string" }
+function = "components_of"
+
+[queries.suppliers_of]
+description = "Who supplies a component: region, unit price, lead time in days, defect rate and freight per unit."
+params = { component = "string" }
+function = "suppliers_of"
+
+[queries.key_clients_of]
+description = "The key clients who buy a product, with the tier their delivery terms depend on."
+params = { product = "string" }
+function = "key_clients_of"
+
+[queries.supply_dependencies]
+description = "The raw-material providers that suppliers depend on, up to three steps away, with the path to each."
+params = { suppliers = "list" }
+function = "supply_dependencies"
+
+[queries.single_points_of_failure]
+description = "Providers that every one of the given suppliers depends on: losing one would cut all of them off."
+params = { suppliers = "list" }
+function = "single_points_of_failure"
+
+[decisions.tariff_rate]
+description = "The tariff rate on a component category imported from a region, Region A's after the hike."
+dmn = "rules/tariff_rate.dmn"
+
+[decisions.sla_threshold]
+description = "Whether a delivery extension in days is allowed for a key client of the given tier."
+dmn = "rules/sla_threshold.dmn"
+
+[decisions.quality_threshold]
+description = "Whether a defect rate is within Product Line X's limit."
+dmn = "rules/quality_threshold.dmn"
+
+[decisions.supply_concentration]
+description = "Whether the largest share of supply behind one raw-material provider is allowed."
+dmn = "rules/supply_concentration.dmn"
+
+[calculations.branch_figures]
+description = """Q3 revenue, cost, tariff cost and margin, lead time, delivery extension and defect rate for a share \
+sourced from Region B, from the offers found for each component."""
+params = { q3_units = "number", unit_price = "number", offers = "list", region_b_share = "number" }
+function = "branch_figures"
+
+[calculations.concentration]
+description = "The largest share of supply that depends on one raw-material provider, and which provider it is."
+params = { dependencies = "list", offers = "list", region_b_share = "number" }
+function = "concentration"
+
+[scenarios.sourcing]
+description = """Where to source a product's components: the share bought from Region B. Every branch checks each \
+key client's delivery terms, the quality limit and how much supply depends on one raw-material provider."""
+params = { product = "string" }
+levers = { region_b_share = [0, 0.5, 1.0] }
+branch = "sourcing_branch"
+objective = "q3_margin"
+maximise = true
+limits = ["sla_threshold", "quality_threshold", "supply_concentration"]

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="sla_threshold_definitions" name="SLA threshold" namespace="https://example.org/tariff">
+  <decision id="sla_threshold" name="sla_threshold">
+    <decisionTable id="sla_threshold_table" hitPolicy="FIRST">
+      <input id="sla_threshold_in1" label="tier"><inputExpression typeRef="string"><text>tier</text></inputExpression></input>
+      <input id="sla_threshold_in2" label="extension_days"><inputExpression typeRef="number"><text>extension_days</text></inputExpression></input>
+      <output id="sla_threshold_out1" name="allowed" typeRef="boolean"/>
+      <output id="sla_threshold_out2" name="reason" typeRef="string"/>
+      <rule id="strategic_late"><inputEntry><text>"strategic"</text></inputEntry><inputEntry><text>&gt; 5</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"A strategic client's deliveries may slip by at most 5 days"</text></outputEntry></rule>
+      <rule id="standard_late"><inputEntry><text>"standard"</text></inputEntry><inputEntry><text>&gt; 10</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"A standard client's deliveries may slip by at most 10 days"</text></outputEntry></rule>
+      <rule id="within"><inputEntry><text>-</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>"Within the delivery extension the client's contract allows"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>
