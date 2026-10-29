@@ -55,6 +55,12 @@ def single_points_of_failure(graph, suppliers):
             for node in graph.single_points_of_failure(suppliers, ["depends_on"], 3) if node["kind"] == "provider"]
 
 
+def supplier_news(graph, suppliers):
+    """The news about each of the suppliers that has any."""
+    return [{"supplier": supplier, "name": graph.node(supplier)["name"], "news": graph.node(supplier)["news"]}
+            for supplier in suppliers if graph.node(supplier).get("news")]
+
+
 def _weights(offers: list, region_b_share: float) -> dict[str, list[tuple[dict, float]]]:
     """Component -> its offers, each with the share of the component's volume it carries."""
     regions = {"Region A": 1 - region_b_share, "Region B": region_b_share}
@@ -105,6 +111,22 @@ def concentration(dependencies, offers, region_b_share):
 
 def sourcing_branch(steps, params, levers):
     """One branch of the sourcing scenario: every limit is checked, every number comes from a step."""
+    return _sourcing(steps, params, levers)[0]
+
+
+def sourcing_with_news_branch(steps, params, levers):
+    """A sourcing branch that also judges the news about each supplier it buys from. The news_risk limit is decided
+    once, with the highest probability and the supplier behind it, or with 0.0 when none of them has news."""
+    figures, in_use = _sourcing(steps, params, levers)
+    judged = [(steps.judge("delivery_risk", row["news"])["probability"], row["name"])
+              for row in steps.query("supplier_news", suppliers=in_use)]
+    probability, supplier = max(judged, default=(0.0, "no supplier in use has news"))
+    steps.decide("news_risk", probability=probability, supplier=supplier)
+    return figures
+
+
+def _sourcing(steps, params, levers):
+    """-> (the branch's figures, the suppliers it buys from)."""
     share = levers["region_b_share"]
     product = steps.query("product_facts", product=params["product"])[0]
     offers = []
@@ -127,4 +149,4 @@ def sourcing_branch(steps, params, levers):
     dependencies = steps.query("supply_dependencies", suppliers=in_use)
     spread = steps.calculate("concentration", dependencies=dependencies, offers=offers, region_b_share=share)
     steps.decide("supply_concentration", share=spread["largest_share"], provider=spread["provider"])
-    return figures
+    return figures, in_use

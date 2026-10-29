@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="news_risk_definitions" name="News risk" namespace="https://example.org/tariff">
+  <decision id="news_risk" name="news_risk">
+    <decisionTable id="news_risk_table" hitPolicy="FIRST">
+      <input id="news_risk_in1" label="probability"><inputExpression typeRef="number"><text>probability</text></inputExpression></input>
+      <input id="news_risk_in2" label="supplier"><inputExpression typeRef="string"><text>supplier</text></inputExpression></input>
+      <output id="news_risk_out1" name="allowed" typeRef="boolean"/>
+      <output id="news_risk_out2" name="reason" typeRef="string"/>
+      <!-- 0.82 is measured, not calibrated: judge_news.py separated the labelled news lines between 0.792 and 0.843 -->
+      <rule id="risky"><inputEntry><text>&gt; 0.82</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"News suggests a supplier in use may not deliver"</text></outputEntry></rule>
+      <rule id="calm"><inputEntry><text>-</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>"No news suggests a supplier in use may not deliver"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

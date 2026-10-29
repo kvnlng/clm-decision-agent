@@ -128,7 +128,8 @@ def test_the_two_graphs_agree():
              ("suppliers_of", {"component": "C1"}), ("suppliers_of", {"component": "C3"}),
              ("key_clients_of", {"product": "PX"}), ("supply_dependencies", {"suppliers": suppliers}),
              ("single_points_of_failure", {"suppliers": ["SB1", "SB2"]}),
-             ("single_points_of_failure", {"suppliers": suppliers}), ("single_points_of_failure", {"suppliers": []})]
+             ("single_points_of_failure", {"suppliers": suppliers}), ("single_points_of_failure", {"suppliers": []}),
+             ("supplier_news", {"suppliers": suppliers}), ("supplier_news", {"suppliers": ["SA2"]})]
     for name, params in calls:
         ours = _sorted(run_query(builtin, name, params)["rows"])
         assert _sorted(run_query(neo4j, name, params)["rows"]) == ours, name

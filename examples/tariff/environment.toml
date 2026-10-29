@@ -78,6 +78,17 @@ MATCH path = shortestPath((s)-[:DEPENDS_ON*1..3]->(p))
 RETURN supplier, p.id AS provider, p.name AS provider_name, [n IN nodes(path) | n.id] AS path
 ORDER BY supplier, provider"""
 
+[queries.supplier_news]
+description = "The latest news about each of the suppliers that has any."
+params = { suppliers = "list" }
+function = "supplier_news"
+cypher = """
+UNWIND $suppliers AS supplier
+MATCH (s:Supplier {id: supplier})
+WHERE s.news IS NOT NULL
+RETURN supplier, s.name AS name, s.news AS news
+ORDER BY supplier"""
+
 [queries.single_points_of_failure]
 description = "Providers that every one of the given suppliers depends on: losing one would cut all of them off."
 params = { suppliers = "list" }
@@ -110,6 +121,10 @@ dmn = "rules/quality_threshold.dmn"
 description = "Whether the largest share of supply behind one raw-material provider is allowed."
 dmn = "rules/supply_concentration.dmn"
 
+[decisions.news_risk]
+description = "Whether CLM's highest probability that news about a supplier in use is a delivery risk is allowed."
+dmn = "rules/news_risk.dmn"
+
 [calculations.branch_figures]
 description = """Q3 revenue, cost, tariff cost and margin, lead time, delivery extension and defect rate for a share \
 sourced from Region B, from the offers found for each component."""
@@ -130,3 +145,13 @@ branch = "sourcing_branch"
 objective = "q3_margin"
 maximise = true
 limits = ["sla_threshold", "quality_threshold", "supply_concentration"]
+
+[scenarios.sourcing_with_news]
+description = """The sourcing scenario, with each supplier's news judged by CLM: a branch is also rejected when news \
+suggests a supplier it buys from may not deliver. CLM loads on the first judgement."""
+params = { product = "string" }
+levers = { region_b_share = [0, 0.5, 1.0] }
+branch = "sourcing_with_news_branch"
+objective = "q3_margin"
+maximise = true
+limits = ["sla_threshold", "quality_threshold", "supply_concentration", "news_risk"]

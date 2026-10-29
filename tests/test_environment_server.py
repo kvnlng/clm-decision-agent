@@ -16,8 +16,8 @@ from environment_server import build_environment_server
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "tariff" / "environment.toml"
 QUERIES = ["product_facts", "components_of", "suppliers_of", "key_clients_of", "supply_dependencies",
-           "single_points_of_failure"]
-DECISIONS = ["tariff_rate", "sla_threshold", "quality_threshold", "supply_concentration"]
+           "single_points_of_failure", "supplier_news"]
+DECISIONS = ["tariff_rate", "sla_threshold", "quality_threshold", "supply_concentration", "news_risk"]
 
 
 @pytest.fixture
@@ -36,7 +36,7 @@ async def test_one_tool_per_part(mcp_server):
         names = sorted(tool.name for tool in (await client.list_tools()).tools)
     assert names == sorted([f"query_{name}" for name in QUERIES] + [f"decision_{name}" for name in DECISIONS]
                            + ["calculation_branch_figures", "calculation_concentration", "scenario_sourcing",
-                              "judge_delivery_risk", "describe"])
+                              "scenario_sourcing_with_news", "judge_delivery_risk", "describe"])
 
 
 @pytest.mark.anyio
