@@ -11,3 +11,4 @@ docs/superpowers/
 *.key
 examples/crowdstrike/runs/
 examples/tariff/runs/
+.neo4j-local.env
