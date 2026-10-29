@@ -34,9 +34,11 @@ def _signature(params: dict[str, str], extra: tuple[inspect.Parameter, ...] = ()
 def _tool(run: Callable[[dict], dict], signature: inspect.Signature, trace, name: str) -> Callable[..., dict]:
     """A function with the given signature, which the SDK reads for the tool's schema, calling run(arguments)."""
     def tool(**arguments) -> dict[str, Any]:
-        with trace.call(name) if trace else contextlib.nullcontext({}):
+        with trace.call(name) if trace else contextlib.nullcontext({}) as record:
             try:
-                return run(arguments)
+                result = run(arguments)
+                record["outcome"] = {"ok": True}
+                return result
             except (engine.StepError, DmnError, ScenarioError) as error:
                 raise ToolError(str(error)) from error
             # The owner's code can fail in any way; the agent should still learn why

@@ -1,6 +1,7 @@
 """Tests for environment_server.py, and server.py serving an environment: one MCP tool per named part, no CLM."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import json
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from mcp import Client
 
 import clm_router
 import server
+import tracing
 from environment import Environment, load_environment
 from environment_server import build_environment_server
 
@@ -93,6 +95,20 @@ def test_a_scenario_file_still_loads_clm(write_scenario, monkeypatch):
 def test_review_is_refused_for_an_environment(capsys):
     assert server.main([str(EXAMPLE), "--review"]) == 2
     assert "review mode is for CLM scenarios" in capsys.readouterr().err
+
+
+@pytest.mark.anyio
+async def test_a_traced_call_writes_its_tool_and_outcome(write_environment, tmp_path):
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
+    traced = build_environment_server(load_environment(write_environment()), trace=writer)
+    async with Client(traced) as client:
+        await client.call_tool("query_suppliers", {"product": "P1"})
+        failed = await client.call_tool("scenario_sourcing", {"product": "P1", "branches": [{"share": 0.7}]})
+    writer.close()
+    done, undone = [json.loads(line) for line in (tmp_path / "trace.jsonl").read_text().splitlines()]
+    assert failed.is_error
+    assert (done["tool"], done["outcome"]) == ("query_suppliers", {"ok": True}) and done["ms"] >= 0
+    assert (undone["tool"], undone["outcome"]) == ("scenario_sourcing", {"error": "ToolError"})
 
 
 @pytest.mark.anyio
