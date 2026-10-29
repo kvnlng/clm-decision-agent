@@ -138,6 +138,28 @@ Read [docs/data-handling.md](docs/data-handling.md) before any real text goes in
 | `correct(text, route, context, answers, option)` | Review mode only: save the right route for a request, and optionally the right answers and option |
 | `agreement()` | Review mode only: how often CLM's own route agrees with the saved corrections |
 
+## Decisions from an organisation's data: environments
+
+Some decisions rest on data, arithmetic and policy rather than on reading a message: "should we move Product Line
+X's sourcing to Region B, and what would it do to the Q3 margin and our delivery terms?" For those, the same server
+serves an **environment** instead of a scenario, and does not load CLM:
+
+- **a knowledge graph**, with named queries the owner wrote;
+- **decision models**: DMN decision tables, for the rules and limits;
+- **scenarios**: levers with the values the owner allows, ranked by an objective, with every limit checked on every
+  branch;
+- **an agent**, any MCP client, which only chooses among them. `decision_agent.py` is a reference one, with Claude,
+  and every figure in its answer is checked against what the tools returned.
+
+```bash
+uv run python server.py examples/tariff/environment.toml
+uv run --group demo python decision_agent.py examples/tariff/environment.toml "Should we move Product Line X to Region B?"
+```
+
+[docs/environment.md](docs/environment.md) explains every part; [examples/tariff](examples/tariff/README.md) is the
+worked example. The graph is built in for now. Graph databases, a local model as the agent, and CLM as a judge of
+evidence rules cannot judge come later.
+
 ## What to expect
 
 Measured on the example scenario, on an M5 Max with 64 GB:
@@ -169,10 +191,14 @@ Measured on the example scenario, on an M5 Max with 64 GB:
 | `tools.py` | Loads a scenario's tools |
 | `record.py`, `evaluate.py` | The corrections record; its replay, or a file of labelled cases, scored per class |
 | `new_scenario.py` | Starts a scenario folder: scenario, tools with mock backends, labelled cases |
+| `environment.py`, `environment_server.py` | Reads and checks an environment; its named parts as MCP tools |
+| `graph.py`, `dmn.py`, `engine.py` | The built-in graph; DMN decision tables; queries, decisions and scenarios run with every step recorded |
+| `decision_agent.py`, `number_check.py` | The reference agent, Claude over MCP; the check that every figure came from a tool |
 | `tracing.py`, `trace_report.py` | `server.py --trace`: where each call's time went, and its summary |
 | `dataset.py`, `synthesize.py`, `train.py`, `generator.py` | Training, and the language model that writes examples |
 | `examples/service_desk/` | The worked example, with a stand-in issue tracker |
 | `examples/crowdstrike/` | A whole day of a real disruption, replayed through the server: the benchmark ([docs/findings.md](docs/findings.md)) |
+| `examples/tariff/` | An environment: a made-up manufacturer deciding where to source after a tariff hike |
 | `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads CLM; `CLM_TEST_BACKEND=torch` for the torch backend) |
 | `Dockerfile` | The project on Linux, for the torch backend |
 
