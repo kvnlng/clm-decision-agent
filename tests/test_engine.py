@@ -187,3 +187,21 @@ def judging_branch(steps, params, levers):
                                              + JUDGE_TOML, functions=functions))
     branch = run_scenario(env, "sourcing", {"product": "P1"}, branches=[{"share": 0}])["branches"][0]
     assert branch["status"] == "failed" and branch["error"].startswith("judge risk: CLM could not load: The mlx")
+
+
+def test_a_multiline_load_error_is_one_line(write_environment, monkeypatch):
+    import clm_router  # pylint: disable=import-outside-toplevel
+
+    def missing(*args, **kwargs):
+        raise RuntimeError("404 Client Error.\nRepository Not Found for url: https://huggingface.co/x\nCheck the name.")
+    monkeypatch.setattr(clm_router, "load_engine", missing)
+    env = load_environment(write_environment(ENV_TOML + JUDGE_TOML))
+    with pytest.raises(StepError) as caught:
+        run_judgement(env, "risk", {"text": "a strike is called"})
+    assert str(caught.value) == "judge risk: CLM could not load: 404 Client Error."
+
+
+def test_clm_heads_is_refused_for_judges(write_environment):
+    toml = ENV_TOML + JUDGE_TOML.replace('backend = "mlx"\n', 'backend = "mlx"\nheads = "heads"\n')
+    with pytest.raises(ScenarioError, match="^clm.heads: not supported for judges yet"):
+        load_environment(write_environment(toml))

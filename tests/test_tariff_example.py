@@ -113,3 +113,13 @@ def test_real_clm_rejects_the_strike():
     assert result["best"] == {"region_b_share": 0}
     print({share: [(step["inputs"]["text"][:30], step["result"]) for step in branch(result, share)["steps"]
                    if step["kind"] == "judgement"] for share in (0, 0.5, 1.0)})
+
+
+def test_without_news_the_limit_is_decided_with_zero(fake_clm, monkeypatch):  # pylint: disable=unused-argument
+    fresh = load_environment(EXAMPLE)
+    monkeypatch.setattr(fresh.functions, "supplier_news", lambda graph, suppliers: [])
+    result = run_scenario(fresh, "sourcing_with_news", {"product": "PX"})
+    for item in result["branches"]:
+        decided = [step for step in item["steps"] if step["name"] == "news_risk"]
+        assert decided[0]["inputs"] == {"probability": 0.0, "supplier": "no supplier in use has news"}
+    assert result["best"] == {"region_b_share": 0.5} and fake_clm.loads == 0

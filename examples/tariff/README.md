@@ -99,7 +99,9 @@ uv run python examples/tariff/judge_news.py   # the news measurement, with CLM
 
 On Neo4j: load the graph, then set `[graph] backend = "neo4j"` in `environment.toml`. Each query's Cypher is beside
 its function, and `tests/test_graph_neo4j.py -m slow` checks that both graphs give the same rows and branches
-([docs/environment.md](../../docs/environment.md#on-neo4j)).
+([docs/environment.md](../../docs/environment.md#on-neo4j)). Reload the graph whenever `graph/` changes: a database
+loaded before the `news` column has no news, so `sourcing_with_news` would find none and decide the news limit with
+0.0 (its trace then says "no supplier in use has news").
 
 ```bash
 set -a; . ./.neo4j-local.env; set +a

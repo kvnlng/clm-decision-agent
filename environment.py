@@ -110,7 +110,9 @@ class Clm:
                 try:
                     self._engine = clm_router.load_engine(self.backend, self.model_id, None, self.device)
                 except Exception as error:  # pylint: disable=broad-exception-caught
-                    raise StepError(f"judge {judge.name}: CLM could not load: {error}") from error
+                    # Download errors run to several lines; the first says what failed
+                    first = (str(error).strip().splitlines() or [type(error).__name__])[0]
+                    raise StepError(f"judge {judge.name}: CLM could not load: {first}") from error
             question = {"type": "noul", "instructions": judge.instructions}
             return float(self._engine.answer(text, {judge.name: question})["answers"][judge.name]["noul"])
 
@@ -287,6 +289,8 @@ def _clm(data: dict) -> Clm | None:
     if "clm" not in data:
         return None
     table = _table(data, "clm", "clm")
+    if "heads" in table:
+        raise ScenarioError("clm.heads: not supported for judges yet: they use CLM's released heads")
     backend = table.get("backend", "mlx")
     if backend not in CLM_BACKENDS:
         raise ScenarioError(f"clm.backend: must be {' or '.join(CLM_BACKENDS)}, not {backend!r}")
