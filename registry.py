@@ -49,6 +49,20 @@ def _is_ip(host: str) -> bool:
         return False
 
 
+# The registry's own patterns: a project's home page on GitHub or GitLab, and nothing else
+_REPOSITORIES = {"github": re.compile(r"https?://(www\.)?github\.com/[\w.-]+/[\w.-]+/?"),
+                 "gitlab": re.compile(r"https?://(www\.)?gitlab\.com/[\w.-]+(/[\w.-]+)+/?")}
+
+
+def _source(repository: str) -> str:
+    source = next((name for name, pattern in _REPOSITORIES.items() if pattern.fullmatch(repository)), None)
+    # GitLab's "/-/" starts a page within a project, not the project
+    if source is None or (source == "gitlab" and "/-/" in repository + "/"):
+        raise ValueError("--repository: the registry takes a GitHub or GitLab project URL, such as "
+                         f"https://github.com/you/repo; leave it out for any other: {repository}")
+    return source
+
+
 def _check(name: str, url: str, version: str, auth: str) -> None:
     if not _NAME.fullmatch(name):
         raise ValueError(f"name: must be namespace/name, such as io.github.you/tariff, not {name!r}")
@@ -61,7 +75,11 @@ def _check(name: str, url: str, version: str, auth: str) -> None:
     host = address.hostname or ""
     if host == "localhost" or host.endswith(".localhost") or _is_ip(host):
         raise ValueError(f"--url: name the deployment's host, not localhost or an IP address: {url}")
-    if address.path.rstrip("/") != "/mcp":
+    # Entries are never removed from a registry, so nothing secret may ride along in the address
+    if address.username or address.password or address.query or address.fragment:
+        raise ValueError(f"--url: no user, password, query or fragment: the entry is published as written, "
+                         f"and the key goes in the Authorization header: {url}")
+    if not address.path.rstrip("/").endswith("/mcp"):
         raise ValueError(f"--url: the server answers at /mcp, so the address ends in /mcp, not {url}")
     if auth not in ("key", "oauth"):
         raise ValueError(f"--auth: key or oauth, not {auth!r}")
@@ -78,7 +96,7 @@ def server_json(path: str, name: str, url: str, version: str, auth: str, *,  # p
                               "isRequired": True, "isSecret": True}]
     server: dict = {"$schema": SCHEMA, "name": name, "description": _description(path, description), "version": version}
     if repository:
-        server["repository"] = {"url": repository, "source": "github" if "github.com" in repository else "git"}
+        server["repository"] = {"url": repository, "source": _source(repository)}
     server["remotes"] = [remote]
     return server
 

@@ -25,9 +25,15 @@ uv run python registry.py examples/tariff/environment.toml --name io.github.you/
 - **The description** is at most 100 characters, which is the registry's limit. For an
   environment it defaults to the environment's name; a CLM scenario has no description of its
   own, so give one.
-- **The address must be HTTPS and name a host.** The registry refuses `localhost` and bare IP
-  addresses, so `registry.py` refuses them too. An internal name such as
-  `decisions.corp.internal` is accepted.
+- **The address must be HTTPS and name a host.** The registry refuses `localhost` and
+  `127.0.0.1`. `registry.py` also refuses every other bare IP address, so that an entry names a
+  host other computers can find. An internal name such as `decisions.corp.internal` is
+  accepted. A path before `/mcp`, as behind a gateway, is fine
+  (`https://gateway.corp/tools/decisions/mcp`).
+- **Nothing secret goes in the address.** A user, password, query or fragment is refused: an
+  entry is published as written and never fully removed, and the key belongs in the header.
+- **The repository** must be a GitHub or GitLab project's home page, which is all the registry
+  takes. Leave it out for any other forge.
 
 Check the file with the registry's own tool, then publish it:
 
@@ -44,16 +50,21 @@ binaries on GitHub).
 
 **The public registry** (`registry.modelcontextprotocol.io`) lists only what anyone can reach:
 a remote address that is publicly accessible, or a package on a public index. A name under
-`io.github.<you>/` needs a GitHub login. A name under your own domain needs a DNS or HTTP proof.
-Entries cannot be removed. A version can only be marked `deprecated` or `deleted`, which hides
-it from listings (`mcp-publisher status`). Use it for a deployment meant for the public, such as
+`io.github.<you>/` needs a GitHub login. A name under a GitHub organisation needs a personal
+access token with `read:org`, or GitHub Actions, because `mcp-publisher login github` cannot
+grant organisation names yet. A name under your own domain needs a DNS or HTTP proof. Entries
+are never fully removed. With `mcp-publisher status`, a version can be marked `deprecated`,
+which still lists it with a warning, or `deleted`, which hides it from listings but can be undone. Use it for a deployment meant for the public, such as
 a demonstration.
 
 **A private registry** suits a deployment on a private network, which is how most decision
 servers will run. It is the same registry software, with the same API, run by your
 organisation. Clients and agents inside the network search it, and nothing about the deployment
-leaves the network. Who may publish is set by how the registry is run, for example a GitHub
-organisation, or your identity provider for administrators.
+leaves the network. Who may publish is set by how the registry is run. With GitHub login, any
+GitHub user who can reach it may publish under their own `io.github.<user>/` name; it does not
+limit publishing to an organisation's members. With your own identity provider (OIDC), the
+claims a token must carry decide who may publish and edit. With DNS or HTTP proof, whoever holds
+a domain's key may publish under that domain.
 
 ## A private registry on this computer
 
@@ -68,15 +79,17 @@ run natively.
 3. Start the registry:
 
    ```bash
-   MCP_REGISTRY_SERVER_ADDRESS=:8090 \
+   MCP_REGISTRY_SERVER_ADDRESS=127.0.0.1:8090 \
    MCP_REGISTRY_DATABASE_URL="postgres://mcpregistry@localhost:5433/mcp-registry?sslmode=disable" \
    MCP_REGISTRY_JWT_PRIVATE_KEY=$(openssl rand -hex 32) \
    MCP_REGISTRY_SEED_FROM= MCP_REGISTRY_ENABLE_ANONYMOUS_AUTH=true MCP_REGISTRY_OIDC_ENABLED=false \
    ./registry
    ```
 
-   Anonymous publishing is for trying it out only. It lets anyone publish names under
-   `io.modelcontextprotocol.anonymous/`.
+   Anonymous publishing is for trying it out only: it lets anyone who can reach the registry
+   publish, change or deprecate names under `io.modelcontextprotocol.anonymous/`. That includes
+   an entry that sends clients, and their key, to another host. So listen on `127.0.0.1` only,
+   as above, and never turn it on for a registry others use.
 4. Write and publish the entry:
 
    ```bash

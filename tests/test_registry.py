@@ -89,3 +89,29 @@ def test_main_writes_the_file(tmp_path, capsys):
 def test_main_reports_a_bad_setting_in_one_line(capsys):
     assert registry.main([str(TARIFF), "--name", "tariff", "--url", URL, "--version", "0.1.0"]) == 2
     assert capsys.readouterr().err.startswith("error: name: must be namespace/name")
+
+
+@pytest.mark.parametrize("url", ["https://user:secret@decisions.corp/mcp", "https://decisions.corp/mcp?key=abc",
+                                 "https://decisions.corp/mcp#key"])
+def test_a_url_carrying_anything_but_the_address_is_refused(url):
+    with pytest.raises(ValueError, match="^--url: no user, password, query or fragment"):
+        entry(url=url)
+
+
+def test_a_path_prefix_before_mcp_is_accepted():
+    assert entry(url="https://gateway.corp/tools/decisions/mcp")["remotes"][0]["url"] == \
+        "https://gateway.corp/tools/decisions/mcp"
+
+
+@pytest.mark.parametrize("repository, source", [("https://github.com/kvnlng/clm-decision-agent", "github"),
+                                                ("https://gitlab.com/team/project", "gitlab")])
+def test_github_and_gitlab_repositories_are_named(repository, source):
+    assert entry(repository=repository)["repository"] == {"url": repository, "source": source}
+
+
+@pytest.mark.parametrize("repository", ["https://git.corp/team/project", "https://notgithub.com/a/b",
+                                        "https://github.com/a/b/tree/main", "https://gitlab.com/a/b/-/tree/main",
+                                        "https://x-access-token:ghp_secret@github.com/a/b"])
+def test_other_repositories_are_refused(repository):
+    with pytest.raises(ValueError, match="^--repository: the registry takes a GitHub or GitLab project URL"):
+        entry(repository=repository)
