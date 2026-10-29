@@ -89,8 +89,8 @@ def build_environment_server(env: Environment, trace: tracing.TraceWriter | None
             lambda args, name=name: engine.run_calculation(env, name, args), _signature(calculation.params))
     for name, judge in env.judges.items():
         add(f"judge_{name}", f"{judge.description} CLM's probability, 0 to 1, that the answer to "
-            f"\"{judge.instructions}\" is yes for the text.", lambda args, name=name: engine.run_judgement(env, name, args),
-            _signature({"text": "string"}))
+            f"\"{judge.instructions}\" is yes for the text.",
+            lambda args, name=name: engine.run_judgement(env, name, args), _signature({"text": "string"}))
     branches = inspect.Parameter("branches", inspect.Parameter.KEYWORD_ONLY, default=None,
                                  annotation=list[dict[str, Any]] | None)
     for name, scenario in env.scenarios.items():
