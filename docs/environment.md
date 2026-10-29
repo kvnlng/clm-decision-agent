@@ -156,7 +156,9 @@ account for every number.
   inputs.
 - **A branch fails** when a listed limit was never evaluated or failed (even if the owner's code caught the error),
   when a step fails, or when the figures have no finite number for the objective. So no branch can skip a limit
-  unnoticed: in the example, the dependency check runs on every branch because its rule is a limit.
+  unnoticed: in the example, the dependency check runs on every branch because its rule is a limit. A branch that
+  has nothing to check a limit against (a product with no key clients, for the SLA rule) fails too, so write the
+  branch to check the limit once with a neutral input, or leave the limit out of that scenario.
 - **The kept branches are ranked** by the objective. A lever value the owner did not list is refused before anything
   runs.
 

@@ -31,7 +31,9 @@ The graph is in `graph/` (20 nodes, 24 edges) and the owner's functions are in `
 | Supply concentration | `rules/supply_concentration.dmn` | No raw-material provider may carry more than 60% of supply |
 
 The last three are the `sourcing` scenario's limits, so every branch checks them all: the SLA rule once per key
-client.
+client. A product with no key clients would fail every branch, because the SLA limit is then never checked; that is
+deliberate. An owner who wants such products compared would check the rule once with a neutral input, or leave the
+limit out of the scenario.
 
 ## The levers
 
