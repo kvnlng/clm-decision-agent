@@ -39,6 +39,58 @@ uv run python server.py my_scenario.toml --http [--host 127.0.0.1] [--port 8000]
 - Leave out `--review` for real callers. Review mode lets any caller with the key save
   corrections, which become training data.
 
+### With tokens from your identity provider (OAuth)
+
+Instead of one shared key, the server can take OAuth access tokens from any OpenID Connect
+issuer, such as Entra ID or Keycloak. Each caller is then known by name, and access is granted
+and taken away in the identity provider. The server only checks tokens; it never issues them.
+
+```bash
+uv run python server.py my_scenario.toml --http --auth oauth \
+    --issuer https://login.example.org/realms/clm --audience decision-server --scope decide \
+    --resource-url https://decisions.example.org/mcp
+```
+
+- **A token is accepted** when it is a JWT signed by one of the issuer's keys (found through
+  its `/.well-known/openid-configuration` and kept), names the issuer and the audience, has not
+  expired, and carries every `--scope`. Scopes are read from `scope` (Keycloak, RFC 9068),
+  `scp` (Entra, a user's token) or `roles` (Entra, an application's own token).
+- **A missing or bad token gets 401**, with a `WWW-Authenticate` header that points to
+  `/.well-known/oauth-protected-resource/mcp`. That document names the issuer, so an MCP client
+  can find where to get a token. **A token without the scope gets 403.**
+- `--audience` defaults to the resource URL, and `--resource-url` to `http://HOST:PORT/mcp`;
+  behind HTTPS, set it to the address callers use. The settings can also come from
+  `DECISION_OAUTH_ISSUER`, `DECISION_OAUTH_AUDIENCE` and `DECISION_OAUTH_SCOPES`
+  (space-separated). The issuer must be HTTPS, except on localhost.
+- **The trace names the caller:** the token's client (`client_id`, `azp` or `appid`) and
+  subject, never the token.
+- Not supported yet: opaque tokens (introspection), a scope per tool (one scope opens every
+  tool), and the server acting as its own authorisation server.
+
+**Keycloak** (checked with Keycloak 26.8.1 on a Mac, with a client credentials token):
+
+1. A realm (`clm`), and a client scope `decide` with "Include in token scope" on.
+2. A confidential client for the calling agent, `databricks-agent`, with service accounts on
+   and `decide` as an optional client scope.
+3. An audience mapper on that client, adding `decision-server` to the access token's audience.
+4. The issuer is `http://localhost:8081/realms/clm`. An agent gets a token with
+   `grant_type=client_credentials` and `scope=decide` from the realm's
+   `/protocol/openid-connect/token`.
+
+**Entra ID** (not tried yet):
+
+1. An app registration for the server. Under "Expose an API", set its application ID URI
+   (`api://<server app id>`). Add a scope `decide` for users' tokens, and an app role `decide`
+   (allowed member types: applications) for agents calling as themselves.
+2. In its manifest, set `requestedAccessTokenVersion` to 2. The tokens' issuer is then
+   `https://login.microsoftonline.com/<tenant id>/v2.0`, which is what discovery gives, and the
+   audience is the server app's client ID.
+3. An app registration for the calling agent, with a client secret and the application
+   permission `decide`, granted by an administrator. It asks for a token with
+   `scope=api://<server app id>/.default`.
+4. Start the server with `--issuer https://login.microsoftonline.com/<tenant id>/v2.0
+   --audience <server app id> --scope decide`.
+
 Try it with the test chat, which then uses the same connection an outside agent would:
 
 ```bash
@@ -55,6 +107,9 @@ Other clients:
 
 Databricks agents can call an MCP server outside Databricks that speaks Streamable HTTP. An
 administrator registers it in Unity Catalog as an MCP service, with its address and the key.
+Unity Catalog's HTTP connections also offer OAuth machine-to-machine (a client ID, a secret, a
+token endpoint and a scope), which would fit `--auth oauth` with an Entra app role; that has
+not been tried either.
 Agents written in Python, AI Playground and Genie Code can then use it. Databricks has to be
 able to reach the address, so the server needs a public HTTPS address, or a private network
 link, and your workspace's outbound network rules must allow it. This has not been tried yet.

@@ -12,3 +12,4 @@ docs/superpowers/
 examples/crowdstrike/runs/
 examples/tariff/runs/
 .neo4j-local.env
+.keycloak-local.env

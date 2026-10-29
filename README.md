@@ -112,8 +112,8 @@ uv run python evaluate.py my_scenario/scenario.toml --cases my_scenario/scenario
 
 [docs/fine-tuning.md](docs/fine-tuning.md) has the details.
 
-**7. Connect an agent.** Serve over HTTP with a key, and point an MCP client at it:
-[docs/serving.md](docs/serving.md).
+**7. Connect an agent.** Serve over HTTP with a key, or with OAuth tokens from your identity
+provider (`--auth oauth`), and point an MCP client at it: [docs/serving.md](docs/serving.md).
 
 ```bash
 export DECISION_SERVER_KEY=<a long random key>
