@@ -23,6 +23,8 @@ from clm_common import ClmError
 from evaluate import agreement as replay_agreement
 from dataset import labels
 from record import load_records, record_key, save_correction
+from environment import Environment, is_environment, load_environment
+from environment_server import build_environment_server
 from scenario import Scenario, ScenarioError, load_scenario
 from tools import check_tools, load_tools
 
@@ -212,10 +214,16 @@ def load(path: str):
     return scenario, router, tools
 
 
+def load_any(path: str):
+    """An environment, loaded without CLM, or a CLM scenario's (scenario, router, tools) as `load` gives them."""
+    return load_environment(path) if is_environment(path) else load(path)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Command-line entry point; returns the process exit code. Messages go to stderr: stdout is MCP's."""
-    parser = argparse.ArgumentParser(description="Offer a scenario's decisions to other agents over MCP.")
-    parser.add_argument("scenario", help="path to the scenario file")
+    parser = argparse.ArgumentParser(description="Offer a scenario's or an environment's decisions to other agents "
+                                                 "over MCP.")
+    parser.add_argument("scenario", help="path to the scenario file, or to an environment's environment.toml")
     parser.add_argument("--review", action="store_true", help="also offer correct and agreement")
     parser.add_argument("--http", action="store_true", help="serve Streamable HTTP instead of stdio")
     parser.add_argument("--host", default="127.0.0.1")
@@ -231,12 +239,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: set {args.key_env} to the key callers must send", file=sys.stderr)
         return 2
     try:
-        scenario, router, tools = load(args.scenario)
+        if args.review and is_environment(args.scenario):
+            print("error: review mode is for CLM scenarios; an environment has no corrections to review",
+                  file=sys.stderr)
+            return 2
+        loaded = load_any(args.scenario)
     except (ScenarioError, ClmError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     trace = tracing.TraceWriter(args.trace, text=args.trace_text) if args.trace else None
-    server = build_server(scenario, router, tools, args.review, trace=trace)
+    if isinstance(loaded, Environment):
+        server = build_environment_server(loaded, trace=trace)
+    else:
+        scenario, router, tools = loaded
+        server = build_server(scenario, router, tools, args.review, trace=trace)
     if not args.http:
         server.run("stdio")
         return 0
