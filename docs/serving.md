@@ -54,7 +54,11 @@ uv run python server.py my_scenario.toml --http --auth oauth \
 - **A token is accepted** when it is a JWT signed by one of the issuer's keys (found through
   its `/.well-known/openid-configuration` and kept), names the issuer and the audience, has not
   expired, and carries every `--scope`. Scopes are read from `scope` (Keycloak, RFC 9068),
-  `scp` (Entra, a user's token) or `roles` (Entra, an application's own token).
+  `scp` (Entra, a user's token) or `roles` (Entra, an application's own token). **Without
+  `--scope`, any token the issuer made for the audience is accepted.**
+- **If the issuer cannot be reached**, every token is refused and the server logs a warning. It
+  asks the issuer again at most once a minute, so a mistyped `--issuer` shows up in the log at
+  the first call, not at start-up.
 - **A missing or bad token gets 401**, with a `WWW-Authenticate` header that points to
   `/.well-known/oauth-protected-resource/mcp`. That document names the issuer, so an MCP client
   can find where to get a token. **A token without the scope gets 403.**
@@ -63,7 +67,8 @@ uv run python server.py my_scenario.toml --http --auth oauth \
   `DECISION_OAUTH_ISSUER`, `DECISION_OAUTH_AUDIENCE` and `DECISION_OAUTH_SCOPES`
   (space-separated). The issuer must be HTTPS, except on localhost.
 - **The trace names the caller:** the token's client (`client_id`, `azp` or `appid`) and
-  subject, never the token.
+  subject, never the token. A user's subject identifies a person, so treat a trace as personal
+  data when you share it.
 - Not supported yet: opaque tokens (introspection), a scope per tool (one scope opens every
   tool), and the server acting as its own authorisation server.
 
@@ -80,11 +85,16 @@ uv run python server.py my_scenario.toml --http --auth oauth \
 **Entra ID** (not tried yet):
 
 1. An app registration for the server. Under "Expose an API", set its application ID URI
-   (`api://<server app id>`). Add a scope `decide` for users' tokens, and an app role `decide`
-   (allowed member types: applications) for agents calling as themselves.
-2. In its manifest, set `requestedAccessTokenVersion` to 2. The tokens' issuer is then
-   `https://login.microsoftonline.com/<tenant id>/v2.0`, which is what discovery gives, and the
-   audience is the server app's client ID.
+   (`api://<server app id>`). Add an app role `decide` (allowed member types: applications) for
+   agents calling as themselves, as a Databricks connection would. Users' own tokens would need
+   a delegated scope; Entra may refuse a scope with the same value as an app role, so that is
+   left out here.
+2. In its manifest, set the access token version to 2: `api.requestedAccessTokenVersion` in the
+   Microsoft Graph manifest, `accessTokenAcceptedVersion` in the older one. The tokens' issuer
+   is then `https://login.microsoftonline.com/<tenant id>/v2.0`, which is what discovery gives,
+   and the audience is the server app's client ID. Left at version 1, tokens name the issuer
+   `https://sts.windows.net/<tenant id>/` and the audience `api://<server app id>`, and the
+   server refuses them all.
 3. An app registration for the calling agent, with a client secret and the application
    permission `decide`, granted by an administrator. It asks for a token with
    `scope=api://<server app id>/.default`.

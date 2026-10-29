@@ -64,16 +64,23 @@ class OidcVerifier:
         self.issuer, self.audience, self.fetch = issuer, audience, fetch
         self._jwks_uri: str | None = None
         self._keys: jwt.PyJWKSet | None = None
-        self._fetched = 0.0
+        # When keys were last asked for, whether or not the issuer answered
+        self._asked: float | None = None
         self._lock = asyncio.Lock()
 
+    def _may_ask(self) -> bool:
+        return self._asked is None or time.monotonic() - self._asked > REFETCH_SECONDS
+
     async def _key(self, kid: str | None) -> jwt.PyJWK | None:
-        async with self._lock:
-            key = self._find(kid)
-            if key is None and (self._keys is None or time.monotonic() - self._fetched > REFETCH_SECONDS):
-                await self._fetch_keys()
-                key = self._find(kid)
+        # A known key, or a refusal while asking again is not allowed, never waits for a fetch in progress
+        key = self._find(kid)
+        if key is not None or not self._may_ask():
             return key
+        async with self._lock:
+            if self._may_ask():
+                self._asked = time.monotonic()
+                await self._fetch_keys()
+            return self._find(kid)
 
     def _find(self, kid: str | None) -> jwt.PyJWK | None:
         if self._keys is None:
@@ -81,15 +88,20 @@ class OidcVerifier:
         keys = self._keys.keys
         return next((key for key in keys if key.key_id == kid), keys[0] if kid is None and len(keys) == 1 else None)
 
+    async def _document(self, url: str) -> dict:
+        document = await self.fetch(url)
+        if not isinstance(document, dict):
+            raise OAuthError(f"{url} did not answer with a JSON object")
+        return document
+
     async def _fetch_keys(self) -> None:
         if self._jwks_uri is None:
-            document = await self.fetch(self.issuer.rstrip("/") + "/.well-known/openid-configuration")
+            document = await self._document(self.issuer.rstrip("/") + "/.well-known/openid-configuration")
             if document.get("issuer") != self.issuer:
                 raise OAuthError(f"the discovery document names issuer {document.get('issuer')!r}, "
                                  f"not {self.issuer!r}")
             self._jwks_uri = str(document["jwks_uri"])
-        self._keys = jwt.PyJWKSet.from_dict(await self.fetch(self._jwks_uri))
-        self._fetched = time.monotonic()
+        self._keys = jwt.PyJWKSet.from_dict(await self._document(self._jwks_uri))
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """The token's access, or None to refuse it."""
@@ -104,10 +116,16 @@ class OidcVerifier:
         except (OAuthError, KeyError) as error:
             log.warning("oauth: cannot check tokens: %s", error)
             return None
+        # Anything else unexpected refuses the token too: an error here would be a 500, not a 401
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            log.warning("oauth: refused a token: %s: %s", type(error).__name__, error)
+            return None
         # azp: OIDC and Entra v2; appid: Entra v1; client_id: RFC 9068 and Keycloak's client credentials
         client = claims.get("client_id") or claims.get("azp") or claims.get("appid") or "unknown"
-        return AccessToken(token=token, client_id=str(client), scopes=_scopes(claims), expires_at=claims["exp"],
-                           resource=self.audience, subject=claims.get("sub"), claims={"iss": claims["iss"]})
+        subject = claims.get("sub")
+        return AccessToken(token=token, client_id=str(client), scopes=_scopes(claims), expires_at=int(claims["exp"]),
+                           resource=self.audience, subject=None if subject is None else str(subject),
+                           claims={"iss": claims["iss"]})
 
 
 @dataclass(frozen=True)

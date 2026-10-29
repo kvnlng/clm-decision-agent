@@ -1,6 +1,7 @@
 """Tests for oauth.py and `server.py --auth oauth`: tokens from an OIDC issuer, checked as JWTs."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import asyncio
 import json
 import time
 
@@ -192,3 +193,55 @@ async def test_an_environment_server_takes_tokens_too(write_environment):
             async with Client(streamable_http_client(url, http_client=http)) as client:
                 described = await client.call_tool("describe", {})
     assert described.structured_content["name"]
+
+
+@pytest.mark.anyio
+async def test_a_failing_issuer_is_asked_at_most_once_a_minute():
+    asked = []
+
+    async def down(url):
+        asked.append(url)
+        raise oauth.OAuthError(f"cannot read {url}: connection refused")
+    check = oauth.OidcVerifier(ISSUER, AUDIENCE, fetch=down)
+    for kid in ("k1", "x1", "x2", "k1"):
+        assert await check.verify_token(token(kid=kid)) is None
+    assert len(asked) == 1
+
+
+@pytest.mark.anyio
+async def test_a_known_key_does_not_wait_for_a_slow_fetch(monkeypatch):
+    issuer, release = Issuer(), asyncio.Event()
+    check = verifier(issuer)
+    await check.verify_token(token())
+    monkeypatch.setattr(oauth, "REFETCH_SECONDS", 0)
+
+    async def slow(url):
+        await release.wait()
+        return await issuer.fetch(url)
+    check.fetch = slow
+    stalled = asyncio.create_task(check.verify_token(token(key=OTHER_KEY, kid="junk")))
+    await asyncio.sleep(0.05)
+    assert await asyncio.wait_for(check.verify_token(token()), timeout=1) is not None
+    release.set()
+    assert await stalled is None
+
+
+@pytest.mark.anyio
+async def test_odd_claims_and_documents_are_refused_or_mended_not_errors():
+    access = await verifier().verify_token(token(exp=time.time() + 300.5))
+    assert isinstance(access.expires_at, int)
+    assert await verifier().verify_token(token(sub=12345)) is None
+
+    async def listing(_url):
+        return ["not", "a", "document"]
+    assert await oauth.OidcVerifier(ISSUER, AUDIENCE, fetch=listing).verify_token(token()) is None
+
+
+@pytest.mark.anyio
+async def test_alg_none_and_kidless_tokens():
+    unsigned = jwt.encode({"iss": ISSUER, "aud": AUDIENCE, "exp": int(time.time()) + 300}, None, algorithm="none")
+    assert await verifier().verify_token(unsigned) is None
+    kidless = jwt.encode({"iss": ISSUER, "aud": [AUDIENCE, "account"], "exp": int(time.time()) + 300}, KEY,
+                         algorithm="RS256")
+    assert await verifier().verify_token(kidless) is not None
+    assert await verifier(Issuer(keys=((KEY, "k1"), (OTHER_KEY, "k2")))).verify_token(kidless) is None
