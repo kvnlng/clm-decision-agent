@@ -75,6 +75,8 @@ class Steps:
                 outputs, fired = result["outputs"], result["fired"]
             else:
                 outputs, fired = getattr(self.env.functions, decision.function)(**inputs), []
+                if not isinstance(outputs, dict):
+                    raise StepError(f"decision {name}: its function must return a dict")
         except Exception as error:
             # Recorded even if the owner's code catches it, so a limit that failed cannot pass unnoticed
             self.steps.append({"kind": "decision", "name": name, "inputs": inputs, "result": None, "fired": [],

@@ -2,7 +2,7 @@
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import pytest
-from conftest import ENV_TOML, limit_dmn
+from conftest import ENV_FUNCTIONS, ENV_TOML, limit_dmn
 
 from engine import StepError, run_calculation, run_decision, run_query, run_scenario
 from environment import load_environment
@@ -95,6 +95,13 @@ def test_a_boolean_lever_can_be_chosen(write_environment):
     assert [branch["status"] for branch in result["branches"]] == ["kept", "rejected"]
     with pytest.raises(StepError, match="air = 1 is not allowed"):
         run_scenario(env, "sourcing", {"product": "P1"}, branches=[{"share": 0, "air": 1}])
+
+
+def test_a_function_decision_must_return_a_dict(write_environment):
+    toml = ENV_TOML + '\n[decisions.listed]\ndescription = "Answers with a list"\nparams = {}\nfunction = "listed"\n'
+    env = load_environment(write_environment(toml, ENV_FUNCTIONS + "\n\ndef listed():\n    return [True]\n"))
+    with pytest.raises(StepError, match="decision listed: its function must return a dict"):
+        run_decision(env, "listed", {})
 
 
 def test_a_swallowed_limit_failure_fails_the_branch(write_environment):
