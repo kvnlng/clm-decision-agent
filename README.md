@@ -142,14 +142,16 @@ Read [docs/data-handling.md](docs/data-handling.md) before any real text goes in
 
 Some decisions rest on data, arithmetic and policy rather than on reading a message: "should we move Product Line
 X's sourcing to Region B, and what would it do to the Q3 margin and our delivery terms?" For those, the same server
-serves an **environment** instead of a scenario, and does not load CLM:
+serves an **environment** instead of a scenario:
 
 - **a knowledge graph**, with named queries the owner wrote;
 - **decision models**: DMN decision tables, for the rules and limits;
 - **scenarios**: levers with the values the owner allows, ranked by an objective, with every limit checked on every
   branch;
 - **an agent**, any MCP client, which only chooses among them. `decision_agent.py` is a reference one, with Claude,
-  and every figure in its answer is checked against what the tools returned.
+  and every figure in its answer is checked against what the tools returned;
+- **judges**, optional: CLM answers a yes/no question about text no rule can read, such as supplier news, and a rule
+  decides on its probability. CLM loads only on the first judgement.
 
 ```bash
 uv run python server.py examples/tariff/environment.toml
@@ -157,8 +159,7 @@ uv run --group demo python decision_agent.py examples/tariff/environment.toml "S
 ```
 
 [docs/environment.md](docs/environment.md) explains every part; [examples/tariff](examples/tariff/README.md) is the
-worked example. The graph is built in, or Neo4j; the agent is Claude, or a local model through Ollama. CLM as a judge
-of evidence rules cannot judge comes later.
+worked example. The graph is built in, or Neo4j; the agent is Claude, or a local model through Ollama.
 
 ## What to expect
 

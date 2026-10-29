@@ -101,3 +101,15 @@ def test_each_supplier_in_use_with_news_is_judged(with_news):
     decided = [step for step in branch(with_news, 0)["steps"] if step["name"] == "news_risk"]
     assert decided[0]["inputs"] == {"probability": 0.1, "supplier": "Arden Plastics"}
     assert decided[0]["result"]["allowed"] is True
+
+
+@pytest.mark.slow
+def test_real_clm_rejects_the_strike():
+    """With MLX on a Mac: CLM itself judges the graph's news, at the threshold judge_news.py measured."""
+    pytest.importorskip("mlx")
+    result = run_scenario(load_environment(EXAMPLE), "sourcing_with_news", {"product": "PX"})
+    for share in (0.5, 1.0):
+        assert "news_risk" in [item["decision"] for item in branch(result, share)["rejected_by"]]
+    assert result["best"] == {"region_b_share": 0}
+    print({share: [(step["inputs"]["text"][:30], step["result"]) for step in branch(result, share)["steps"]
+                   if step["kind"] == "judgement"] for share in (0, 0.5, 1.0)})

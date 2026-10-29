@@ -29,6 +29,7 @@ The graph is in `graph/` (20 nodes, 24 edges) and the owner's functions are in `
 | SLA threshold | `rules/sla_threshold.dmn` | Deliveries may slip by at most 5 days for a strategic client, 10 for a standard one |
 | Quality threshold | `rules/quality_threshold.dmn` | Product Line X allows a defect rate of at most 1.5% |
 | Supply concentration | `rules/supply_concentration.dmn` | No raw-material provider may carry more than 60% of supply |
+| News risk | `rules/news_risk.dmn` | No supplier in use may have news CLM judges a delivery risk with probability above 0.82 |
 
 The last three are the `sourcing` scenario's limits, so every branch checks them all: the SLA rule once per key
 client. A product with no key clients would fail every branch, because the SLA limit is then never checked; that is
@@ -50,12 +51,50 @@ extension is measured against buying everything in Region A.
 Moving everything would earn the most, and it meets the delivery and quality limits. It is rejected because all
 supply would then depend on Kestrel Polymers. Half is the best branch no limit rejects.
 
+## The news
+
+Three suppliers have news on the graph (the `news` column of `graph/nodes.csv`). Borealis Motors, Region B's motor
+supplier: workers at its only plant have voted to strike from 1 August. Bayline Components has opened a second
+line, and Arden Plastics was named supplier of the year. No rule can read that, so the `sourcing_with_news` scenario
+asks CLM, through the `delivery_risk` judge, whether each news line about a supplier in use is a delivery risk. The
+highest probability goes to the `news_risk` limit. The `sourcing` scenario is unchanged, and never loads CLM.
+
+| Region B share | News judged (CLM's probability of a delivery risk) | Result |
+|---|---|---|
+| 0 | Arden Plastics' award 0.792 | **kept, best** |
+| 50% | Arden 0.792, Bayline's new line 0.772, Borealis' strike 0.921 | rejected: news risk |
+| 100% | Bayline 0.772, Borealis 0.921 | rejected: supply concentration and news risk |
+
+**How the threshold was chosen.** `judge_news.py` asks the same question of twelve made-up, labelled news lines
+(`news_cases.jsonl`) and prints each probability, on MLX on the Mac:
+
+| Probability | Delivery risk? | News |
+|---|---|---|
+| 0.975 | yes | Coriander Metals has filed for insolvency |
+| 0.950 | yes | Flooding has closed Bayline's port |
+| 0.921 | yes | Borealis Motors' workers have voted to strike |
+| 0.919 | yes | A cyberattack has shut Altamira Resins' ordering systems |
+| 0.904 | yes | Region A has banned exports of electric motors |
+| 0.843 | yes | A fire destroyed Halden Steel's rolling mill |
+| 0.792 | no | Arden Plastics was named supplier of the year |
+| 0.772 | no | Bayline opened a second assembly line |
+| 0.758 | no | Borealis published unchanged prices |
+| 0.715 | no | Arden Circuits appointed a new chief executive |
+| 0.656 | no | Aster Motors moved its head office |
+| 0.470 | no | Kestrel Polymers renewed its supply contracts |
+
+The two groups separate, so 0.82, between 0.792 and 0.843, rejects every risk and none of the others. **But the gap
+is only 0.05, and the question leans towards yes:** an award scored 0.79. CLM's probabilities are relative, not
+calibrated, and twelve lines are a small sample. A milder risk, or harmless news worded more alarmingly, could land
+on the wrong side. The judgement is a reason for a person to look at Borealis Motors, not a verdict to act on alone.
+
 ## Run it
 
 ```bash
 uv run python server.py examples/tariff/environment.toml     # serve it over MCP, for any agent
 uv run --group demo python decision_agent.py examples/tariff/environment.toml "With the recent tariff hikes in Region A, should we shift our primary component sourcing for Product Line X to Region B, and what would be the impact on our Q3 profit margins and SLA delivery times?"
 uv run --group demo python decision_agent.py examples/tariff/environment.toml "..." --backend ollama   # gemma4:26b
+uv run python examples/tariff/judge_news.py   # the news measurement, with CLM
 ```
 
 On Neo4j: load the graph, then set `[graph] backend = "neo4j"` in `environment.toml`. Each query's Cypher is beside
@@ -106,6 +145,25 @@ locally through Ollama on an M5 Max. All the runs used the built-in graph.
   it made the same two calls, took 14.6 s and recommended half. But it headed the 0% branch "Rejected", although it
   passed every limit and only ranked lower. The number check cannot catch that: it checks figures, not words.
 
-Six runs on a small, made-up graph show the pattern works with both models. They don't measure how often an agent
+**With the news, the two models gave different answers.** The same question went to each model once more, with the
+server able to judge news. Neither was told about the news.
+
+| Run | Tool calls | Recommendation | Mentioned the strike | Figures no tool returned | Time |
+|---|---|---|---|---|---|
+| Claude | `describe`, `scenario_sourcing_with_news`, `scenario_sourcing` | stay in Region A | yes | none | 30.0 s |
+| gemma4 | `describe`, `scenario_sourcing` | half to Region B | no | none | 15.2 s |
+
+- **Claude chose the news scenario and recommended staying in Region A.** It said why half was rejected (the strike,
+  judged 0.92), and why everything was rejected (Kestrel Polymers and the strike). It also ran `sourcing` to show
+  half would be best without the news. Unprompted, it warned that CLM also scored the award 0.79 and the new line
+  0.77, so the rejection rests on a narrow gap and a person should check the strike. It said the model cannot test
+  a mix such as keeping motors in Region A.
+- **gemma4 ran the scenario without the news and recommended half.** It was twice as fast and its figures were all
+  traced, but it did not run the scenario that checks the news, so it missed the strike. The number check cannot
+  catch that: every figure was right, for a question without the news.
+- So the framework gives the agent the evidence; choosing to look at it is still the agent's. An owner who wants the
+  news always checked should offer one scenario, with the news limit, rather than two.
+
+Eight runs on a small, made-up graph show the pattern works with both models. They don't measure how often an agent
 gets it right. A fair next measure would be many varied questions, each scored for whether the right branch was
 recommended, whether the rejected branch and its dependency were named, and how many figures were flagged.

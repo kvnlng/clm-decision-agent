@@ -19,7 +19,8 @@ writes a graph query, states a rule or invents a lever value, and it is told nev
 every verdict in an answer can be traced to the step that produced it, and `number_check.py` checks the answer
 against those steps.
 
-There is no language model in the server: the same inputs always give the same outputs.
+Without judges, there is no language model in the server: the same inputs always give the same outputs. A judge
+(below) adds one, for evidence no rule can read, and its every answer is traced.
 
 ## The file
 
@@ -212,11 +213,45 @@ account for every number.
 - **The kept branches are ranked** by the objective. A lever value the owner did not list is refused before anything
   runs.
 
+## Judges
+
+Some evidence is text no rule can read, such as news about a supplier. A judge asks CLM one yes/no question of a
+text and gives the probability that the answer is yes. That probability is then a rule's input like any other, so
+the rule, not the model, decides.
+
+```toml
+[clm]
+backend = "mlx"            # or "torch", on Linux with a GPU; model_id and device as for CLM scenarios
+
+[judges.delivery_risk]
+description = "Whether a piece of news about a supplier is a risk to its deliveries."
+instructions = "Does this news mean the supplier may fail to deliver its parts on time in the coming months?"
+```
+
+```python
+judged = [(steps.judge("delivery_risk", row["news"])["probability"], row["name"])
+          for row in steps.query("supplier_news", suppliers=in_use)]
+probability, supplier = max(judged, default=(0.0, "no supplier in use has news"))
+steps.decide("news_risk", probability=probability, supplier=supplier)
+```
+
+- **CLM loads on the first judgement,** not when the server starts. So an environment, or a scenario, that never
+  judges never needs CLM or its model. If CLM cannot load, the judgement fails in one line, its branch fails, and the
+  server stays up; the next judgement tries again.
+- **Each judgement is a step** in the trace: `{"kind": "judgement", "name", "inputs": {"text"}, "result":
+  {"probability"}}`. Empty text is refused, never judged as "no".
+- **A judge without `[clm]`** is refused when the environment loads.
+- **The probabilities are relative, not calibrated.** An untrained question can lean one way: in the tariff
+  example, harmless news scored 0.47 to 0.79 and the risks 0.84 to 0.98. So measure the question on labelled texts
+  before choosing a rule's threshold, as `examples/tariff/judge_news.py` does, and say how wide the gap was. Where
+  the texts do not separate, the judge is not ready to be a limit.
+
 ## The MCP tools
 
 | Tool | Does |
 |---|---|
 | `query_<name>`, `decision_<name>`, `calculation_<name>` | One named part, with its declared parameters as typed arguments |
+| `judge_<name>` | CLM's probability that the judge's question is answered yes for a `text` |
 | `scenario_<name>` | Every branch, or the `branches` given: each branch's figures, status, the limits that rejected it and every step |
 | `describe` | The environment's name and description, and every part with its parameters, levers, objective and limits |
 
@@ -256,5 +291,5 @@ reported, not blocked.
 
 - **Other graph databases,** such as Memgraph, which also speaks Cypher, through the same connector interface
   (`environment.Connector`).
-- **CLM as a judge,** for evidence rules cannot judge, such as supplier news: it would plug in as a decision with a
-  `function`, so its judgement becomes a traced input to a rule.
+- **Calibrated judges:** a judge trained on labelled texts (CLM's heads), so its threshold means a probability and
+  not only a rank.
