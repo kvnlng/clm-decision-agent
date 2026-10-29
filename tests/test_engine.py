@@ -1,11 +1,15 @@
 """Tests for engine.py: queries, decisions, calculations and scenarios, with every step recorded."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
-import pytest
-from conftest import ENV_FUNCTIONS, ENV_TOML, limit_dmn
+import threading
 
-from engine import StepError, run_calculation, run_decision, run_query, run_scenario
+import pytest
+from conftest import ENV_FUNCTIONS, ENV_TOML, JUDGE_TOML, limit_dmn
+
+from clm_common import ClmError
+from engine import StepError, run_calculation, run_decision, run_judgement, run_query, run_scenario
 from environment import load_environment
+from scenario import ScenarioError
 
 
 @pytest.fixture
@@ -129,3 +133,57 @@ def test_a_swallowed_limit_failure_fails_the_branch(write_environment):
     half = run_scenario(env, "sourcing", {"product": "P1"}, branches=[{"share": 0.5}])["branches"][0]
     assert half["status"] == "failed" and "limit share_limit failed: share_limit: no rule matches" in half["error"]
     assert any(step.get("error") for step in half["steps"])
+
+
+def test_a_judge_needs_clm(write_environment):
+    toml = ENV_TOML + JUDGE_TOML.replace('[clm]\nbackend = "mlx"\n', "")
+    with pytest.raises(ScenarioError, match="^judges.risk: a judge needs CLM: add a \\[clm\\] table"):
+        load_environment(write_environment(toml))
+
+
+def test_judgement_is_traced(write_environment, fake_clm):
+    env = load_environment(write_environment(ENV_TOML + JUDGE_TOML))
+    assert fake_clm.loads == 0                  # not at load: only when something is judged
+    result = run_judgement(env, "risk", {"text": "Workers vote to strike at the plant"})
+    assert result["result"] == {"probability": 0.9}
+    assert result["steps"] == [{"kind": "judgement", "name": "risk", "inputs": {"text": "Workers vote to strike at "
+                                "the plant"}, "result": {"probability": 0.9}}]
+    question = fake_clm.asked[0][1]
+    assert list(question.values()) == [{"type": "noul", "instructions": "Does this news mean the supplier may fail "
+                                                                        "to deliver?"}]
+
+
+def test_clm_loads_once_on_first_judgement(write_environment, fake_clm):
+    env = load_environment(write_environment(ENV_TOML + JUDGE_TOML))
+    threads = [threading.Thread(target=run_judgement, args=(env, "risk", {"text": f"news {n}"})) for n in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert fake_clm.loads == 1 and len(fake_clm.asked) == 4
+
+
+def test_empty_text_is_refused(write_environment, fake_clm):
+    env = load_environment(write_environment(ENV_TOML + JUDGE_TOML))
+    with pytest.raises(StepError, match="judge risk: there is no text to judge"):
+        run_judgement(env, "risk", {"text": "  "})
+    assert fake_clm.asked == []
+
+
+def test_a_clm_that_cannot_load_fails_the_branch(write_environment, monkeypatch):
+    import clm_router  # pylint: disable=import-outside-toplevel
+
+    def broken(*args, **kwargs):
+        raise ClmError("The mlx backend needs an Apple Silicon Mac.")
+    monkeypatch.setattr(clm_router, "load_engine", broken)
+    functions = ENV_FUNCTIONS + '''
+
+def judging_branch(steps, params, levers):
+    figures = branch(steps, params, levers)
+    steps.judge("risk", text="Workers vote to strike")
+    return figures
+'''
+    env = load_environment(write_environment(ENV_TOML.replace('branch = "branch"', 'branch = "judging_branch"')
+                                             + JUDGE_TOML, functions=functions))
+    branch = run_scenario(env, "sourcing", {"product": "P1"}, branches=[{"share": 0}])["branches"][0]
+    assert branch["status"] == "failed" and branch["error"].startswith("judge risk: CLM could not load: The mlx")

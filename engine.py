@@ -83,6 +83,20 @@ class Steps:
         self.steps.append({"kind": "decision", "name": name, "inputs": inputs, "result": outputs, "fired": fired})
         return outputs
 
+    def judge(self, name: str, text: str) -> dict:
+        """CLM's judgement of the text: {"probability"}, a number from 0 to 1."""
+        judge = _part(self.env.judges, "judge", name)
+        if not isinstance(text, str) or not text.strip():
+            raise StepError(f"judge {name}: there is no text to judge")
+        try:
+            result = {"probability": self.env.clm.probability(judge, text)}
+        except Exception as error:
+            self.steps.append({"kind": "judgement", "name": name, "inputs": {"text": text}, "result": None,
+                               "error": _message(error)})
+            raise
+        self.steps.append({"kind": "judgement", "name": name, "inputs": {"text": text}, "result": result})
+        return result
+
     def calculate(self, name: str, **inputs) -> dict:
         """A calculation's result."""
         calculation = _part(self.env.calculations, "calculation", name)
@@ -105,6 +119,13 @@ def run_decision(env: Environment, name: str, inputs: dict) -> dict:
     steps = Steps(env)
     outputs = steps.decide(name, **inputs)
     return {"outputs": outputs, "fired": steps.steps[-1]["fired"], "steps": steps.steps}
+
+
+def run_judgement(env: Environment, name: str, inputs: dict) -> dict:
+    """-> {"result", "steps"}."""
+    _check(f"judge {name}", {"text": "string"}, inputs)
+    steps = Steps(env)
+    return {"result": steps.judge(name, inputs["text"]), "steps": steps.steps}
 
 
 def run_calculation(env: Environment, name: str, inputs: dict) -> dict:

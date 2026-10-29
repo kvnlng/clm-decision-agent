@@ -11,6 +11,7 @@ import keyword
 import os
 import re
 import sys
+import threading
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,7 +20,7 @@ from typing import Protocol
 
 from dmn import DmnError, Table, load_table
 from graph import Graph
-from scenario import ScenarioError
+from scenario import CLM_BACKENDS, DEFAULT_CLM, ScenarioError, StepError
 
 BACKENDS = ("builtin", "neo4j")
 TYPES = ("string", "number", "integer", "boolean", "list")
@@ -82,6 +83,38 @@ class ScenarioDef:  # pylint: disable=too-many-instance-attributes
     limits: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class Judge:
+    """A yes/no question CLM answers about a text, such as a piece of news; the answer is a probability."""
+    name: str
+    description: str
+    instructions: str
+
+
+class Clm:
+    """CLM for an environment's judges, loaded on the first judgement, so an environment that never judges never
+    loads it. Calls take turns: CLM runs one model."""
+
+    def __init__(self, backend: str, model_id: str, device: str | None):
+        self.backend, self.model_id, self.device = backend, model_id, device
+        self._engine = None
+        self._lock = threading.Lock()
+
+    def probability(self, judge: Judge, text: str) -> float:
+        """CLM's probability that the judge's question is answered yes for the text; raises StepError if CLM cannot
+        load."""
+        with self._lock:
+            if self._engine is None:
+                import clm_router  # pylint: disable=import-outside-toplevel
+                # Loading can fail in many ways (no MLX, no network for the download, no memory)
+                try:
+                    self._engine = clm_router.load_engine(self.backend, self.model_id, None, self.device)
+                except Exception as error:  # pylint: disable=broad-exception-caught
+                    raise StepError(f"judge {judge.name}: CLM could not load: {error}") from error
+            question = {"type": "noul", "instructions": judge.instructions}
+            return float(self._engine.answer(text, {judge.name: question})["answers"][judge.name]["noul"])
+
+
 class Connector(Protocol):  # pylint: disable=too-few-public-methods
     """Where named queries run: the built-in graph now, a graph database later."""
 
@@ -113,6 +146,8 @@ class Environment:  # pylint: disable=too-many-instance-attributes
     decisions: dict[str, Decision]
     calculations: dict[str, Calculation]
     scenarios: dict[str, ScenarioDef]
+    judges: dict[str, Judge]
+    clm: Clm | None
 
 
 def _read(path: Path) -> dict:
@@ -247,6 +282,29 @@ def _connector(settings: GraphSettings, graph: Graph | None, functions: ModuleTy
     return Neo4jConnector(driver, settings.uri, settings.database)
 
 
+def _clm(data: dict) -> Clm | None:
+    """CLM's settings, as a scenario has them; None without a [clm] table."""
+    if "clm" not in data:
+        return None
+    table = _table(data, "clm", "clm")
+    backend = table.get("backend", "mlx")
+    if backend not in CLM_BACKENDS:
+        raise ScenarioError(f"clm.backend: must be {' or '.join(CLM_BACKENDS)}, not {backend!r}")
+    device = table.get("device")
+    if device is not None and backend != "torch":
+        raise ScenarioError("clm.device: applies to the torch backend only")
+    return Clm(backend, _text(table, "model_id", "clm", DEFAULT_CLM[backend]), device)
+
+
+def _judge(name: str, table: dict, clm: Clm | None) -> Judge:
+    where = f"judges.{name}"
+    if clm is None:
+        raise ScenarioError(f"{where}: a judge needs CLM: add a [clm] table (docs/environment.md)")
+    if table.get("type", "noul") != "noul":
+        raise ScenarioError(f"{where}.type: only noul (a yes/no question) for now")
+    return Judge(name, _text(table, "description", where), _text(table, "instructions", where))
+
+
 def _query(name: str, table: dict, functions: ModuleType, backend: str) -> Query:
     where = f"queries.{name}"
     function = _function(table, where, functions) if "function" in table or backend == "builtin" else None
@@ -321,6 +379,9 @@ def load_environment(path: str | Path, backend: str | None = None) -> Environmen
                     for name, table in _parts(data, "calculations").items()}
     scenarios = {name: _scenario(name, table, functions, decisions)
                  for name, table in _parts(data, "scenarios").items()}
+    clm = _clm(data)
+    judges = {name: _judge(name, table, clm) for name, table in _parts(data, "judges").items()}
     # Connected last, once everything else is known to be right
     return Environment(path, _text(head, "name", "environment"), _text(head, "description", "environment"), graph,
-                       functions, _connector(settings, graph, functions), queries, decisions, calculations, scenarios)
+                       functions, _connector(settings, graph, functions), queries, decisions, calculations, scenarios,
+                       judges, clm)

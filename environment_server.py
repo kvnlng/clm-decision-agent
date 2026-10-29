@@ -58,6 +58,8 @@ def describe(env: Environment) -> dict:
                           for name, decision in env.decisions.items()},
             "calculations": {name: {"description": calculation.description, "params": calculation.params}
                              for name, calculation in env.calculations.items()},
+            "judges": {name: {"description": judge.description, "instructions": judge.instructions}
+                       for name, judge in env.judges.items()},
             "scenarios": {name: {"description": scenario.description, "params": scenario.params,
                                  "levers": {lever: list(values) for lever, values in scenario.levers.items()},
                                  "objective": scenario.objective, "maximise": scenario.maximise,
@@ -85,6 +87,10 @@ def build_environment_server(env: Environment, trace: tracing.TraceWriter | None
     for name, calculation in env.calculations.items():
         add(f"calculation_{name}", calculation.description,
             lambda args, name=name: engine.run_calculation(env, name, args), _signature(calculation.params))
+    for name, judge in env.judges.items():
+        add(f"judge_{name}", f"{judge.description} CLM's probability, 0 to 1, that the answer to "
+            f"\"{judge.instructions}\" is yes for the text.", lambda args, name=name: engine.run_judgement(env, name, args),
+            _signature({"text": "string"}))
     branches = inspect.Parameter("branches", inspect.Parameter.KEYWORD_ONLY, default=None,
                                  annotation=list[dict[str, Any]] | None)
     for name, scenario in env.scenarios.items():

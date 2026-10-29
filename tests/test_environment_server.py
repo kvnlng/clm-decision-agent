@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
-from conftest import FakeRouter, decision
+from conftest import ENV_TOML, JUDGE_TOML, FakeRouter, decision
 from mcp import Client
 
 import clm_router
@@ -116,3 +116,14 @@ async def test_an_owner_error_reaches_the_agent(mcp_server):
     async with Client(mcp_server) as client:
         result = await client.call_tool("query_product_facts", {"product": "nope"})
     assert result.is_error and "KeyError: 'nope'" in result.content[0].text
+
+
+@pytest.mark.anyio
+async def test_judge_tool_over_mcp(write_environment, fake_clm):  # pylint: disable=unused-argument
+    env = load_environment(write_environment(ENV_TOML + JUDGE_TOML))
+    async with Client(build_environment_server(env)) as client:
+        names = {tool.name for tool in (await client.list_tools()).tools}
+        judged = await client.call_tool("judge_risk", {"text": "a strike is called"})
+        described = await client.call_tool("describe", {})
+    assert "judge_risk" in names and judged.structured_content["result"] == {"probability": 0.9}
+    assert described.structured_content["judges"]["risk"]["instructions"].startswith("Does this news")

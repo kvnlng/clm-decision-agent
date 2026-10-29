@@ -262,3 +262,40 @@ def write_environment(tmp_path):
         (root / "rules" / "share_limit.dmn").write_text(dmn or limit_dmn(), encoding="utf-8")
         return root / "environment.toml"
     return _write
+
+
+JUDGE_TOML = '''
+[clm]
+backend = "mlx"
+
+[judges.risk]
+description = "Whether a piece of news is a delivery risk"
+instructions = "Does this news mean the supplier may fail to deliver?"
+'''
+
+
+class FakeClmEngine:
+    """CLM's engine for judges: each text's probability from `probabilities`, by a word it contains, else 0.1."""
+
+    def __init__(self, probabilities=None):
+        self.probabilities = probabilities or {}
+        self.asked = []
+
+    def answer(self, state, questions):
+        self.asked.append((state, questions))
+        probability = next((p for word, p in self.probabilities.items() if word in state), 0.1)
+        return {"answers": {name: {"type": "noul", "noul": probability} for name in questions}}
+
+
+@pytest.fixture
+def fake_clm(monkeypatch):
+    """Replaces CLM's loading; -> the engine judges get, with `loads` counting how often it was loaded."""
+    import clm_router  # pylint: disable=import-outside-toplevel
+    engine = FakeClmEngine({"strike": 0.9})
+    engine.loads = 0
+
+    def load(backend, model_id, heads_dir=None, device=None):
+        engine.loads += 1
+        return engine
+    monkeypatch.setattr(clm_router, "load_engine", load)
+    return engine
