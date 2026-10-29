@@ -30,6 +30,9 @@ dev = [
     "pylint>=4.1.2",
     "pytest>=8",
 ]
+graph = [
+    "neo4j>=6,<7",
+]
 
 [tool.uv]
 package = false

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import keyword
+import os
 import re
 import sys
 import tomllib
@@ -20,6 +21,7 @@ from dmn import DmnError, Table, load_table
 from graph import Graph
 from scenario import ScenarioError
 
+BACKENDS = ("builtin", "neo4j")
 TYPES = ("string", "number", "integer", "boolean", "list")
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
 # A DMN input's typeRef, as a parameter type; "any" is not checked
@@ -100,11 +102,11 @@ class BuiltinConnector:  # pylint: disable=too-few-public-methods
 
 @dataclass(frozen=True)
 class Environment:  # pylint: disable=too-many-instance-attributes
-    """One organisation's decisions, ready to run."""
+    """One organisation's decisions, ready to run. `graph` is the built-in graph, or None on Neo4j."""
     path: Path
     name: str
     description: str
-    graph: Graph
+    graph: Graph | None
     functions: ModuleType
     connector: Connector
     queries: dict[str, Query]
@@ -187,16 +189,71 @@ def _import(folder: Path, name: str) -> ModuleType:
     return module
 
 
-def _graph(data: dict, folder: Path) -> Graph:
+@dataclass(frozen=True)
+class GraphSettings:
+    """The [graph] table: the backend, the CSV files, and where Neo4j is."""
+    backend: str
+    nodes: Path | None
+    edges: Path | None
+    uri: str
+    user: str
+    password_env: str
+    database: str
+
+
+def _graph_settings(data: dict, folder: Path, backend: str | None) -> GraphSettings:
     table = _table(data, "graph", "graph")
-    backend = table.get("backend", "builtin")
-    if backend != "builtin":
-        raise ScenarioError(f"graph.backend: '{backend}' comes in a later stage; only 'builtin' for now")
-    paths = [folder / _text(table, key, "graph") for key in ("nodes", "edges")]
+    backend = backend or table.get("backend", "builtin")
+    if backend not in BACKENDS:
+        raise ScenarioError(f"graph.backend: must be {' or '.join(BACKENDS)}, not {backend!r}")
+    files = [folder / _text(table, key, "graph") if key in table or backend == "builtin" else None
+             for key in ("nodes", "edges")]
+    neo4j = _table(table, "neo4j", "graph.neo4j")
+    return GraphSettings(backend, *files, _text(neo4j, "uri", "graph.neo4j", "bolt://127.0.0.1:7687"),
+                         _text(neo4j, "user", "graph.neo4j", "neo4j"),
+                         _text(neo4j, "password_env", "graph.neo4j", "NEO4J_PASSWORD"),
+                         _text(neo4j, "database", "graph.neo4j", "neo4j"))
+
+
+def graph_settings(path: str | Path) -> GraphSettings:
+    """The environment's [graph] settings, for load_graph.py; raises ScenarioError naming the setting."""
+    path = Path(path)
+    return _graph_settings(_read(path), path.resolve().parent, None)
+
+
+def load_graph_files(settings: GraphSettings) -> Graph:
+    """The built-in graph from the settings' CSV files; raises ScenarioError naming the file."""
+    if settings.nodes is None or settings.edges is None:
+        raise ScenarioError("graph: needs nodes and edges, the CSV files of the graph")
     try:
-        return Graph.from_csv(*paths)
+        return Graph.from_csv(settings.nodes, settings.edges)
     except (OSError, ValueError) as error:
         raise ScenarioError(f"graph: {error}") from error
+
+
+def neo4j_password(settings: GraphSettings) -> str:
+    """The password from the variable the settings name; never from the file itself."""
+    password = os.environ.get(settings.password_env, "")
+    if not password:
+        raise ScenarioError(f"graph.neo4j.password_env: set {settings.password_env} to the database's password")
+    return password
+
+
+def _connector(settings: GraphSettings, graph: Graph | None, functions: ModuleType) -> Connector:
+    if settings.backend == "builtin":
+        return BuiltinConnector(graph, functions)
+    from graph_neo4j import Neo4jConnector, connect  # pylint: disable=import-outside-toplevel
+    driver = connect(settings.uri, settings.user, neo4j_password(settings))
+    return Neo4jConnector(driver, settings.uri, settings.database)
+
+
+def _query(name: str, table: dict, functions: ModuleType, backend: str) -> Query:
+    where = f"queries.{name}"
+    function = _function(table, where, functions) if "function" in table or backend == "builtin" else None
+    cypher = table.get("cypher")
+    if backend == "neo4j" and (not isinstance(cypher, str) or not cypher.strip()):
+        raise ScenarioError(f"{where}.cypher: the neo4j backend runs a query's cypher; write one")
+    return Query(name, _text(table, "description", where), _params(table, where), function, cypher)
 
 
 def _decision(name: str, table: dict, folder: Path, functions: ModuleType) -> Decision:
@@ -245,19 +302,18 @@ def _scenario(name: str, table: dict, functions: ModuleType, decisions: dict) ->
                        branch, _text(table, "objective", where), maximise, tuple(limits))
 
 
-def load_environment(path: str | Path) -> Environment:
-    """Read and check an environment file; raises ScenarioError naming the setting."""
+def load_environment(path: str | Path, backend: str | None = None) -> Environment:
+    """Read and check an environment file; raises ScenarioError naming the setting. `backend` overrides the file's
+    [graph] backend, to run the same environment on the other graph."""
     path = Path(path)
     data = _read(path)
     folder = path.resolve().parent
     head = _table(data, "environment", "environment")
     functions = _import(folder, _text(head, "functions", "environment"))
-    graph = _graph(data, folder)
-    queries = {}
-    for name, table in _parts(data, "queries").items():
-        where = f"queries.{name}"
-        queries[name] = Query(name, _text(table, "description", where), _params(table, where),
-                              _function(table, where, functions), table.get("cypher"))
+    settings = _graph_settings(data, folder, backend)
+    graph = load_graph_files(settings) if settings.backend == "builtin" else None
+    queries = {name: _query(name, table, functions, settings.backend)
+               for name, table in _parts(data, "queries").items()}
     decisions = {name: _decision(name, table, folder, functions) for name, table in _parts(data, "decisions").items()}
     calculations = {name: Calculation(name, _text(table, "description", f"calculations.{name}"),
                                       _params(table, f"calculations.{name}"),
@@ -265,5 +321,6 @@ def load_environment(path: str | Path) -> Environment:
                     for name, table in _parts(data, "calculations").items()}
     scenarios = {name: _scenario(name, table, functions, decisions)
                  for name, table in _parts(data, "scenarios").items()}
+    # Connected last, once everything else is known to be right
     return Environment(path, _text(head, "name", "environment"), _text(head, "description", "environment"), graph,
-                       functions, BuiltinConnector(graph, functions), queries, decisions, calculations, scenarios)
+                       functions, _connector(settings, graph, functions), queries, decisions, calculations, scenarios)

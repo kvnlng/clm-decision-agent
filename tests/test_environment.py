@@ -27,7 +27,8 @@ def test_is_environment_tells_the_two_files_apart(write_environment, write_scena
 
 
 @pytest.mark.parametrize("old, new, setting", [
-    ('edges = "graph/edges.csv"', 'edges = "graph/edges.csv"\nbackend = "neo4j"', "graph.backend: .*later stage"),
+    ('edges = "graph/edges.csv"', 'edges = "graph/edges.csv"\nbackend = "memgraph"',
+     "graph.backend: must be builtin or neo4j"),
     ('function = "suppliers"', 'function = "nope"', "queries.suppliers.function: 'nope'"),
     ('dmn = "rules/share_limit.dmn"', 'dmn = "rules/missing.dmn"', "decisions.share_limit.dmn: "),
     ('params = { product = "string" }\nfunction', 'params = { product = "text" }\nfunction',

@@ -9,39 +9,80 @@ it reports each branch's Q3 margin, delivery extension and defect rate, which li
 functions = "tariff_functions"
 
 [graph]
-backend = "builtin"
+backend = "builtin"                 # or "neo4j", after `load_graph.py` has copied the CSV graph into it
 nodes = "graph/nodes.csv"
 edges = "graph/edges.csv"
+
+[graph.neo4j]
+uri = "bolt://127.0.0.1:7687"
+user = "neo4j"
+password_env = "NEO4J_PASSWORD"     # the variable holding the password; never the password itself
+database = "neo4j"
 
 [queries.product_facts]
 description = "A product's name, Q3 unit volume and unit price."
 params = { product = "string" }
 function = "product_facts"
+cypher = """
+MATCH (p:Node {id: $product})
+RETURN p.id AS id, p.name AS name, p.q3_units AS q3_units, p.unit_price AS unit_price"""
 
 [queries.components_of]
 description = "The components a product is built from, with their category and units per product."
 params = { product = "string" }
 function = "components_of"
+cypher = """
+MATCH (c:Component)-[r:PART_OF]->(:Node {id: $product})
+RETURN c.id AS id, c.name AS name, c.category AS category, r.units_per_product AS units_per_product
+ORDER BY c.id"""
 
 [queries.suppliers_of]
 description = "Who supplies a component: region, unit price, lead time in days, defect rate and freight per unit."
 params = { component = "string" }
 function = "suppliers_of"
+cypher = """
+MATCH (s:Supplier)-[r:SUPPLIES]->(:Node {id: $component})
+MATCH (s)-[:LOCATED_IN]->(g:Region)
+RETURN s.id AS id, s.name AS name, g.name AS region, r.unit_price AS unit_price,
+       s.lead_time_days AS lead_time_days, s.defect_rate AS defect_rate, s.freight_per_unit AS freight_per_unit
+ORDER BY s.id"""
 
 [queries.key_clients_of]
 description = "The key clients who buy a product, with the tier their delivery terms depend on."
 params = { product = "string" }
 function = "key_clients_of"
+cypher = """
+MATCH (k:Client)-[r:BUYS]->(:Node {id: $product})
+WHERE r.key = "yes"
+RETURN k.id AS id, k.name AS name, k.tier AS tier
+ORDER BY k.id"""
 
 [queries.supply_dependencies]
 description = "The raw-material providers that suppliers depend on, up to three steps away, with the path to each."
 params = { suppliers = "list" }
 function = "supply_dependencies"
+cypher = """
+UNWIND $suppliers AS supplier
+MATCH (s:Node {id: supplier})-[:DEPENDS_ON*1..3]->(p:Provider)
+WITH DISTINCT supplier, s, p
+MATCH path = shortestPath((s)-[:DEPENDS_ON*1..3]->(p))
+RETURN supplier, p.id AS provider, p.name AS provider_name, [n IN nodes(path) | n.id] AS path"""
 
 [queries.single_points_of_failure]
 description = "Providers that every one of the given suppliers depends on: losing one would cut all of them off."
 params = { suppliers = "list" }
 function = "single_points_of_failure"
+cypher = """
+MATCH (p:Provider)
+WHERE size($suppliers) > 0
+  AND all(supplier IN $suppliers WHERE EXISTS { MATCH (:Node {id: supplier})-[:DEPENDS_ON*1..3]->(p) })
+CALL (p) {
+  UNWIND $suppliers AS supplier
+  MATCH path = shortestPath((:Node {id: supplier})-[:DEPENDS_ON*1..3]->(p))
+  RETURN collect({supplier: supplier, path: [n IN nodes(path) | n.id]}) AS via
+}
+RETURN p.id AS id, p.name AS name, p.kind AS kind, via
+ORDER BY p.id"""
 
 [decisions.tariff_rate]
 description = "The tariff rate on a component category imported from a region, Region A's after the hike."

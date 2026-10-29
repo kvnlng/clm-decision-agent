@@ -50,7 +50,8 @@ def supply_dependencies(graph, suppliers):
 
 def single_points_of_failure(graph, suppliers):
     """The providers every one of the suppliers depends on."""
-    return [{"id": node["id"], "name": node["name"], "kind": node["kind"], "via": node["via"]}
+    return [{"id": node["id"], "name": node["name"], "kind": node["kind"],
+             "via": [{"supplier": supplier, "path": path} for supplier, path in node["via"].items()]}
             for node in graph.single_points_of_failure(suppliers, ["depends_on"], 3) if node["kind"] == "provider"]
 
 
