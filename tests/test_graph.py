@@ -41,6 +41,17 @@ def test_properties_are_parsed(graph):
     assert graph.edges(source="S1")[0]["share"] == 1
 
 
+def test_only_a_plain_decimal_becomes_a_number(tmp_path):
+    cells = ["nan", "inf", "1e5", "1_000", "-3", "2.50", "007", "1.", ".5", "+4"]
+    (tmp_path / "nodes.csv").write_text("id,kind,name,cell\n" + "".join(f"N{i},n,n,{cell}\n"
+                                                                    for i, cell in enumerate(cells)), encoding="utf-8")
+    (tmp_path / "edges.csv").write_text("source,relation,target\n", encoding="utf-8")
+    graph = Graph.from_csv(tmp_path / "nodes.csv", tmp_path / "edges.csv")
+    assert [graph.node(f"N{i}")["cell"] for i in range(len(cells))] == \
+        ["nan", "inf", "1e5", "1_000", -3, 2.5, 7, "1.", ".5", "+4"]
+    assert isinstance(graph.node("N4")["cell"], int) and isinstance(graph.node("N5")["cell"], float)
+
+
 def test_neighbours_follow_the_direction(graph):
     assert ids(graph.neighbours("R1", "depends_on", "in")) == {"S1", "S2"}
     assert ids(graph.neighbours("R1", "depends_on", "out")) == {"M1"}

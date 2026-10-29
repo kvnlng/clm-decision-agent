@@ -3,24 +3,25 @@
     nodes.csv    id,kind,name and any other columns, which become the node's properties
     edges.csv    source,relation,target and any other columns, which become the edge's properties
 
-An empty cell is no property; a cell that reads as a number becomes one.
+An empty cell is no property; a cell that is a plain decimal (an optional minus, digits, an optional point and
+digits) becomes a number, and any other cell stays text.
 """
 from __future__ import annotations
 
 import csv
+import re
 from collections import deque
 from pathlib import Path
 
 NODE_COLUMNS = ("id", "kind", "name")
 EDGE_COLUMNS = ("source", "relation", "target")
+_DECIMAL = re.compile(r"-?\d+(?:\.\d+)?")
 
 
 def _value(cell: str):
-    for kind in (int, float):
-        try:
-            return kind(cell)
-        except ValueError:
-            pass
+    """A plain decimal as a number; anything else, "nan", "1e5" and "1_000" among them, stays text."""
+    if _DECIMAL.fullmatch(cell):
+        return float(cell) if "." in cell else int(cell)
     return cell
 
 

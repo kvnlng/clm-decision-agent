@@ -51,8 +51,9 @@ only.
 ## The graph
 
 `nodes.csv` has the columns `id,kind,name` and any others; `edges.csv` has `source,relation,target` and any others.
-The other columns are properties: an empty cell is no property, and a cell that reads as a number is one. An edge to
-a node that is not in `nodes.csv` stops loading, naming the file and line.
+The other columns are properties: an empty cell is no property, and a cell that is a plain decimal (`12`, `-3`,
+`0.015`) is a number; `1e5`, `1_000`, `nan` and `inf` stay text. An edge to a node that is not in `nodes.csv` stops
+loading, naming the file and line.
 
 The built-in graph (`graph.py`) is held in memory. Named queries are built from its operations:
 
