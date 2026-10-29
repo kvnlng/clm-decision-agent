@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="d" name="d" namespace="https://example.org/tests">
+  <decision id="flags" name="flags">
+    <decisionTable id="t" hitPolicy="COLLECT">
+      <input id="i1"><inputExpression typeRef="number"><text>days</text></inputExpression></input>
+      <output id="o1" name="flag" typeRef="string"/>
+      <rule id="late"><inputEntry><text>&gt;= 2</text></inputEntry><outputEntry><text>"late"</text></outputEntry></rule>
+      <rule id="very_late"><inputEntry><text>&gt;= 5</text></inputEntry><outputEntry><text>"very late"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

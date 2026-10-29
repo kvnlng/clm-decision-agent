@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="d" name="d" namespace="https://example.org/tests">
+  <decision id="quality" name="quality_threshold">
+    <decisionTable id="t" hitPolicy="FIRST">
+      <input id="i1"><inputExpression typeRef="number"><text>defect_rate</text></inputExpression></input>
+      <output id="o1" name="allowed" typeRef="boolean"/>
+      <output id="o2" name="reason" typeRef="string"/>
+      <rule id="r1"><inputEntry><text>date("2026-01-01")</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"The defect rate is above 2%"</text></outputEntry></rule>
+      <rule id="r2"><inputEntry><text>-</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>"Within the limit"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

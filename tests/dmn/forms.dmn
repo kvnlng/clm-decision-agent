@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="d" name="d" namespace="https://example.org/tests">
+  <decision id="forms" name="forms">
+    <decisionTable id="t">
+      <input id="i1"><inputExpression typeRef="number"><text>size</text></inputExpression></input>
+      <input id="i2"><inputExpression typeRef="string"><text>grade</text></inputExpression></input>
+      <input id="i3"><inputExpression typeRef="number"><text>count</text></inputExpression></input>
+      <output id="o1" name="band" typeRef="string"/>
+      <rule id="small"><inputEntry><text>[1..5)</text></inputEntry><inputEntry><text>"A","B"</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>"small"</text></outputEntry></rule>
+      <rule id="large"><inputEntry><text>[5..100]</text></inputEntry><inputEntry><text>not("C")</text></inputEntry><inputEntry><text>!= 3</text></inputEntry><outputEntry><text>"large"</text></outputEntry></rule>
+      <rule id="graded"><inputEntry><text>-</text></inputEntry><inputEntry><text>"C"</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>"graded"</text></outputEntry></rule>
+      <rule id="three"><inputEntry><text>[5..100]</text></inputEntry><inputEntry><text>"A"</text></inputEntry><inputEntry><text>3</text></inputEntry><outputEntry><text>"three"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>
