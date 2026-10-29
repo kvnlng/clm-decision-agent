@@ -2,13 +2,15 @@
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # The fake mirrors the Anthropic client's interface, so some arguments go unused.
 # pylint: disable=missing-function-docstring,missing-class-docstring,redefined-outer-name,too-few-public-methods
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from mcp import Client
 
-from decision_agent import answer
+from decision_agent import AgentError, ClaudeChat, OllamaChat, answer
 from environment import load_environment
 from environment_server import build_environment_server
 
@@ -67,7 +69,7 @@ def mcp_server():
 
 async def ask(mcp_server, claude):
     async with Client(mcp_server) as session:
-        return await answer(session, QUESTION, claude, "claude-opus-5-5")
+        return await answer(session, QUESTION, ClaudeChat(claude, "claude-opus-5-5"))
 
 
 @pytest.mark.anyio
@@ -126,3 +128,87 @@ async def test_a_cut_off_reply_stops_without_running_its_tools(mcp_server, stop)
     claude = FakeClaude(message(tool_use("scenario_sourcing", {"product": "PX"}), stop=stop))
     result = await ask(mcp_server, claude)
     assert result["calls"] == [] and result["stopped"] == stop
+
+
+class FakeOllama:
+    """Ollama's /api/chat, replying with the scripted messages in turn and keeping each request body."""
+
+    def __init__(self, *replies, status=200):
+        self.replies, self.status, self.requests = list(replies), status, []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(json.loads(request.content))
+        if self.status != 200:
+            return httpx.Response(self.status, json={"error": "model 'gemma4:26b' not found"})
+        return httpx.Response(200, json=self.replies.pop(0))
+
+
+def said(content="", calls=None, done="stop"):
+    return {"message": {"role": "assistant", "content": content, **({"tool_calls": calls} if calls else {})},
+            "done_reason": done}
+
+
+def call(name, arguments):
+    return {"function": {"name": name, "arguments": arguments}}
+
+
+async def ask_ollama(mcp_server, handler):
+    failed = None
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        async with Client(mcp_server) as session:
+            # Caught inside the session, as decision_agent's main does, so MCP's task group does not wrap it
+            try:
+                return await answer(session, QUESTION, OllamaChat(http, "gemma4:26b"))
+            except AgentError as error:
+                failed = error
+    raise failed
+
+
+@pytest.mark.anyio
+async def test_ollama_tool_calls_round_trip(mcp_server):
+    ollama = FakeOllama(said(calls=[call("scenario_sourcing", {"product": "PX"})]),
+                        said("Move half to Region B: the Q3 margin is 704,900."))
+    result = await ask_ollama(mcp_server, ollama)
+    assert result["calls"][0]["result"]["best"] == {"region_b_share": 0.5} and result["unsupported"] == []
+    assert result["model"] == "gemma4:26b" and result["answer"].startswith("Move half")
+    first, second = ollama.requests  # pylint: disable=unbalanced-tuple-unpacking
+    assert first["model"] == "gemma4:26b" and first["stream"] is False
+    assert first["messages"][0]["role"] == "system" and "never calculate" in first["messages"][0]["content"].lower()
+    offered = {tool["function"]["name"]: tool for tool in first["tools"]}
+    assert offered["scenario_sourcing"]["function"]["parameters"]["required"] == ["product"]
+    assert second["messages"][-2]["tool_calls"][0]["function"]["name"] == "scenario_sourcing"
+    assert second["messages"][-1]["role"] == "tool" and second["messages"][-1]["tool_name"] == "scenario_sourcing"
+    assert "704900" in second["messages"][-1]["content"]
+
+
+@pytest.mark.anyio
+async def test_ollama_string_arguments_are_parsed(mcp_server):
+    ollama = FakeOllama(said(calls=[call("scenario_sourcing", '{"product": "PX"}')]), said("Done."))
+    result = await ask_ollama(mcp_server, ollama)
+    assert result["calls"][0]["arguments"] == {"product": "PX"} and result["calls"][0]["error"] is None
+
+
+@pytest.mark.anyio
+async def test_ollama_bad_arguments_and_unknown_tools_go_back_as_errors(mcp_server):
+    ollama = FakeOllama(said(calls=[call("scenario_sourcing", "{not json"), call("forecast_q4", {})]), said("Sorry."))
+    result = await ask_ollama(mcp_server, ollama)
+    bad, unknown = result["calls"]
+    assert "not valid JSON" in bad["error"] and unknown["error"]
+    sent = [message for message in ollama.requests[1]["messages"] if message["role"] == "tool"]
+    assert len(sent) == 2 and "not valid JSON" in sent[0]["content"]
+
+
+@pytest.mark.anyio
+async def test_ollama_cut_off_stops(mcp_server):
+    result = await ask_ollama(mcp_server, FakeOllama(said(calls=[call("describe", {})], done="length")))
+    assert result["calls"] == [] and result["stopped"] == "max_tokens"
+
+
+@pytest.mark.anyio
+async def test_ollama_unreachable_is_one_line(mcp_server):
+    def refuse(request):
+        raise httpx.ConnectError("connection refused", request=request)
+    with pytest.raises(AgentError, match=r"^cannot reach Ollama at http://127\.0\.0\.1:11434"):
+        await ask_ollama(mcp_server, refuse)
+    with pytest.raises(AgentError, match=r"^Ollama has no model gemma4:26b"):
+        await ask_ollama(mcp_server, FakeOllama(status=404))
