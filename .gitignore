@@ -10,3 +10,4 @@ docs/superpowers/
 *.heads/
 *.key
 examples/crowdstrike/runs/
+examples/tariff/runs/
