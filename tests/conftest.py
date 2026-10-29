@@ -3,8 +3,11 @@
 # Fakes mirror real interfaces (so some arguments go unused) and note what they were called with.
 # pylint: disable=missing-function-docstring,missing-class-docstring,redefined-outer-name
 # pylint: disable=unused-argument,attribute-defined-outside-init,use-implicit-booleaness-not-comparison
+import contextlib
+import socket
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -299,3 +302,26 @@ def fake_clm(monkeypatch):
         return engine
     monkeypatch.setattr(clm_router, "load_engine", load)
     return engine
+
+
+def free_port() -> int:
+    """A port nothing is listening on."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+@contextlib.contextmanager
+def serving(app, port: int):
+    """Serve an ASGI app on 127.0.0.1:port for the block."""
+    import uvicorn  # pylint: disable=import-outside-toplevel
+    runner = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=runner.run, daemon=True)
+    thread.start()
+    while not runner.started:
+        time.sleep(0.02)
+    try:
+        yield
+    finally:
+        runner.should_exit = True
+        thread.join()

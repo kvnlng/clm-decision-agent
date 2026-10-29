@@ -20,6 +20,7 @@ dependencies = [
     "langchain-openai>=1.6.7",
     "cryptography>=50.0.2",
     "mcp>=2.3,<3",
+    "pyjwt[crypto]>=2.15.1",
 ]
 
 [dependency-groups]

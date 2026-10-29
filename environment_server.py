@@ -15,6 +15,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 import engine
+import oauth
 import tracing
 from dmn import DmnError
 from environment import Environment
@@ -67,12 +68,14 @@ def describe(env: Environment) -> dict:
                           for name, scenario in env.scenarios.items()}}
 
 
-def build_environment_server(env: Environment, trace: tracing.TraceWriter | None = None) -> MCPServer:
-    """The MCP server for one environment. With `trace`, each call is written to the trace."""
+def build_environment_server(env: Environment, trace: tracing.TraceWriter | None = None,
+                             auth: oauth.OAuth | None = None) -> MCPServer:
+    """The MCP server for one environment. With `trace`, each call is written to the trace; with `auth`, HTTP
+    callers need a token."""
     server = MCPServer("decision-server", instructions=(
         f"Decisions for '{env.name}'. Call describe first. Every figure and verdict comes from these tools: run a "
         "scenario to compare alternatives rather than combining queries and decisions yourself."),
-        log_level="WARNING")
+        log_level="WARNING", **oauth.server_options(auth))
 
     def add(name: str, description: str, run: Callable[[dict], dict], signature: inspect.Signature) -> None:
         server.add_tool(_tool(run, signature, trace, name), name=name, description=description,

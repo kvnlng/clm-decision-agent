@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from typing import Generator
 
+from mcp.server.auth.middleware.auth_context import get_access_token
+
 # The record of the call being traced on this thread, or None
 _CURRENT: contextvars.ContextVar[dict | None] = contextvars.ContextVar("trace", default=None)
 
@@ -99,6 +101,10 @@ class TraceWriter:
         record: dict = {"tool": tool, "started": time.time(), "counts": {}, "tools": [], "outcome": {}}
         if self.text and request_text is not None:
             record["text"] = request_text
+        # With OAuth, who called; never the token itself
+        access = get_access_token()
+        if access is not None:
+            record["caller"] = {"client_id": access.client_id, "subject": access.subject}
         token = _CURRENT.set(record)
         start = time.perf_counter()
         try:

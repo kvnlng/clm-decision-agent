@@ -1,15 +1,12 @@
 """Tests for server.py: the scenario's decisions over MCP, in process and over HTTP."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
-import socket
-import threading
 import time
 
 import httpx2
 import pytest
-import uvicorn
 import fake_tools
-from conftest import BASE_TOML, FakeRouter, decision
+from conftest import BASE_TOML, FakeRouter, decision, free_port, serving
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
@@ -125,18 +122,9 @@ async def test_describe_over_mcp(parts):
 @pytest.fixture
 def http_url(parts):
     """A server on a free port, behind the key "k1"; -> its MCP address."""
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-    app = server.http_app(server.build_server(*parts, review=False), "k1")
-    runner = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
-    thread = threading.Thread(target=runner.run, daemon=True)
-    thread.start()
-    while not runner.started:
-        time.sleep(0.02)
-    yield f"http://127.0.0.1:{port}/mcp"
-    runner.should_exit = True
-    thread.join()
+    port = free_port()
+    with serving(server.http_app(server.build_server(*parts, review=False), "k1"), port):
+        yield f"http://127.0.0.1:{port}/mcp"
 
 
 @pytest.mark.anyio

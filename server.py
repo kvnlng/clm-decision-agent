@@ -18,6 +18,7 @@ from mcp.types import ToolAnnotations
 from starlette.responses import JSONResponse
 
 import decision
+import oauth
 import tracing
 from clm_common import ClmError
 from evaluate import agreement as replay_agreement
@@ -84,14 +85,14 @@ def _corrected(scenario: Scenario, tools: dict[str, Callable], text: str, route:
 
 
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
-def build_server(scenario: Scenario, router, tools: dict[str, Callable], review: bool,
-                 trace: tracing.TraceWriter | None = None) -> MCPServer:
+def build_server(scenario: Scenario, router, tools: dict[str, Callable], review: bool,  # pylint: disable=too-many-arguments
+                 trace: tracing.TraceWriter | None = None, auth: oauth.OAuth | None = None) -> MCPServer:
     """The MCP server for one scenario. Review mode adds `correct` and `agreement`, which write and read the record.
-    With `trace`, each call is written to the trace."""
+    With `trace`, each call is written to the trace; with `auth`, HTTP callers need a token."""
     server = MCPServer("decision-server", instructions=(
         f"Decisions for the scenario '{scenario.path.stem}'. Call describe to see the routes and questions, "
         "then decide with the text of a request. decide may run the scenario's acting tools."),
-        log_level="WARNING")
+        log_level="WARNING", **oauth.server_options(auth))
     # CLM runs on one model and calls arrive on worker threads, so its calls take turns
     router = _OneAtATime(router, threading.Lock())
 
@@ -181,10 +182,13 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
     return server
 
 
-def http_app(server: MCPServer, key: str, host: str = "127.0.0.1", allowed_hosts: list[str] | None = None):
-    """The server over Streamable HTTP at /mcp, answering only requests that send `Authorization: Bearer <key>`."""
+def http_app(server: MCPServer, key: str | None, host: str = "127.0.0.1", allowed_hosts: list[str] | None = None):
+    """The server over Streamable HTTP at /mcp, answering only requests that send `Authorization: Bearer <key>`.
+    With no key, the server was built with OAuth and checks tokens itself."""
     security = TransportSecuritySettings(allowed_hosts=allowed_hosts) if allowed_hosts else None
     app = server.streamable_http_app(stateless_http=True, host=host, transport_security=security)
+    if key is None:
+        return app
     expected = f"Bearer {key}".encode()
 
     async def guarded(scope, receive, send):
@@ -228,16 +232,35 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--http", action="store_true", help="serve Streamable HTTP instead of stdio")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--auth", choices=("key", "oauth"), default="key",
+                        help="over HTTP: a shared key (default), or tokens from an OIDC issuer")
     parser.add_argument("--key-env", default=KEY_ENV, help="variable holding the key callers must send")
+    parser.add_argument("--issuer", help=f"with --auth oauth: the token issuer's URL (or {oauth.ISSUER_ENV})")
+    parser.add_argument("--audience", help=f"with --auth oauth: the audience tokens must name (or "
+                                           f"{oauth.AUDIENCE_ENV}; default: the resource URL)")
+    parser.add_argument("--scope", action="append", dest="scopes",
+                        help=f"with --auth oauth: a scope or app role tokens must carry (repeatable, or "
+                             f"{oauth.SCOPES_ENV}, space-separated)")
+    parser.add_argument("--resource-url", help="with --auth oauth: this server's public MCP address (default: "
+                                               "http://HOST:PORT/mcp)")
     parser.add_argument("--allowed-host", action="append", dest="allowed_hosts",
                         help="a Host header to accept, such as decisions.example.org:443 (repeatable)")
     parser.add_argument("--trace", metavar="FILE", help="write one line per call to FILE, saying where the time went")
     parser.add_argument("--trace-text", action="store_true", help="include each request's text in the trace")
     args = parser.parse_args(argv)
-    key = os.environ.get(args.key_env, "").strip()
-    if args.http and not key:
-        print(f"error: set {args.key_env} to the key callers must send", file=sys.stderr)
-        return 2
+    key, auth = None, None
+    if args.http and args.auth == "oauth":
+        try:
+            auth = oauth.from_args(args.issuer, args.audience, args.scopes,
+                                   args.resource_url or f"http://{args.host}:{args.port}/mcp")
+        except ValueError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+    elif args.http:
+        key = os.environ.get(args.key_env, "").strip()
+        if not key:
+            print(f"error: set {args.key_env} to the key callers must send", file=sys.stderr)
+            return 2
     try:
         if args.review and is_environment(args.scenario):
             print("error: review mode is for CLM scenarios; an environment has no corrections to review",
@@ -249,15 +272,16 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     trace = tracing.TraceWriter(args.trace, text=args.trace_text) if args.trace else None
     if isinstance(loaded, Environment):
-        server = build_environment_server(loaded, trace=trace)
+        server = build_environment_server(loaded, trace=trace, auth=auth)
     else:
         scenario, router, tools = loaded
-        server = build_server(scenario, router, tools, args.review, trace=trace)
+        server = build_server(scenario, router, tools, args.review, trace=trace, auth=auth)
     if not args.http:
         server.run("stdio")
         return 0
     import uvicorn  # pylint: disable=import-outside-toplevel
-    print(f"Serving MCP at http://{args.host}:{args.port}/mcp", file=sys.stderr)
+    print(f"Serving MCP at http://{args.host}:{args.port}/mcp"
+          + (f", taking tokens from {auth.settings.issuer_url}" if auth else ""), file=sys.stderr)
     uvicorn.run(http_app(server, key, args.host, args.allowed_hosts), host=args.host, port=args.port,
                 log_level="warning")
     return 0
