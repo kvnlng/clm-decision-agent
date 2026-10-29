@@ -7,6 +7,7 @@ them. A mistake in the file stops loading with one line naming the setting, as f
 from __future__ import annotations
 
 import importlib.util
+import keyword
 import re
 import sys
 import tomllib
@@ -22,7 +23,19 @@ from scenario import ScenarioError
 TYPES = ("string", "number", "integer", "boolean", "list")
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
 # A DMN input's typeRef, as a parameter type; "any" is not checked
-_DMN_TYPES = {"number": "number", "integer": "number", "string": "string", "boolean": "boolean"}
+_DMN_TYPES = {"number": "number", "integer": "number", "double": "number", "long": "number", "int": "number",
+              "decimal": "number", "string": "string", "boolean": "boolean"}
+# The scenario tools add this argument themselves
+_RESERVED = ("branches",)
+
+
+def _bad_name(name: str) -> str | None:
+    """Why a parameter name cannot be a tool argument, or None."""
+    if not _NAME.fullmatch(name):
+        return "a name is lower case letters, digits and _"
+    if keyword.iskeyword(name):
+        return f"'{name}' is a Python keyword"
+    return None
 
 
 @dataclass(frozen=True)
@@ -132,8 +145,10 @@ def _text(table: dict, key: str, where: str, default: str | None = None) -> str:
 def _params(table: dict, where: str) -> dict[str, str]:
     params = _table(table, "params", where)
     for name, kind in params.items():
-        if not _NAME.fullmatch(name):
-            raise ScenarioError(f"{where}.params.{name}: a name is lower case letters, digits and _")
+        problem = _bad_name(name) or (f"'{name}' is reserved" if where.startswith("scenarios.") and name in _RESERVED
+                                      else None)
+        if problem:
+            raise ScenarioError(f"{where}.params.{name}: {problem}")
         if kind not in TYPES:
             raise ScenarioError(f"{where}.params.{name}: type must be {', '.join(TYPES)}, not {kind!r}")
     return dict(params)
@@ -198,7 +213,10 @@ def _decision(name: str, table: dict, folder: Path, functions: ModuleType) -> De
         dmn = load_table(path)
     except DmnError as error:
         raise ScenarioError(f"{where}.dmn: {error}") from error
-    params = {item: _DMN_TYPES.get(kind, "any") for item, kind in zip(dmn.inputs, dmn.types)}
+    for item in dmn.inputs:
+        if _bad_name(item):
+            raise ScenarioError(f"{where}.dmn: input '{item}' cannot be a parameter: {_bad_name(item)}")
+    params = {item: _DMN_TYPES.get(kind.rsplit(":", 1)[-1], "any") for item, kind in zip(dmn.inputs, dmn.types)}
     return Decision(name, description, params, dmn, None)
 
 

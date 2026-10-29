@@ -54,3 +54,8 @@ def test_a_missing_input_is_named():
 def test_an_unsupported_expression_is_refused_at_load():
     with pytest.raises(DmnError, match=r"unsupported.dmn rule r1"):
         load_table(TABLES / "unsupported.dmn")
+
+
+def test_a_number_test_on_text_is_an_error():
+    with pytest.raises(DmnError, match="quality_threshold: defect_rate must be a number, not '0.9'"):
+        evaluate(load_table(TABLES / "quality.dmn"), {"defect_rate": "0.9"})

@@ -36,6 +36,11 @@ def _check(what: str, declared: dict[str, str], given: dict) -> None:
             raise StepError(f"{what}: {name} must be {_ARTICLES[kind]}, not {given[name]!r}")
 
 
+def _message(error: Exception) -> str:
+    """An error as one line: the engine's own as they are, anything else with its type."""
+    return str(error) if isinstance(error, (StepError, DmnError)) else f"{type(error).__name__}: {error}"
+
+
 def _part(parts: dict, kind: str, name: str):
     if name not in parts:
         known = ", ".join(sorted(parts)) or "none"
@@ -64,11 +69,17 @@ class Steps:
         """A decision's outputs; a DMN decision also records the rules that fired."""
         decision = _part(self.env.decisions, "decision", name)
         _check(f"decision {name}", decision.params, inputs)
-        if decision.table is not None:
-            result = evaluate(decision.table, inputs)
-            outputs, fired = result["outputs"], result["fired"]
-        else:
-            outputs, fired = getattr(self.env.functions, decision.function)(**inputs), []
+        try:
+            if decision.table is not None:
+                result = evaluate(decision.table, inputs)
+                outputs, fired = result["outputs"], result["fired"]
+            else:
+                outputs, fired = getattr(self.env.functions, decision.function)(**inputs), []
+        except Exception as error:
+            # Recorded even if the owner's code catches it, so a limit that failed cannot pass unnoticed
+            self.steps.append({"kind": "decision", "name": name, "inputs": inputs, "result": None, "fired": [],
+                               "error": _message(error)})
+            raise
         self.steps.append({"kind": "decision", "name": name, "inputs": inputs, "result": outputs, "fired": fired})
         return outputs
 
@@ -114,7 +125,8 @@ def _branches(scenario, branches: list[dict] | None) -> list[dict]:
                 raise StepError(f"scenario {scenario.name}: unknown lever '{lever}' "
                                 f"(levers: {', '.join(scenario.levers)})")
             allowed = list(scenario.levers[lever])
-            if isinstance(value, bool) or value not in allowed:
+            # True == 1 in Python, so a value matches only an allowed value of the same kind
+            if not any(value == choice and isinstance(value, bool) == isinstance(choice, bool) for choice in allowed):
                 raise StepError(f"scenario {scenario.name}: {lever} = {value!r} is not allowed; "
                                 f"choose from {allowed}")
         missing = [lever for lever in scenario.levers if lever not in branch]
@@ -131,7 +143,11 @@ def _limits(scenario, steps: list[dict]) -> list[dict]:
         if not checks:
             raise StepError(f"limit {limit} was not checked")
         for check in checks:
+            if check.get("error"):
+                raise StepError(f"limit {limit} failed: {check['error']}")
             outputs = check["result"]
+            if not isinstance(outputs, dict):
+                raise StepError(f"limit {limit}: its outputs must be a dict with allowed and reason")
             if not isinstance(outputs.get("allowed"), bool) or not isinstance(outputs.get("reason"), str):
                 raise StepError(f"limit {limit}: its outputs need allowed (true or false) and reason (text)")
             if not outputs["allowed"]:
@@ -154,11 +170,9 @@ def _run_branch(env: Environment, scenario, params: dict, levers: dict) -> dict:
         branch["objective"] = objective
         branch["rejected_by"] = _limits(scenario, steps.steps)
         branch["status"] = "rejected" if branch["rejected_by"] else "kept"
-    except (StepError, DmnError) as error:
-        branch["error"] = str(error)
     # The owner's code can fail in any way; one branch failing should not stop the others
     except Exception as error:  # pylint: disable=broad-exception-caught
-        branch["error"] = f"{type(error).__name__}: {error}"
+        branch["error"] = _message(error)
     return branch
 
 

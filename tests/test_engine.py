@@ -84,3 +84,22 @@ def test_a_list_parameter_must_be_a_list(write_environment):
     env = load_environment(write_environment(toml))
     with pytest.raises(StepError, match="calculation cost: share must be a list"):
         run_calculation(env, "cost", {"share": 0.5, "cost_a": 10, "cost_b": 6})
+
+
+def test_a_boolean_lever_can_be_chosen(write_environment):
+    toml = ENV_TOML.replace("levers = { share = [0, 0.5, 1.0] }",
+                            "levers = { share = [0, 0.5, 1.0], air = [true, false] }")
+    env = load_environment(write_environment(toml))
+    chosen = [{"share": 0, "air": True}, {"share": 1, "air": False}]
+    result = run_scenario(env, "sourcing", {"product": "P1"}, branches=chosen)
+    assert [branch["status"] for branch in result["branches"]] == ["kept", "rejected"]
+    with pytest.raises(StepError, match="air = 1 is not allowed"):
+        run_scenario(env, "sourcing", {"product": "P1"}, branches=[{"share": 0, "air": 1}])
+
+
+def test_a_swallowed_limit_failure_fails_the_branch(write_environment):
+    toml = ENV_TOML.replace('branch = "branch"', 'branch = "branch_swallowing"')
+    env = load_environment(write_environment(toml, dmn=limit_dmn(allowed="[0.1..0.6]")))
+    half = run_scenario(env, "sourcing", {"product": "P1"}, branches=[{"share": 0.5}])["branches"][0]
+    assert half["status"] == "failed" and "limit share_limit failed: share_limit: no rule matches" in half["error"]
+    assert any(step.get("error") for step in half["steps"])

@@ -29,6 +29,10 @@ class DmnError(ValueError):
     """A table that cannot be read, or an evaluation that has no answer."""
 
 
+class _NotANumber(TypeError):
+    """A number test was given something else; evaluate() names the input."""
+
+
 @dataclass(frozen=True)
 class Rule:
     """One row: a test per input and a value per output."""
@@ -50,6 +54,13 @@ class Table:
 
 def _is_number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _number(value):
+    """The value, if it is a number; a comparison with text must not quietly come out false."""
+    if not _is_number(value):
+        raise _NotANumber(value)
+    return value
 
 
 def _literal(text: str):
@@ -85,7 +96,7 @@ def _compare(op: str, bound: float) -> Callable[[Any], bool]:
     checks = {"<": lambda v: v < bound, "<=": lambda v: v <= bound, ">": lambda v: v > bound,
               ">=": lambda v: v >= bound, "=": lambda v: v == bound, "!=": lambda v: v != bound}
     check = checks[op]
-    return lambda value: _is_number(value) and check(value)
+    return lambda value: check(_number(value))
 
 
 def _one(text: str) -> Callable[[Any], bool]:
@@ -97,11 +108,13 @@ def _one(text: str) -> Callable[[Any], bool]:
     if match:
         low, high = float(match.group(2)), float(match.group(3))
         low_open, high_open = match.group(1) == "(", match.group(4) == ")"
-        return lambda v: (_is_number(v) and (v > low if low_open else v >= low)
-                          and (v < high if high_open else v <= high))
+        def within(value) -> bool:
+            value = _number(value)
+            return (value > low if low_open else value >= low) and (value < high if high_open else value <= high)
+        return within
     expected = _literal(text)
     if _is_number(expected):
-        return lambda value: _is_number(value) and value == expected
+        return lambda value: _number(value) == expected
     return lambda value: type(value) is type(expected) and value == expected
 
 
@@ -182,7 +195,11 @@ def evaluate(table: Table, inputs: dict) -> dict:
     if missing:
         raise DmnError(f"{table.name}: missing input {', '.join(missing)}")
     values = [inputs[name] for name in table.inputs]
-    fired = [rule for rule in table.rules if all(test(value) for test, value in zip(rule.tests, values))]
+    try:
+        fired = [rule for rule in table.rules if all(test(value) for test, value in zip(rule.tests, values))]
+    except _NotANumber as error:
+        name = next(name for name in table.inputs if inputs[name] is error.args[0])
+        raise DmnError(f"{table.name}: {name} must be a number, not {error.args[0]!r}") from error
     if table.hit_policy == "COLLECT":
         return {"outputs": [dict(zip(table.outputs, rule.values)) for rule in fired],
                 "fired": [rule.id for rule in fired]}

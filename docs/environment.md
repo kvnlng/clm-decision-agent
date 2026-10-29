@@ -99,8 +99,11 @@ Each evaluation records its inputs, its outputs and, for a table, the rules that
   the ranges `[a..b]`, `(a..b)`, `[a..b)` and `(a..b]`; comma-separated lists of these; `not(...)`.
 - **Output entries:** number, string and boolean literals.
 
-Anything else is refused when the table loads, naming the file and rule. When no rule matches, or two do under
-`UNIQUE`, the evaluation is an error, never a silent "allowed". An input entry compares with a literal, so a limit that
+Anything else is refused when the table loads, naming the file and rule. `not(...)` wraps a whole entry, not one item
+of a list. When no rule matches, or two do under `UNIQUE`, the evaluation is an error, never a silent "allowed"; so is
+text given to an entry that tests a number. An input's `typeRef` gives its parameter's type; an input without one
+accepts anything, and is still refused by any number test. Input names must be lower-case identifiers, since they
+become the tool's arguments. An input entry compares with a literal, so a limit that
 differs per client belongs in a column the table can match, such as the client's tier.
 
 ## Calculations
@@ -148,8 +151,8 @@ account for every number.
 - **A limit** is a decision whose outputs include `allowed` (true or false) and `reason` (text). A branch is
   **rejected** when any evaluation of a limit says not allowed; the result names the decision, its reason and its
   inputs.
-- **A branch fails** when a listed limit was never evaluated, when a step fails, or when the figures have no number
-  for the objective. So no branch can skip a limit unnoticed: in the example, the dependency check runs on every
+- **A branch fails** when a listed limit was never evaluated or failed (even if the owner's code caught the error),
+  when a step fails, or when the figures have no number for the objective. So no branch can skip a limit unnoticed: in the example, the dependency check runs on every
   branch because its rule is a limit.
 - **The kept branches are ranked** by the objective. A lever value the owner did not list is refused before anything
   runs.
@@ -185,8 +188,9 @@ git-ignored. Credentials are the Anthropic SDK's usual ones; none are stored.
 
 The number check then lists any figure in the answer that no tool returned. A figure matches a tool's number when
 the number, in the answer's unit and rounded to the answer's decimals, is the figure: "$1.2 million" matches 1234567,
-and "18.4%" matches 0.1843 or 18.43. It does not check digits inside a word (Q3), years, or whole numbers from 0 to
-10. A flagged figure is reported, not blocked.
+and "18.4%" matches 0.1843 or 18.43. Halves round up, and signs are not compared, so "fell by 12%" matches -0.12. It
+does not check digits inside a word (Q3), dates and times, years, or whole numbers from 0 to 10. A flagged figure is
+reported, not blocked.
 
 ## What comes later
 

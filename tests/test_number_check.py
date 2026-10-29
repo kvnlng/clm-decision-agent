@@ -26,3 +26,10 @@ def test_nested_results():
     results = [{"branches": [{"figures": {"q3_margin": 412000}}]}, "no numbers here", {"text": "lead 12.5"}]
     assert unsupported("The best margin is 412,000 with a 12.5-day lead time.", results) == []
     assert unsupported("The best margin is 413,000.", results) == ["413,000"]
+
+
+def test_signs_halves_units_and_dates():
+    assert unsupported("Margin fell by 12%, to -3.5", [{"change": -0.12, "margin": -3.5}]) == []
+    assert unsupported("$1.3 million and 13 units", [1250000, 12.5]) == []
+    assert unsupported("$1.2m", [1234567]) == []
+    assert numbers_in("Run on 2026-10-29 at 16:07") == []

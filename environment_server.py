@@ -39,6 +39,9 @@ def _tool(run: Callable[[dict], dict], signature: inspect.Signature, trace, name
                 return run(arguments)
             except (engine.StepError, DmnError, ScenarioError) as error:
                 raise ToolError(str(error)) from error
+            # The owner's code can fail in any way; the agent should still learn why
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                raise ToolError(f"{type(error).__name__}: {error}") from error
     tool.__signature__ = signature
     tool.__annotations__ = {**{p.name: p.annotation for p in signature.parameters.values()}, "return": _RESULT}
     return tool

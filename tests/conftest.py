@@ -220,6 +220,15 @@ def branch(steps, params, levers):
     return figures
 
 
+def branch_swallowing(steps, params, levers):
+    figures = branch(steps, params, levers)
+    try:
+        steps.decide("share_limit", share=0.05)
+    except ValueError:
+        pass
+    return figures
+
+
 def branch_without_limit(steps, params, levers):
     costs = {row["region"]: row["cost"] for row in steps.query("suppliers", product=params["product"])}
     return steps.calculate("cost", share=levers["share"], cost_a=costs["A"], cost_b=costs["B"])

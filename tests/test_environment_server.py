@@ -93,3 +93,10 @@ def test_a_scenario_file_still_loads_clm(write_scenario, monkeypatch):
 def test_review_is_refused_for_an_environment(capsys):
     assert server.main([str(EXAMPLE), "--review"]) == 2
     assert "review mode is for CLM scenarios" in capsys.readouterr().err
+
+
+@pytest.mark.anyio
+async def test_an_owner_error_reaches_the_agent(mcp_server):
+    async with Client(mcp_server) as client:
+        result = await client.call_tool("query_product_facts", {"product": "nope"})
+    assert result.is_error and "KeyError: 'nope'" in result.content[0].text

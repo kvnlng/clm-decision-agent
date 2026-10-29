@@ -2,7 +2,7 @@
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import pytest
-from conftest import BASE_TOML, ENV_TOML
+from conftest import BASE_TOML, ENV_TOML, limit_dmn
 
 from environment import is_environment, load_environment
 from scenario import ScenarioError
@@ -47,3 +47,19 @@ def test_bad_settings_are_one_line(write_environment, old, new, setting):
 def test_a_functions_module_that_fails_to_import_is_one_line(write_environment):
     with pytest.raises(ScenarioError, match="^environment.functions: cannot import 'toy_functions': ZeroDivision"):
         load_environment(write_environment(functions="1 / 0\n"))
+
+
+@pytest.mark.parametrize("change, setting", [
+    (lambda toml, dmn: (toml, dmn.replace("<text>share</text>", "<text>client.share</text>")),
+     "decisions.share_limit.dmn: input 'client.share'"),
+    (lambda toml, dmn: (toml.replace('params = { product = "string" }\nfunction',
+                                     'params = { from = "string" }\nfunction'), dmn),
+     "queries.suppliers.params.from: "),
+    (lambda toml, dmn: (toml.replace('params = { product = "string" }\nlevers',
+                                     'params = { branches = "list" }\nlevers'), dmn),
+     "scenarios.sourcing.params.branches: "),
+])
+def test_names_the_tools_cannot_take_are_refused(write_environment, change, setting):
+    toml, dmn = change(ENV_TOML, limit_dmn())
+    with pytest.raises(ScenarioError, match=f"^{setting}"):
+        load_environment(write_environment(toml, dmn=dmn))
