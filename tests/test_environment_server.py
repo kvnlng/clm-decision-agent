@@ -36,7 +36,7 @@ async def test_one_tool_per_part(mcp_server):
         names = sorted(tool.name for tool in (await client.list_tools()).tools)
     assert names == sorted([f"query_{name}" for name in QUERIES] + [f"decision_{name}" for name in DECISIONS]
                            + ["calculation_branch_figures", "calculation_concentration", "scenario_sourcing",
-                              "describe"])
+                              "judge_delivery_risk", "describe"])
 
 
 @pytest.mark.anyio

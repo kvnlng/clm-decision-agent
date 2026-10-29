@@ -89,7 +89,7 @@ async def test_the_tools_offered_are_the_servers(mcp_server):
     claude = FakeClaude(message(text("Nothing to add.")))
     await ask(mcp_server, claude)
     offered = {tool["name"]: tool for tool in claude.requests[0]["tools"]}
-    assert "scenario_sourcing" in offered and "describe" in offered and len(offered) == 14
+    assert "scenario_sourcing" in offered and "describe" in offered and len(offered) == 15
     assert offered["scenario_sourcing"]["input_schema"]["required"] == ["product"]
     assert "never calculate" in claude.requests[0]["system"].lower()
     assert claude.requests[0]["model"] == "claude-opus-5-5"

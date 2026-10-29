@@ -19,6 +19,15 @@ user = "neo4j"
 password_env = "NEO4J_PASSWORD"     # the variable holding the password; never the password itself
 database = "neo4j"
 
+# CLM judges the supplier news for sourcing_with_news. It loads only on the first judgement, so the sourcing scenario
+# never needs it. On Linux with a GPU: backend = "torch".
+[clm]
+backend = "mlx"
+
+[judges.delivery_risk]
+description = "Whether a piece of news about a supplier is a risk to its deliveries."
+instructions = "Does this news mean the supplier may fail to deliver its parts on time in the coming months?"
+
 [queries.product_facts]
 description = "A product's name, Q3 unit volume and unit price."
 params = { product = "string" }
