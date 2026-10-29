@@ -120,7 +120,9 @@ def _branches(scenario, branches: list[dict] | None) -> list[dict]:
     """The branches to run, every combination by default; raises StepError for any value the owner did not allow."""
     if branches is None:
         return [dict(zip(scenario.levers, values)) for values in itertools.product(*scenario.levers.values())]
-    for branch in branches:
+    if not branches:
+        raise StepError(f"scenario {scenario.name}: choose at least one branch, or leave branches out to run them all")
+    for index, branch in enumerate(branches):
         if not isinstance(branch, dict):
             raise StepError(f"scenario {scenario.name}: each branch is a table of lever values")
         for lever, value in branch.items():
@@ -135,6 +137,8 @@ def _branches(scenario, branches: list[dict] | None) -> list[dict]:
         missing = [lever for lever in scenario.levers if lever not in branch]
         if missing:
             raise StepError(f"scenario {scenario.name}: a branch needs a value for {', '.join(missing)}")
+        if branch in branches[:index]:
+            raise StepError(f"scenario {scenario.name}: the branch {branch} is given twice")
     return [dict(branch) for branch in branches]
 
 

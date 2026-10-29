@@ -50,6 +50,15 @@ def test_a_lever_value_not_allowed_is_refused(env):
     assert env.functions.CALLS == []
 
 
+def test_no_branches_and_a_repeated_branch_are_refused(env):
+    with pytest.raises(StepError, match="scenario sourcing: choose at least one branch, or leave branches out to run "
+                                        "them all"):
+        run_scenario(env, "sourcing", {"product": "P1"}, branches=[])
+    with pytest.raises(StepError, match=r"scenario sourcing: the branch \{'share': 0\.5\} is given twice"):
+        run_scenario(env, "sourcing", {"product": "P1"}, branches=[{"share": 0.5}, {"share": 0}, {"share": 0.5}])
+    assert env.functions.CALLS == []
+
+
 def test_a_missing_parameter_is_named(env):
     with pytest.raises(StepError, match="query suppliers: missing parameter product"):
         run_query(env, "suppliers", {})
