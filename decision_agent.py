@@ -64,7 +64,8 @@ async def _tool_results(session: Client, reply, calls: list[dict]) -> list[dict]
 
 async def answer(session: Client, question: str, client, model: str = MODEL) -> dict:
     """Ask Claude the question with the session's tools -> {"question", "answer", "calls", "unsupported", "stopped"}.
-    A reply cut off (max_tokens) or refused stops the loop without running the tools it asked for."""
+    A reply cut off (max_tokens, or the context window full) or refused stops the loop without running the tools it
+    asked for."""
     tools = _tools((await session.list_tools()).tools)
     messages: list[dict] = [{"role": "user", "content": question}]
     calls: list[dict] = []
@@ -75,7 +76,7 @@ async def answer(session: Client, question: str, client, model: str = MODEL) -> 
                                           thinking={"type": "adaptive"}, messages=messages) as stream:
             reply = await stream.get_final_message()
         messages.append({"role": "assistant", "content": reply.content})
-        if reply.stop_reason in ("max_tokens", "refusal"):
+        if reply.stop_reason in ("max_tokens", "model_context_window_exceeded", "refusal"):
             stopped = reply.stop_reason
             break
         if reply.stop_reason == "pause_turn":
@@ -87,8 +88,9 @@ async def answer(session: Client, question: str, client, model: str = MODEL) -> 
     else:
         stopped = "turn limit"
     text = "\n".join(block.text for block in (reply.content if reply else []) if block.type == "text").strip()
-    return {"question": question, "answer": text, "calls": calls,
-            "unsupported": unsupported(text, [call["result"] for call in calls if call["result"] is not None]),
+    # A tool's error is tool output too: a figure quoted from it is one the model was given
+    returned = [call["error"] if call["error"] else call["result"] for call in calls]
+    return {"question": question, "answer": text, "calls": calls, "unsupported": unsupported(text, returned),
             "stopped": stopped}
 
 

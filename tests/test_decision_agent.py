@@ -111,7 +111,18 @@ async def test_a_tool_error_goes_back_to_the_model(mcp_server):
 
 
 @pytest.mark.anyio
-async def test_a_cut_off_reply_stops_without_running_its_tools(mcp_server):
-    claude = FakeClaude(message(tool_use("scenario_sourcing", {"product": "PX"}), stop="max_tokens"))
+async def test_a_figure_from_a_tool_error_is_not_flagged(mcp_server):
+    claude = FakeClaude(message(tool_use("scenario_sourcing", {"product": "PX", "branches": [{"region_b_share": 0.7}]}),
+                                stop="tool_use"),
+                        message(text("A share of 0.7 is not among the levers; the allowed shares are 0 and 0.5.")))
     result = await ask(mcp_server, claude)
-    assert result["calls"] == [] and result["stopped"] == "max_tokens"
+    assert result["calls"][0]["error"] and "0.7" in result["calls"][0]["error"]
+    assert result["unsupported"] == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("stop", ["max_tokens", "model_context_window_exceeded"])
+async def test_a_cut_off_reply_stops_without_running_its_tools(mcp_server, stop):
+    claude = FakeClaude(message(tool_use("scenario_sourcing", {"product": "PX"}), stop=stop))
+    result = await ask(mcp_server, claude)
+    assert result["calls"] == [] and result["stopped"] == stop
