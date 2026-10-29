@@ -55,20 +55,44 @@ supply would then depend on Kestrel Polymers. Half is the best branch no limit r
 ```bash
 uv run python server.py examples/tariff/environment.toml     # serve it over MCP, for any agent
 uv run --group demo python decision_agent.py examples/tariff/environment.toml "With the recent tariff hikes in Region A, should we shift our primary component sourcing for Product Line X to Region B, and what would be the impact on our Q3 profit margins and SLA delivery times?"
+uv run --group demo python decision_agent.py examples/tariff/environment.toml "..." --backend ollama   # gemma4:26b
 ```
 
-## What happened when Claude was asked
+On Neo4j: load the graph, then set `[graph] backend = "neo4j"` in `environment.toml`. Each query's Cypher is beside
+its function, and `tests/test_graph_neo4j.py -m slow` checks that both graphs give the same rows and branches
+([docs/environment.md](../../docs/environment.md#on-neo4j)).
 
-The question above was put once to Claude Opus 5.5 through `decision_agent.py` on 29 October 2026.
+```bash
+set -a; . ./.neo4j-local.env; set +a
+uv run --group graph python load_graph.py examples/tariff/environment.toml
+```
 
-- **It made two calls**: `describe`, then `scenario_sourcing`.
-- **Its recommendation**: move half to Region B, not all of it. It gave the margin, delivery extension and defect
-  rate of each branch, and said every key client's contract allows the 2-day extension.
-- **Why not everything**: it said moving everything was rejected by the supply-concentration rule. It explained
-  that both Region B suppliers depend on Kestrel Polymers, while each Region A supplier relies on a different
-  provider.
-- **What it couldn't answer**: it said the model tests only 0, 50% and 100%, so it couldn't say whether a share
-  between 50% and 60% would do better. It also said switching costs and transition time are not modelled.
-- **The number check**: no figure in the answer was one the tools had not returned.
+## What happened when the models were asked
 
-One run on a small, made-up graph shows the pattern works; it is not a measure of how often an agent gets it right.
+On 29 October 2026, the question above went to Claude Opus 5.5 twice and to `gemma4:26b` three times, running
+locally through Ollama on an M5 Max. All the runs used the built-in graph.
+
+| Run | Tool calls | Recommendation | Named Kestrel Polymers | Figures no tool returned | Time |
+|---|---|---|---|---|---|
+| Claude, 1 | `describe`, `scenario_sourcing` | half to Region B | yes | none | not recorded |
+| Claude, 2 | `describe`, `scenario_sourcing` | half to Region B | yes | **$42,400** | 17.8 s |
+| gemma4, 1 | `describe`, `scenario_sourcing` | half to Region B | yes | none | 20.8 s |
+| gemma4, 2 | `describe`, `scenario_sourcing` | half to Region B | yes | none | 12.1 s |
+| gemma4, 3 | `describe`, `scenario_sourcing` | half to Region B | yes | none | 19.0 s |
+
+- **Every run reached the same decision, by the same two calls.** That is the design working: the scenario did the
+  deciding, and the models reported it.
+- **Claude's second answer broke the rule against calculating.** It gave the gain of moving half as "$42,400". That
+  is the difference between two figures the tools returned, worked out by the model, and the number check flagged
+  it. The arithmetic happens to be right, but the figure came from the model, not from any traced step.
+- **Claude's answers were fuller.** They listed the tariff rates, the three key clients by name and tier, the
+  margin rate and tariff cost of every branch, and what the analysis leaves out: shares between 50% and 60%,
+  switching costs and transition time.
+- **gemma4's answers were shorter and kept to what the tools returned.** They gave the margin, delivery extension
+  and defect rate, the rejection with its reason, and Kestrel Polymers. They printed figures as the tools gave them
+  ("704,900.0"), and said less about what was not modelled.
+- **gemma4 was free and stayed on the Mac.** Claude was about as fast, at the cost of an API call.
+
+Five runs on a small, made-up graph show the pattern works with both models. They don't measure how often an agent
+gets it right. A fair next measure would be many varied questions, each scored for whether the right branch was
+recommended, whether the rejected branch and its dependency were named, and how many figures were flagged.

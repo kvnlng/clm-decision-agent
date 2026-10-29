@@ -33,7 +33,7 @@ description = "What the agent reads first: what this is for and where to start."
 functions = "tariff_functions"            # tariff_functions.py beside this file
 
 [graph]
-backend = "builtin"                       # the only one for now
+backend = "builtin"                       # or "neo4j": see "On Neo4j" below
 nodes = "graph/nodes.csv"
 edges = "graph/edges.csv"
 ```
@@ -76,6 +76,56 @@ function = "suppliers_of"                 # suppliers_of(graph, component) -> a 
 The description is what the agent reads, so say what the rows hold and in which units. A question no query can
 answer is answered "not in the graph"; the gap shows the owner which query to add. Queries return rows the tool
 worked out, not raw data for the agent to sift: a region's name rather than an id to look up.
+
+## On Neo4j
+
+The same named queries can run on a Neo4j database, with the Cypher written beside each query's function:
+
+```toml
+[graph]
+backend = "neo4j"
+
+[graph.neo4j]
+uri = "bolt://127.0.0.1:7687"             # the defaults
+user = "neo4j"
+password_env = "NEO4J_PASSWORD"           # the variable that holds the password; never the password itself
+database = "neo4j"
+
+[queries.suppliers_of]
+...
+function = "suppliers_of"                 # used on the built-in graph
+cypher = """
+MATCH (s:Supplier)-[r:SUPPLIES]->(:Node {id: $component})
+MATCH (s)-[:LOCATED_IN]->(g:Region)
+RETURN s.id AS id, s.name AS name, g.name AS region, r.unit_price AS unit_price, ...
+ORDER BY s.id"""
+```
+
+- **Each query's parameters** are its Cypher's `$` parameters, and its rows are the `RETURN` columns. Return the
+  same columns as the function, so the branch functions work on either graph.
+- **On neo4j, every query needs `cypher`;** a query without one stops loading, naming it. Nothing else changes:
+  decisions, calculations and scenarios run as before.
+- **The driver** is the optional `graph` dependency group: `uv sync --group graph`.
+- **The server connects when it starts.** A database it cannot reach, or a password that is wrong, stops start-up
+  with one line naming the URI; a query that fails is reported in one line naming the query.
+
+`load_graph.py` copies the environment's CSV graph into the database, **replacing what it holds**:
+
+- each node becomes `(:Node:<Kind> {id, kind, name, ...})`, with its kind capitalised as a label;
+- each edge becomes a relationship whose type is the relation in capitals, carrying the edge's other columns;
+- `Node.id` is made unique.
+
+```bash
+brew install neo4j                        # natively; it brings Java 21
+neo4j-admin dbms set-initial-password "$NEO4J_PASSWORD"      # before the first start
+neo4j start
+uv run --group graph python load_graph.py examples/tariff/environment.toml
+```
+
+Keep the password in a git-ignored file such as `.neo4j-local.env` (`NEO4J_PASSWORD=...`) and load it into the
+shell with `set -a; . ./.neo4j-local.env; set +a`. With it set, `uv run --group graph pytest -m slow
+tests/test_graph_neo4j.py` loads the tariff example into the database and checks that every query and every branch
+give the same results on both graphs. Point it only at a database you can wipe.
 
 ## Decisions
 
@@ -178,8 +228,13 @@ All of them only read. Each tool's description is the owner's.
 uv run --group demo python decision_agent.py examples/tariff/environment.toml "QUESTION"
 ```
 
-It starts `server.py` for the environment and gives Claude (Opus 5.5 by default, `--model` to change) the server's
-tools and nothing else. Its instructions are to:
+It starts `server.py` for the environment and gives a model the server's tools and nothing else:
+
+- **Claude** through the Anthropic API, the default, with Opus 5.5 unless `--model` says otherwise;
+- **a local model** through Ollama: `--backend ollama`, with `gemma4:26b` unless `--model` says otherwise, at
+  `--ollama-url` (default `http://127.0.0.1:11434`). Ollama must be running, and the model pulled.
+
+Both get the same instructions and tools. The instructions are to:
 
 - start from `describe`;
 - run the scenario rather than combine queries and decisions itself;
@@ -188,8 +243,8 @@ tools and nothing else. Its instructions are to:
 - cite the steps it relied on;
 - say plainly when no tool can answer part of the question.
 
-The question, the answer and every call are written as JSON to the environment's `runs/` folder, which is
-git-ignored. Credentials are the Anthropic SDK's usual ones; none are stored.
+The question, the answer, every call, the model and the time taken are written as JSON to the environment's `runs/`
+folder, which is git-ignored. Claude's credentials are the Anthropic SDK's usual ones; none are stored.
 
 The number check then lists any figure in the answer that no tool returned. A figure matches a tool's number when
 the number, in the answer's unit and rounded to the answer's decimals, is the figure: "$1.2 million" matches 1234567,
@@ -199,8 +254,7 @@ reported, not blocked.
 
 ## What comes later
 
-- **A graph database.** Queries already go through a connector (`environment.Connector`). A Cypher connector for
-  Neo4j or Memgraph would run a query's `cypher` instead of its `function`.
-- **A local model as the agent.**
+- **Other graph databases,** such as Memgraph, which also speaks Cypher, through the same connector interface
+  (`environment.Connector`).
 - **CLM as a judge,** for evidence rules cannot judge, such as supplier news: it would plug in as a decision with a
   `function`, so its judgement becomes a traced input to a rule.

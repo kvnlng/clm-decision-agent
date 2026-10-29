@@ -157,8 +157,8 @@ uv run --group demo python decision_agent.py examples/tariff/environment.toml "S
 ```
 
 [docs/environment.md](docs/environment.md) explains every part; [examples/tariff](examples/tariff/README.md) is the
-worked example. The graph is built in for now. Graph databases, a local model as the agent, and CLM as a judge of
-evidence rules cannot judge come later.
+worked example. The graph is built in, or Neo4j; the agent is Claude, or a local model through Ollama. CLM as a judge
+of evidence rules cannot judge comes later.
 
 ## What to expect
 
@@ -192,8 +192,9 @@ Measured on the example scenario, on an M5 Max with 64 GB:
 | `record.py`, `evaluate.py` | The corrections record; its replay, or a file of labelled cases, scored per class |
 | `new_scenario.py` | Starts a scenario folder: scenario, tools with mock backends, labelled cases |
 | `environment.py`, `environment_server.py` | Reads and checks an environment; its named parts as MCP tools |
+| `graph_neo4j.py`, `load_graph.py` | Named queries on Neo4j; copying an environment's CSV graph into it |
 | `graph.py`, `dmn.py`, `engine.py` | The built-in graph; DMN decision tables; queries, decisions and scenarios run with every step recorded |
-| `decision_agent.py`, `number_check.py` | The reference agent, Claude over MCP; the check that every figure came from a tool |
+| `decision_agent.py`, `number_check.py` | The reference agent over MCP, Claude or a local model; the check that every figure came from a tool |
 | `tracing.py`, `trace_report.py` | `server.py --trace`: where each call's time went, and its summary |
 | `dataset.py`, `synthesize.py`, `train.py`, `generator.py` | Training, and the language model that writes examples |
 | `examples/service_desk/` | The worked example, with a stand-in issue tracker |
