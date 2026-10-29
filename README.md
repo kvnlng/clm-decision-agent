@@ -113,7 +113,8 @@ uv run python evaluate.py my_scenario/scenario.toml --cases my_scenario/scenario
 [docs/fine-tuning.md](docs/fine-tuning.md) has the details.
 
 **7. Connect an agent.** Serve over HTTP with a key, or with OAuth tokens from your identity
-provider (`--auth oauth`), and point an MCP client at it: [docs/serving.md](docs/serving.md).
+provider (`--auth oauth`), and point an MCP client at it: [docs/serving.md](docs/serving.md). To
+let agents find it, list it in an MCP registry: [docs/registry.md](docs/registry.md).
 
 ```bash
 export DECISION_SERVER_KEY=<a long random key>
@@ -186,6 +187,8 @@ Measured on the example scenario, on an M5 Max with 64 GB:
 | `scenario.py` | Reads and checks a scenario file |
 | `decision.py` | One decision: route, informing tools, questions, rules, acting tools |
 | `server.py` | The decision server: MCP over stdio or HTTP |
+| `oauth.py` | `server.py --auth oauth`: OAuth tokens from any OIDC issuer, checked as JWTs |
+| `registry.py` | The `server.json` that lists a deployment in an MCP registry, public or private |
 | `chat.py` | The test chat, an MCP client |
 | `clm_router.py` | Loads CLM with either backend; routing and the reuse of corrections |
 | `clm_torch.py`, `clm_schema.py`, `clm_common.py` | CLM with PyTorch; the authors' question format, copied unchanged; what both share |
