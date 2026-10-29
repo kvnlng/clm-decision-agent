@@ -12,7 +12,7 @@ TABLES = Path(__file__).parent / "dmn"
 
 def test_first_hit():
     table = load_table(TABLES / "quality.dmn")
-    assert table.name == "quality_threshold" and table.inputs == ["defect_rate"]
+    assert table.name == "quality_threshold" and table.inputs == ["defect_rate"] and table.types == ["number"]
     assert table.outputs == ["allowed", "reason"] and table.hit_policy == "FIRST"
     assert evaluate(table, {"defect_rate": 0.03}) == {
         "outputs": {"allowed": False, "reason": "The defect rate is above 2%"}, "fired": ["r1"]}

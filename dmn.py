@@ -42,6 +42,7 @@ class Table:
     """A decision table, ready to evaluate."""
     name: str
     inputs: list[str]
+    types: list[str]        # each input's typeRef: number, string or boolean, or "" when the table gives none
     outputs: list[str]
     hit_policy: str
     rules: list[Rule]
@@ -163,14 +164,15 @@ def load_table(path: Path) -> Table:
     hit_policy = table.get("hitPolicy", "UNIQUE")
     if hit_policy not in HIT_POLICIES:
         raise DmnError(f"{path.name}: hit policy {hit_policy} is not supported ({', '.join(HIT_POLICIES)})")
-    inputs = [_text(_children(item, "inputExpression")[0]).strip() if _children(item, "inputExpression") else ""
-              for item in _children(table, "input")]
+    expressions = [(_children(item, "inputExpression") or [None])[0] for item in _children(table, "input")]
+    inputs = [_text(expression).strip() if expression is not None else "" for expression in expressions]
+    types = [expression.get("typeRef", "") if expression is not None else "" for expression in expressions]
     outputs = [item.get("name") or "" for item in _children(table, "output")]
     if not inputs or not all(inputs):
         raise DmnError(f"{path.name}: every input needs an inputExpression naming its variable")
     if not outputs or not all(outputs):
         raise DmnError(f"{path.name}: every output needs a name")
-    return Table(name, inputs, outputs, hit_policy, _rules(path, table, len(inputs), len(outputs)))
+    return Table(name, inputs, types, outputs, hit_policy, _rules(path, table, len(inputs), len(outputs)))
 
 
 def evaluate(table: Table, inputs: dict) -> dict:

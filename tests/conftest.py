@@ -159,3 +159,97 @@ def tracker_server():
 @pytest.fixture
 def tracker_url(tracker_server):
     return f"http://127.0.0.1:{tracker_server.server_address[1]}"
+
+
+# A small environment: two suppliers of one product, one calculation and one limit that rejects moving everything
+ENV_TOML = '''
+[environment]
+name = "Toy sourcing"
+description = "Where to buy one product's parts"
+functions = "toy_functions"
+
+[graph]
+nodes = "graph/nodes.csv"
+edges = "graph/edges.csv"
+
+[queries.suppliers]
+description = "The product's suppliers, with region and unit cost"
+params = { product = "string" }
+function = "suppliers"
+
+[decisions.share_limit]
+description = "Whether a share for Region B is allowed"
+dmn = "rules/share_limit.dmn"
+
+[calculations.cost]
+description = "Unit cost and margin for a share"
+params = { share = "number", cost_a = "number", cost_b = "number" }
+function = "cost"
+
+[scenarios.sourcing]
+description = "How much to buy from Region B"
+params = { product = "string" }
+levers = { share = [0, 0.5, 1.0] }
+branch = "branch"
+objective = "margin"
+limits = ["share_limit"]
+'''
+
+ENV_NODES = "id,kind,name,region,cost\nP1,product,Widget,,\nS1,supplier,Alpha,A,10\nS2,supplier,Beta,B,6\n"
+ENV_EDGES = "source,relation,target\nS1,supplies,P1\nS2,supplies,P1\n"
+
+ENV_FUNCTIONS = '''
+CALLS = []
+
+
+def suppliers(graph, product):
+    return [{"id": node["id"], "region": node["region"], "cost": node["cost"]}
+            for node in graph.neighbours(product, "supplies", "in")]
+
+
+def cost(share, cost_a, cost_b):
+    unit = cost_a * (1 - share) + cost_b * share
+    return {"unit_cost": unit, "margin": 20 - unit}
+
+
+def branch(steps, params, levers):
+    CALLS.append(dict(levers))
+    costs = {row["region"]: row["cost"] for row in steps.query("suppliers", product=params["product"])}
+    figures = steps.calculate("cost", share=levers["share"], cost_a=costs["A"], cost_b=costs["B"])
+    steps.decide("share_limit", share=levers["share"])
+    return figures
+
+
+def branch_without_limit(steps, params, levers):
+    costs = {row["region"]: row["cost"] for row in steps.query("suppliers", product=params["product"])}
+    return steps.calculate("cost", share=levers["share"], cost_a=costs["A"], cost_b=costs["B"])
+'''
+
+
+def limit_dmn(allowed: str = "&lt;= 0.6") -> str:
+    """The share_limit table: shares above 0.9 are refused, shares matching `allowed` are allowed."""
+    rule = ('<rule id="{id}"><inputEntry><text>{test}</text></inputEntry><outputEntry><text>{allowed}</text>'
+            '</outputEntry><outputEntry><text>"{reason}"</text></outputEntry></rule>')
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="d" name="d" namespace="t">'
+            '<decision id="share_limit" name="share_limit"><decisionTable id="t">'
+            '<input id="i"><inputExpression typeRef="number"><text>share</text></inputExpression></input>'
+            '<output id="o1" name="allowed" typeRef="boolean"/><output id="o2" name="reason" typeRef="string"/>'
+            + rule.format(id="too_much", test="&gt; 0.9", allowed="false", reason="Too much from Region B")
+            + rule.format(id="fine", test=allowed, allowed="true", reason="Within the limit")
+            + "</decisionTable></decision></definitions>")
+
+
+@pytest.fixture
+def write_environment(tmp_path):
+    def _write(toml=ENV_TOML, functions=ENV_FUNCTIONS, dmn=None, folder="toy"):
+        root = tmp_path / folder
+        (root / "graph").mkdir(parents=True)
+        (root / "rules").mkdir()
+        (root / "environment.toml").write_text(toml, encoding="utf-8")
+        (root / "toy_functions.py").write_text(functions, encoding="utf-8")
+        (root / "graph" / "nodes.csv").write_text(ENV_NODES, encoding="utf-8")
+        (root / "graph" / "edges.csv").write_text(ENV_EDGES, encoding="utf-8")
+        (root / "rules" / "share_limit.dmn").write_text(dmn or limit_dmn(), encoding="utf-8")
+        return root / "environment.toml"
+    return _write
