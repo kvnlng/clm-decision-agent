@@ -8,6 +8,7 @@ when a step fails or a limit was never checked, so no branch can skip a limit un
 from __future__ import annotations
 
 import itertools
+import math
 
 from dmn import DmnError, evaluate
 from environment import Environment
@@ -169,6 +170,8 @@ def _run_branch(env: Environment, scenario, params: dict, levers: dict) -> dict:
         objective = figures.get(scenario.objective)
         if not isinstance(objective, (int, float)) or isinstance(objective, bool):
             raise StepError(f"scenario {scenario.name}: the figures have no number for {scenario.objective}")
+        if not math.isfinite(objective):
+            raise StepError(f"scenario {scenario.name}: the figures' {scenario.objective} is not a finite number")
         branch["objective"] = objective
         branch["rejected_by"] = _limits(scenario, steps.steps)
         branch["status"] = "rejected" if branch["rejected_by"] else "kept"

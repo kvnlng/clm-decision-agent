@@ -116,7 +116,9 @@ function = "branch_figures"               # branch_figures(**inputs) -> a dict o
 ```
 
 Arithmetic belongs in a calculation: adding up rows, a margin, a blended lead time. It is recorded like a rule, so
-every figure in an answer has a step behind it.
+every figure in an answer has a step behind it. Return JSON values: numbers, text, true/false, lists and tables
+(dicts). NaN and infinity, `Decimal` and dates do not survive MCP, and an objective that is not a finite number fails
+its branch.
 
 ## Scenarios
 
@@ -152,8 +154,8 @@ account for every number.
   **rejected** when any evaluation of a limit says not allowed; the result names the decision, its reason and its
   inputs.
 - **A branch fails** when a listed limit was never evaluated or failed (even if the owner's code caught the error),
-  when a step fails, or when the figures have no number for the objective. So no branch can skip a limit unnoticed: in the example, the dependency check runs on every
-  branch because its rule is a limit.
+  when a step fails, or when the figures have no finite number for the objective. So no branch can skip a limit
+  unnoticed: in the example, the dependency check runs on every branch because its rule is a limit.
 - **The kept branches are ranked** by the objective. A lever value the owner did not list is refused before anything
   runs.
 

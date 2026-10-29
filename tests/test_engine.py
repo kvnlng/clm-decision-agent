@@ -104,6 +104,16 @@ def test_a_function_decision_must_return_a_dict(write_environment):
         run_decision(env, "listed", {})
 
 
+@pytest.mark.parametrize("value", ['float("nan")', 'float("inf")'])
+def test_an_objective_that_is_not_finite_fails_the_branch(write_environment, value):
+    functions = ENV_FUNCTIONS + f"\n\ndef branch_odd(steps, params, levers):\n    return {{**branch(steps, " \
+                                f"params, levers), 'margin': {value}}}\n"
+    env = load_environment(write_environment(ENV_TOML.replace('branch = "branch"', 'branch = "branch_odd"'), functions))
+    result = run_scenario(env, "sourcing", {"product": "P1"}, branches=[{"share": 0}])
+    assert result["branches"][0]["status"] == "failed" and result["best"] is None
+    assert "scenario sourcing: the figures' margin is not a finite number" in result["branches"][0]["error"]
+
+
 def test_a_swallowed_limit_failure_fails_the_branch(write_environment):
     toml = ENV_TOML.replace('branch = "branch"', 'branch = "branch_swallowing"')
     env = load_environment(write_environment(toml, dmn=limit_dmn(allowed="[0.1..0.6]")))
