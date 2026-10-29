@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -24,7 +25,7 @@ from typing import Protocol
 
 import anyio
 import httpx
-from mcp import Client, StdioServerParameters
+from mcp import Client, MCPError, StdioServerParameters
 
 from number_check import unsupported
 
@@ -218,9 +219,15 @@ async def answer(session: Client, question: str, chat: Chat) -> dict:
             "stopped": stopped, "model": chat.model}
 
 
-async def _main(args) -> int:
+def server_params(environment: str) -> StdioServerParameters:
+    """How to start server.py for the environment. It gets this process's variables, so a password the environment
+    names (NEO4J_PASSWORD) reaches it; the MCP client would otherwise pass on only a few, such as PATH."""
     server = Path(__file__).with_name("server.py")
-    params = StdioServerParameters(command=sys.executable, args=[str(server), args.environment])
+    return StdioServerParameters(command=sys.executable, args=[str(server), environment], env=dict(os.environ))
+
+
+async def _main(args) -> int:
+    params = server_params(args.environment)
     async with contextlib.AsyncExitStack() as stack:
         if args.backend == "ollama":
             chat = OllamaChat(await stack.enter_async_context(httpx.AsyncClient()), args.model or LOCAL_MODEL,
@@ -260,7 +267,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ollama-url", default=OLLAMA_URL)
     parser.add_argument("--out", help="where to write the result as JSON (default: the environment's runs/ folder)")
     args = parser.parse_args(argv)
-    return anyio.run(_main, args)
+    try:
+        return anyio.run(_main, args)
+    except (MCPError, ExceptionGroup):
+        # The server stopped, as when its environment does not load; its own message is printed above
+        print("error: the decision server stopped; see its message above", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

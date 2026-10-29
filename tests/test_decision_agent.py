@@ -10,7 +10,7 @@ import httpx
 import pytest
 from mcp import Client
 
-from decision_agent import AgentError, ClaudeChat, OllamaChat, answer
+from decision_agent import AgentError, ClaudeChat, OllamaChat, answer, main, server_params
 from environment import load_environment
 from environment_server import build_environment_server
 
@@ -212,3 +212,17 @@ async def test_ollama_unreachable_is_one_line(mcp_server):
         await ask_ollama(mcp_server, refuse)
     with pytest.raises(AgentError, match=r"^Ollama has no model gemma4:26b"):
         await ask_ollama(mcp_server, FakeOllama(status=404))
+
+
+def test_the_server_gets_the_callers_environment(monkeypatch):
+    monkeypatch.setenv("NEO4J_PASSWORD", "from-the-shell")
+    params = server_params("examples/tariff/environment.toml")
+    assert (params.env or {}).get("NEO4J_PASSWORD") == "from-the-shell"
+    assert params.args[-1] == "examples/tariff/environment.toml"
+
+
+def test_a_server_that_stops_is_one_line(tmp_path, capsys):
+    missing = tmp_path / "nowhere.toml"
+    assert main([str(missing), "a question", "--backend", "ollama", "--ollama-url", "http://127.0.0.1:9"]) == 2
+    err = capsys.readouterr().err
+    assert "error: the decision server stopped" in err and "Traceback" not in err

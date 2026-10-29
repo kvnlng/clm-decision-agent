@@ -72,27 +72,40 @@ uv run --group graph python load_graph.py examples/tariff/environment.toml
 On 29 October 2026, the question above went to Claude Opus 5.5 twice and to `gemma4:26b` three times, running
 locally through Ollama on an M5 Max. All the runs used the built-in graph.
 
-| Run | Tool calls | Recommendation | Named Kestrel Polymers | Figures no tool returned | Time |
-|---|---|---|---|---|---|
-| Claude, 1 | `describe`, `scenario_sourcing` | half to Region B | yes | none | not recorded |
-| Claude, 2 | `describe`, `scenario_sourcing` | half to Region B | yes | **$42,400** | 17.8 s |
-| gemma4, 1 | `describe`, `scenario_sourcing` | half to Region B | yes | none | 20.8 s |
-| gemma4, 2 | `describe`, `scenario_sourcing` | half to Region B | yes | none | 12.1 s |
-| gemma4, 3 | `describe`, `scenario_sourcing` | half to Region B | yes | none | 19.0 s |
+| Run | Tool calls | Recommendation | Named Kestrel Polymers | Said both Region B suppliers depend on it | Figures no tool returned | Time |
+|---|---|---|---|---|---|---|
+| Claude, 1 | `describe`, `scenario_sourcing` | half to Region B | yes | yes | none | not recorded |
+| Claude, 2 | `describe`, `scenario_sourcing` | half to Region B | yes | yes | **$42,400** | 17.8 s |
+| gemma4, 1 | `describe`, `scenario_sourcing` | half to Region B | yes | no | none | 20.8 s |
+| gemma4, 2 | `describe`, `scenario_sourcing` | half to Region B | yes | no | none | 12.1 s |
+| gemma4, 3 | `describe`, `scenario_sourcing` | half to Region B | yes | no | none | 19.0 s |
 
 - **Every run reached the same decision, by the same two calls.** That is the design working: the scenario did the
   deciding, and the models reported it.
 - **Claude's second answer broke the rule against calculating.** It gave the gain of moving half as "$42,400". That
   is the difference between two figures the tools returned, worked out by the model, and the number check flagged
   it. The arithmetic happens to be right, but the figure came from the model, not from any traced step.
-- **Claude's answers were fuller.** They listed the tariff rates, the three key clients by name and tier, the
-  margin rate and tariff cost of every branch, and what the analysis leaves out: shares between 50% and 60%,
-  switching costs and transition time.
-- **gemma4's answers were shorter and kept to what the tools returned.** They gave the margin, delivery extension
-  and defect rate, the rejection with its reason, and Kestrel Polymers. They printed figures as the tools gave them
-  ("704,900.0"), and said less about what was not modelled.
-- **gemma4 was free and stayed on the Mac.** Claude was about as fast, at the cost of an API call.
+- **Claude's answers were fuller, and explained the dependency.** They listed:
+  - the tariff rates;
+  - the three key clients by name and tier;
+  - the margin rate and tariff cost of every branch;
+  - that both Region B suppliers buy from Kestrel Polymers.
 
-Five runs on a small, made-up graph show the pattern works with both models. They don't measure how often an agent
+  Both said what the analysis leaves out. The first named shares between 50% and 60%, and transition time; the
+  second named switching costs and supplier capacity.
+- **gemma4's answers were shorter, and never did arithmetic of their own.** They gave:
+  - the margin and the delivery extension;
+  - in one of the three, the defect rate;
+  - the rejection with its reason, naming Kestrel Polymers.
+
+  None said why Kestrel carries all the supply (both Region B suppliers depend on it), although the instructions
+  ask for the dependency behind a rejection. None mentioned what was not modelled. They printed figures as the
+  tools gave them ("704,900.0").
+- **gemma4 was free and stayed on the Mac.** Claude was about as fast, at the cost of an API call.
+- **On Neo4j, gemma4 made one labelling mistake.** In a sixth run, with the example on Neo4j and a shorter question,
+  it made the same two calls, took 14.6 s and recommended half. But it headed the 0% branch "Rejected", although it
+  passed every limit and only ranked lower. The number check cannot catch that: it checks figures, not words.
+
+Six runs on a small, made-up graph show the pattern works with both models. They don't measure how often an agent
 gets it right. A fair next measure would be many varied questions, each scored for whether the right branch was
 recommended, whether the rejected branch and its dependency were named, and how many figures were flagged.

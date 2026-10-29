@@ -12,6 +12,7 @@ import math
 
 from dmn import DmnError, evaluate
 from environment import Environment
+from scenario import StepError
 
 _CHECKS = {"string": lambda v: isinstance(v, str), "boolean": lambda v: isinstance(v, bool),
            "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
@@ -19,10 +20,6 @@ _CHECKS = {"string": lambda v: isinstance(v, str), "boolean": lambda v: isinstan
            "list": lambda v: isinstance(v, list), "any": lambda _: True}
 _ARTICLES = {"string": "text", "boolean": "true or false", "integer": "a whole number", "number": "a number",
              "list": "a list"}
-
-
-class StepError(ValueError):
-    """A call that cannot run as asked: an unknown name, a bad parameter or a lever value not allowed."""
 
 
 def _check(what: str, declared: dict[str, str], given: dict) -> None:

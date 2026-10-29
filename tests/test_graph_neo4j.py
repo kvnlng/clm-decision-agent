@@ -137,3 +137,13 @@ def test_the_two_graphs_agree():
     for mine, other in zip(ours["branches"], theirs["branches"]):
         assert (other["status"], other["figures"], other["rejected_by"]) == \
             (mine["status"], mine["figures"], mine["rejected_by"])
+
+
+@pytest.mark.parametrize("uri", ["localhost:7687", "foo://127.0.0.1:7687"])
+def test_a_malformed_uri_is_one_line(uri, recwarn):
+    pytest.importorskip("neo4j")
+    from graph_neo4j import connect  # pylint: disable=import-outside-toplevel
+    with pytest.raises(ScenarioError, match=f"^graph.neo4j: cannot connect to {uri}") as caught:
+        connect(uri, "neo4j", "not-a-real-password")
+    assert "\n" not in str(caught.value)
+    assert not [warning for warning in recwarn if "Preview" in type(warning.message).__name__]

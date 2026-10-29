@@ -26,6 +26,11 @@ class ScenarioError(ValueError):
     """The scenario file is missing, unreadable or invalid."""
 
 
+class StepError(ValueError):
+    """An environment call that cannot run as asked: an unknown name, a bad parameter, a lever value not allowed, or
+    a query the graph refused. engine.py raises it; it lives here so the graph connectors can too."""
+
+
 _RULE = re.compile(r"\s*(\w+)\s*(>=|<=|==)\s*(.+?)\s*")
 
 

@@ -5,7 +5,12 @@ environment's graph backend is neo4j. load_graph.py copies an environment's CSV 
 """
 from __future__ import annotations
 
-from scenario import ScenarioError
+import warnings
+
+from scenario import ScenarioError, StepError
+
+# Bolt, plain or with TLS; the driver's http:// support is a preview that needs further packages
+SCHEMES = ("bolt://", "bolt+s://", "bolt+ssc://", "neo4j://", "neo4j+s://", "neo4j+ssc://")
 
 
 def _first_line(error: Exception) -> str:
@@ -22,13 +27,22 @@ def connect(uri: str, user: str, password: str):
     """A driver that has reached the database; raises ScenarioError in one line when it cannot."""
     try:
         import neo4j  # pylint: disable=import-outside-toplevel
+        from neo4j.warnings import PreviewWarning  # pylint: disable=import-outside-toplevel
     except ImportError as error:
         raise ScenarioError("graph.backend: neo4j needs the driver: run `uv sync --group graph`") from error
-    driver = neo4j.GraphDatabase.driver(uri, auth=(user, password))
+    if not uri.startswith(SCHEMES):
+        raise ScenarioError(f"graph.neo4j: cannot connect to {uri}: the uri must start with "
+                            f"{' or '.join(SCHEMES)}")
+    driver = None
     try:
+        # The driver warns about its preview HTTP support on every start, which only clutters a one-line error
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", PreviewWarning)
+            driver = neo4j.GraphDatabase.driver(uri, auth=(user, password))
         driver.verify_connectivity()
     except driver_errors() as error:
-        driver.close()
+        if driver is not None:
+            driver.close()
         raise ScenarioError(f"graph.neo4j: cannot connect to {uri}: {_first_line(error)}") from error
     return driver
 
@@ -42,7 +56,6 @@ class Neo4jConnector:  # pylint: disable=too-few-public-methods
 
     def run(self, query, params: dict) -> list[dict]:
         """The query's rows."""
-        from engine import StepError  # pylint: disable=import-outside-toplevel
         try:
             with self.driver.session(database=self.database) as session:
                 return [record.data() for record in session.run(query.cypher, params)]
