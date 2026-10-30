@@ -265,6 +265,84 @@ steps.decide("news_risk", probability=probability, supplier=supplier)
   before choosing a rule's threshold, as `examples/tariff/judge_news.py` does, and say how wide the gap was. Where
   the texts do not separate, the judge is not ready to be a limit.
 
+## Rules an agent can explore
+
+A decision can carry what a person needs to know about the rule behind it, and the information it needs. The
+environment then offers two more tools, `rules` and `rule`, and `describe` lists the topics: the kinds of decision the
+rules govern. From [examples/new_site](../examples/new_site/README.md):
+
+```toml
+[decisions.stress_test.rule]
+statement = "With revenue 20% below plan, a new site must still pay back within 7 years."
+reason = "Plans are often optimistic; a site must survive a bad start."
+owner = "Finance"
+version = "2026-02"
+governs = ["open_site"]                  # the topics this rule governs
+depends_on = ["payback"]                 # other rules, which must have a rule table too
+needs = ["neighbourhood", "household_income", "site_costs"]
+
+[information.neighbourhood]
+description = "Which neighbourhood the site would be in (a census tract id, such as tract_4102)"
+kind = "supplied"                        # the person asking must give it; no query
+
+[information.household_income]
+description = "Median household income in the neighbourhood"
+kind = "estimate"                        # or "fact"; both name the query that provides it
+query = "household_income"
+```
+
+- **`rules(topic)`** gives the rules governing the topic and the rules they depend on, dependencies first, each with
+  its statement, reason, owner and version; the information they need; and in `to_ask`, what the person asking must
+  supply. **`rule(name)`** gives one rule, with its parameters and, for a DMN table, its rows as written.
+- **A supplied item is named after the scenario parameter that carries it**, so the decision record can tell what
+  was given from what is still to ask.
+- A rule's `needs` must name `[information.*]` items, its `depends_on` other rules, and no rule may depend on itself
+  through others; an information item's kind must match its query's. Each mistake stops loading, naming it.
+
+## Facts, estimates and what was supplied
+
+A query is a **fact** unless it says `kind = "estimate"`. Each row of an estimate has `low`, `central` and `high`,
+its `source` and its date (`as_of`); a row without them, or with low above central or central above high, fails the
+step in one line. The engine adds `value`: the central value, or the low or high when a risk run asks for it, so the
+branch reads `row["value"]` and never chooses. Every query step records `"information": "fact"` or `"estimate"`, and a
+scenario's result says what was supplied (its parameters), the rules it applied and the information it used.
+
+## Risk
+
+```toml
+[scenarios.new_site]
+...
+limits = ["payback", "stress_test", "debt_covenant", "reserve_policy"]
+uncertain = ["household_income"]         # estimate queries to try at their low and high
+approvals = ["capital_approval"]         # decisions with required, who and reason: listed, never rejecting
+```
+
+- **Only the owner's rules reject.** A stress test is a limit like any other: in the example, payback with revenue
+  20% below plan.
+- **Warnings.** Each kept branch is run again at each uncertain estimate's low and high; a limit that fails there is
+  a warning on the branch (which estimate, which case, which limit, its reason). The branch stays kept, and the
+  ranking uses the central case.
+- **Headroom.** For each kept branch and uncertain estimate, how far the estimate can fall (or rise) from its central
+  value before a limit fails, found by bisection to within half a percent over a fall to zero or a rise to double:
+  "income can fall 2% before the stress test fails". It assumes a limit's verdict changes once along the way, as for
+  a threshold.
+- **Approvals.** A decision listed in `approvals` outputs `required` (true or false), `who` and `reason`; a branch
+  that needs one lists it, so "the board must approve" is shown, not mistaken for a rejection. An approval never
+  checked fails the branch, like a limit.
+
+## The decision record
+
+`clm-agent` writes a decision record beside each answer, as JSON and as a page to read (`<time>.record.md`). It is
+built only from the tools' results, so it works for a server reached by URL too, and the same calls give the same
+record: the question; what was supplied; the rules that applied, with statement, reason, owner and version; every
+fact with its values and every estimate with its range, source and date; each scenario's branches with their
+figures, the limits that rejected them, warnings, headroom and approvals; what is still to ask; and any call that
+failed. The agent's own explanation follows, under "The agent's explanation (not checked)", with any figure the
+number check could not find. Figures in the question count as given.
+
+When the rules need something the question does not give, the agent is told to stop and list it, with the rule that
+needs it, rather than run a scenario or fill it in.
+
 ## The MCP tools
 
 | Tool | Does |
@@ -273,6 +351,7 @@ steps.decide("news_risk", probability=probability, supplier=supplier)
 | `judge_<name>` | CLM's probability that the judge's question is answered yes for a `text` |
 | `scenario_<name>` | Every branch, or the `branches` given: each branch's figures, status, the limits that rejected it and every step |
 | `describe` | The environment's name and description, and every part with its parameters, levers, objective and limits |
+| `rules`, `rule` | With rule metadata: the rules governing a topic, and one rule with its rows (above) |
 
 All of them only read. Each tool's description is the owner's.
 

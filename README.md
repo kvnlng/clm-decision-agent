@@ -21,7 +21,7 @@ The same server, `clm-server`, serves either of two files.
 | Made of | Routes, the questions CLM answers, rules, and informing and acting tools | A knowledge graph with named queries, DMN decision tables, calculations, and scenarios of levers ranked by an objective with every limit checked |
 | Language model in the server | CLM, which reads the message and ranks the options | None, unless a **judge** asks CLM a yes/no question of text no rule can read, such as supplier news |
 | The calling agent | Talks to the person and acts on the decision | Chooses which parts to run and reports them; it never calculates, and `number_check.py` checks every figure in its answer |
-| Example | [service desk](examples/service_desk/README.md); [the CrowdStrike day](examples/crowdstrike/README.md), the benchmark | [tariff](examples/tariff/README.md): a made-up manufacturer after a tariff hike |
+| Example | [service desk](examples/service_desk/README.md); [the CrowdStrike day](examples/crowdstrike/README.md), the benchmark | [tariff](examples/tariff/README.md): a made-up manufacturer after a tariff hike; [new site](examples/new_site/README.md): rules to explore, estimates with their range, risk and a decision record for an officer |
 | Guide | [docs/scenario.md](docs/scenario.md), [docs/walkthrough.md](docs/walkthrough.md) | [docs/environment.md](docs/environment.md) |
 
 Both follow one rule: **the owner writes every route, rule, query, calculation and lever, and information from
@@ -165,6 +165,7 @@ For an environment:
 | `query_<name>`, `decision_<name>`, `calculation_<name>` | One named part, with typed arguments |
 | `scenario_<name>` | Every branch, or those asked for: figures, kept or rejected, the limits that rejected it, and every step |
 | `judge_<name>` | CLM's probability that the judge's question is answered yes for a text |
+| `rules`, `rule` | When the rules carry metadata: those governing a topic, with why each exists and what to ask for; one rule's rows |
 
 ## What to expect
 
@@ -196,7 +197,7 @@ The framework is the package `clm_decision`, in `src/clm_decision/`:
 | `scenario.py`, `decision.py`, `tools.py` | Reads a scenario; one decision; loads its tools |
 | `environment.py`, `environment_server.py`, `engine.py` | Reads an environment; its parts as MCP tools; queries, decisions, scenarios and judges run with every step recorded |
 | `graph.py`, `graph_neo4j.py`, `load_graph.py`, `dmn.py` | The built-in graph; named queries on Neo4j; `clm-load-graph`; DMN decision tables |
-| `decision_agent.py`, `number_check.py` | `clm-agent`, Claude or a local model; the check that every figure came from a tool |
+| `decision_agent.py`, `number_check.py`, `decision_record.py` | `clm-agent`, Claude or a local model; the check that every figure came from a tool; the decision record |
 | `call.py` | `clm-call`: a server's tools, listed or called by hand, over stdio or HTTP |
 | `oauth.py`, `registry.py` | OAuth tokens from any OIDC issuer; `clm-registry`, the `server.json` for an MCP registry |
 | `tracing.py`, `trace_report.py` | `--trace`, and `clm-trace-report` |
@@ -209,7 +210,7 @@ Outside the package:
 
 | Folder | Purpose |
 |---|---|
-| `examples/` | The worked examples: `service_desk/`, `crowdstrike/` and `tariff/` |
+| `examples/` | The worked examples: `service_desk/`, `crowdstrike/`, `tariff/` and `new_site/` |
 | `docs/` | Guides: scenario, walkthrough, environment, serving, registry, fine-tuning, models, findings, data handling |
 | `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads CLM; `CLM_TEST_BACKEND=torch` for torch) |
 
