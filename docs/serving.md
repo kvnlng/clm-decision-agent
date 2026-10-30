@@ -192,22 +192,21 @@ CLM runs inside the server's process, on whatever the scenario's `[clm] backend`
 - **Linux with an NVIDIA GPU of 24 GB or more**, such as a VM with an A100: `backend = "torch"`.
   A plain CPU works too, slowly.
 
-### In Docker
+### On Linux
 
-The `Dockerfile` installs the project on Linux:
+Install the package with the clm extra, natively, in a virtual environment:
 
 ```bash
-docker build -t clm-decision .
-docker run --rm clm-decision                       # the fast tests
-docker run --rm --gpus all -v clm-hf:/cache -e CLM_TEST_BACKEND=torch clm-decision \
-    uv run pytest -m slow -k real_server -s        # CLM on the GPU, through the server
+sudo apt install build-essential python3.12-dev   # PyTorch's Triton compiles a helper on first use
+pip install "clm-decision-agent[clm] @ git+https://github.com/kvnlng/clm-decision-agent"
+clm-server <scenario> --http --host 0.0.0.0       # with DECISION_SERVER_KEY set
 ```
 
-- Models download into `/cache`; the volume keeps them between runs.
-- `--gpus all` needs the NVIDIA container toolkit, and a driver of version 580 or later on the host. Without it, CLM runs on the CPU, which
-  needs about 24 GB of memory for the container and is slow.
-- To serve from the container, run `uv run clm-server <scenario> --http --host 0.0.0.0`
-  with the key variable set (`-e DECISION_SERVER_KEY=...`) and the port published (`-p 8000:8000`).
+- The GPU needs an NVIDIA driver of version 580 or later. Without one, CLM runs on the CPU, which
+  needs about 24 GB of memory and is slow.
+- Models download into Hugging Face's cache (`HF_HOME`, by default `~/.cache/huggingface`).
+- In a checkout, `uv sync` and `CLM_TEST_BACKEND=torch uv run pytest -m slow -k real_server -s`
+  run CLM on the GPU through the server.
 
 What has been checked so far is listed in [models.md](models.md#what-has-been-checked), including
-this image on an A100.
+the A100.

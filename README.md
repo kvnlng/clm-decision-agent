@@ -47,7 +47,7 @@ You need Python 3.12 to 3.14, [uv](https://docs.astral.sh/uv/), and for CLM one 
 - **Linux with an NVIDIA GPU of 24 GB or more**, such as an A100 or H100. CLM runs with PyTorch; the first run
   downloads about 16 GB. Switch a scenario to the torch backend in its `[clm]` table, and install a C compiler and
   Python's headers first (on Ubuntu, `sudo apt install build-essential python3.12-dev`). A plain CPU works too,
-  slowly. There is a `Dockerfile`: [docs/serving.md](docs/serving.md#in-docker).
+  slowly. See [docs/serving.md](docs/serving.md#on-linux).
 
 **In a checkout,** `uv sync` installs everything, with the tests' tools, and `uv run` gives the commands below.
 
@@ -207,7 +207,6 @@ Outside the package:
 | `examples/` | The worked examples: `service_desk/`, `crowdstrike/` and `tariff/` |
 | `docs/` | Guides: scenario, walkthrough, environment, serving, registry, fine-tuning, models, findings, data handling |
 | `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads CLM; `CLM_TEST_BACKEND=torch` for torch) |
-| `Dockerfile` | The project on Linux, for the torch backend |
 
 ## Licence
 

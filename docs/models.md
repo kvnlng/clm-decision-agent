@@ -71,7 +71,7 @@ precision. The first start downloads about 16 GB.
 | The torch backend on Linux (arm64), in Docker, on the CPU: the slow test through the server, released heads | Passes: 11 of 17 hand-written messages, in about 5 minutes on 2 CPUs. On the Mac's GPU the same test got 12; the difference is a near tie |
 | An Intel Linux image (amd64) | Installs, with PyTorch's CUDA 13.0 build. CLM was not run in it |
 | The torch backend on an NVIDIA A100 80GB (Azure NC24ads_A100_v4, Ubuntu, driver 580): the slow test through the server, released heads | Passes: 12 of 17 hand-written messages, as on the Mac's GPU. Each decision took about 40 ms; the model loads in 7 seconds once downloaded. The fast tests pass (241, with 2 MLX-only ones skipped) |
-| The `Dockerfile`'s image on the A100, with `--gpus all`: the same slow test | Passes: 12 of 17 |
+| The torch backend in Docker on the A100 (an image since removed), with the GPU: the same slow test | Passes: 12 of 17 |
 | Training the example on the A100 | 55% → 98% on held-back examples, kept after the same pass as on the Mac; 15 of 17 hand-written messages; 20 seconds, loading the model included |
 | The torch backend on an NVIDIA H100 80GB SXM (DigitalOcean, Ubuntu 22.04, driver 580, Python 3.13): the CrowdStrike example, trained and replayed for the whole day | Training 2 min 40 s with the download; 76% on held-back examples as on the A100; 99,806 decisions at 51.1 a second |
 
