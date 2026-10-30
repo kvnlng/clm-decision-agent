@@ -15,14 +15,10 @@ information, and the decision comes back with its reasons.
 
 The framework holds you to three principles:
 
-- **You write the rules; agents only choose among them.** Every route, rule, query, calculation and option is yours,
-  and outside information reaches a decision only through your tools. An agent never invents one.
-- **Every decision must be checkable.** Each one is traced to the steps that made it, figures in an agent's answer are
-  checked against what the tools returned, and a decision record sets out the rules, facts, estimates and risks
-  for whoever signs it off.
-- **Keep it small and local where you can.** Where the server must read language it uses a Contrastive Language Model
-  (CLM), which picks among options instead of writing text. It runs on a Mac or one GPU, so it costs little and the
-  data stays with you; in the benchmark, Claude was more accurate.
+- **You write the rules; agents only choose.** Information reaches a decision only through your tools.
+- **Every decision is checkable.** Every step is traced, every figure checked, and a decision record kept.
+- **Small and local where you can.** CLM picks among options on a Mac or one GPU: cheap, and your data stays
+  with you. Claude was more accurate in the benchmark.
 
 To build your own, pick the style of decision below, start from an example ([examples/README.md](examples/README.md))
 or from `uv run clm-new-environment my_environment`, write your rules and tools, and serve it with `clm-server`.
