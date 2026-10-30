@@ -11,10 +11,10 @@ import torch
 from safetensors.numpy import load_file
 from torch import nn
 
-import train
-from clm_torch import TorchHeads
-from scenario import load_scenario
-from train import HeadsModel, accuracy, fit, probe_accuracy, save_heads
+from clm_decision import train
+from clm_decision.clm_torch import TorchHeads
+from clm_decision.scenario import load_scenario
+from clm_decision.train import HeadsModel, accuracy, fit, probe_accuracy, save_heads
 
 DIM, CLASSES = 12, 3
 

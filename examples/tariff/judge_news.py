@@ -11,10 +11,9 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[1]))
 
-from engine import run_judgement  # pylint: disable=wrong-import-position
-from environment import load_environment  # pylint: disable=wrong-import-position
+from clm_decision.engine import run_judgement  # pylint: disable=wrong-import-position
+from clm_decision.environment import load_environment  # pylint: disable=wrong-import-position
 
 
 def measure(env, cases: list[dict]) -> list[tuple[float, dict]]:

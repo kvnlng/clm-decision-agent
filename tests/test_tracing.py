@@ -10,15 +10,15 @@ from conftest import BASE_TOML, FakeRouter, decision
 from mcp import Client
 from test_clm_torch import CONFIG, FakeEncoder, StubTokenizer, tiny_qwen, tiny_weights
 
-import clm_router
-import server
-import trace_report
-import tracing
-from clm_common import ClmError
-from clm_router import LocalContrastiveRouter, MlxEngine
-from clm_torch import TorchEncoder, TorchEngine, TorchHeads
-from scenario import load_scenario
-from tools import load_tools
+from clm_decision import clm_router
+from clm_decision import server
+from clm_decision import trace_report
+from clm_decision import tracing
+from clm_decision.clm_common import ClmError
+from clm_decision.clm_router import LocalContrastiveRouter, MlxEngine
+from clm_decision.clm_torch import TorchEncoder, TorchEngine, TorchHeads
+from clm_decision.scenario import load_scenario
+from clm_decision.tools import load_tools
 
 TEXT = "charged twice"
 URGENT = {"q": {"type": "noul", "instructions": "Urgent?"}}

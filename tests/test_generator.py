@@ -10,9 +10,9 @@ import pytest
 from conftest import BASE_TOML
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-import generator
-from generator import GeneratorError, MLXGenerator, OllamaGenerator, OpenAIGenerator, make_generator
-from scenario import load_scenario
+from clm_decision import generator
+from clm_decision.generator import GeneratorError, MLXGenerator, OllamaGenerator, OpenAIGenerator, make_generator
+from clm_decision.scenario import load_scenario
 
 
 class FakeTokenizer:

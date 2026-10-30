@@ -1,7 +1,7 @@
 """Tests for number_check.py: every figure in an answer must be one a tool returned."""
 # Test names say what they check.
 # pylint: disable=missing-function-docstring
-from number_check import numbers_in, unsupported
+from clm_decision.number_check import numbers_in, unsupported
 
 
 def test_rounding_and_scale():

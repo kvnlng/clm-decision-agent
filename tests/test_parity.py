@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 from desk_routing_cases import CASES
 
-from clm_router import LocalContrastiveRouter, load_engine
-from scenario import load_scenario
+from clm_decision.clm_router import LocalContrastiveRouter, load_engine
+from clm_decision.scenario import load_scenario
 
 pytestmark = pytest.mark.slow
 pytest.importorskip("mlx.core")

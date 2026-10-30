@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from scenario import load_scenario
+from clm_decision.scenario import load_scenario
 
 sys.path.append(str(Path(__file__).parent.parent / "examples" / "service_desk"))
 sys.path.append(str(Path(__file__).parent.parent / "examples" / "crowdstrike"))
@@ -293,7 +293,7 @@ class FakeClmEngine:
 @pytest.fixture
 def fake_clm(monkeypatch):
     """Replaces CLM's loading; -> the engine judges get, with `loads` counting how often it was loaded."""
-    import clm_router  # pylint: disable=import-outside-toplevel
+    from clm_decision import clm_router  # pylint: disable=import-outside-toplevel
     engine = FakeClmEngine({"strike": 0.9})
     engine.loads = 0
 

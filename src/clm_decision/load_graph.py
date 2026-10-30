@@ -15,9 +15,9 @@ import re
 import sys
 from itertools import groupby
 
-from environment import graph_settings, load_graph_files, neo4j_password
-from graph import EDGE_COLUMNS, Graph
-from scenario import ScenarioError
+from .environment import graph_settings, load_graph_files, neo4j_password
+from .graph import EDGE_COLUMNS, Graph
+from .scenario import ScenarioError
 
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 BATCH = 1000
@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("environment", help="path to the environment's environment.toml")
     args = parser.parse_args(argv)
     try:
-        from graph_neo4j import connect, driver_errors  # pylint: disable=import-outside-toplevel
+        from .graph_neo4j import connect, driver_errors  # pylint: disable=import-outside-toplevel
         settings = graph_settings(args.environment)
         graph = load_graph_files(settings)
         driver = connect(settings.uri, settings.user, neo4j_password(settings))

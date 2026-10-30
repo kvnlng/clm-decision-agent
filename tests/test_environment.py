@@ -4,8 +4,8 @@
 import pytest
 from conftest import BASE_TOML, ENV_TOML, limit_dmn
 
-from environment import is_environment, load_environment
-from scenario import ScenarioError
+from clm_decision.environment import is_environment, load_environment
+from clm_decision.scenario import ScenarioError
 
 
 def test_loads_the_parts(write_environment):

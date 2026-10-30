@@ -10,7 +10,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from scenario import Scenario, ScenarioError, load_for_command
+from .scenario import Scenario, ScenarioError, load_for_command
 
 
 def new_key() -> bytes:

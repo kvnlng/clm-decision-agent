@@ -18,9 +18,9 @@ from pathlib import Path
 from types import ModuleType
 from typing import Protocol
 
-from dmn import DmnError, Table, load_table
-from graph import Graph
-from scenario import CLM_BACKENDS, DEFAULT_CLM, ScenarioError, StepError
+from .dmn import DmnError, Table, load_table
+from .graph import Graph
+from .scenario import CLM_BACKENDS, DEFAULT_CLM, ScenarioError, StepError
 
 BACKENDS = ("builtin", "neo4j")
 TYPES = ("string", "number", "integer", "boolean", "list")
@@ -105,7 +105,7 @@ class Clm:
         load."""
         with self._lock:
             if self._engine is None:
-                import clm_router  # pylint: disable=import-outside-toplevel
+                from . import clm_router  # pylint: disable=import-outside-toplevel
                 # Loading can fail in many ways (no MLX, no network for the download, no memory)
                 try:
                     self._engine = clm_router.load_engine(self.backend, self.model_id, None, self.device)
@@ -279,7 +279,7 @@ def neo4j_password(settings: GraphSettings) -> str:
 def _connector(settings: GraphSettings, graph: Graph | None, functions: ModuleType) -> Connector:
     if settings.backend == "builtin":
         return BuiltinConnector(graph, functions)
-    from graph_neo4j import Neo4jConnector, connect  # pylint: disable=import-outside-toplevel
+    from .graph_neo4j import Neo4jConnector, connect  # pylint: disable=import-outside-toplevel
     driver = connect(settings.uri, settings.user, neo4j_password(settings))
     return Neo4jConnector(driver, settings.uri, settings.database)
 

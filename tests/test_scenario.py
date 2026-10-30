@@ -8,7 +8,7 @@ import re
 import pytest
 
 from conftest import BASE_TOML
-from scenario import Action, Inform, Rule, ScenarioError, load_scenario
+from clm_decision.scenario import Action, Inform, Rule, ScenarioError, load_scenario
 
 
 def test_loads_values_and_defaults(write_scenario):

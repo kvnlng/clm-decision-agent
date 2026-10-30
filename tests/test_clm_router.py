@@ -9,9 +9,9 @@ import numpy as np
 import pytest
 from conftest import BASE_TOML
 
-import clm_router
-from clm_router import ROUTE_QID, LocalContrastiveRouter, make_router, resolve_heads
-from scenario import load_scenario
+from clm_decision import clm_router
+from clm_decision.clm_router import ROUTE_QID, LocalContrastiveRouter, make_router, resolve_heads
+from clm_decision.scenario import load_scenario
 
 
 class FakeEngine:
@@ -236,7 +236,7 @@ def test_rank_asks_one_choice_question_over_the_options():
 
 def test_a_single_option_is_chosen_with_full_confidence():
     from test_clm_torch import CONFIG, FakeEncoder, tiny_weights  # pylint: disable=import-outside-toplevel
-    from clm_torch import TorchEngine, TorchHeads  # pylint: disable=import-outside-toplevel
+    from clm_decision.clm_torch import TorchEngine, TorchHeads  # pylint: disable=import-outside-toplevel
     router = LocalContrastiveRouter(engine=TorchEngine(FakeEncoder(), TorchHeads(tiny_weights(), CONFIG, "cpu")))
     assert router.rank("Late again", {"a": "Flight A"}, "Which?")["confidence"] == pytest.approx(1.0)
 
@@ -268,8 +268,8 @@ def test_mlx_prefetch_uses_the_builds_vectors():
 
 def test_decide_many_of_nothing_on_a_real_engine(scenario):
     from test_clm_torch import CONFIG, FakeEncoder, tiny_weights  # pylint: disable=import-outside-toplevel
-    from clm_torch import TorchEngine, TorchHeads  # pylint: disable=import-outside-toplevel
-    from decision import decide_many  # pylint: disable=import-outside-toplevel
+    from clm_decision.clm_torch import TorchEngine, TorchHeads  # pylint: disable=import-outside-toplevel
+    from clm_decision.decision import decide_many  # pylint: disable=import-outside-toplevel
     engine = TorchEngine(FakeEncoder(), TorchHeads(tiny_weights(), CONFIG, "cpu"))
     engine.prefetch([], {"q": {"type": "noul", "instructions": "Urgent?"}})
     assert decide_many([], scenario, LocalContrastiveRouter(engine=engine), {}) == []

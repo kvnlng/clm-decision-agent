@@ -3,7 +3,7 @@
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import pytest
 
-from graph import Graph
+from clm_decision.graph import Graph
 
 NODES = """id,kind,name,defect_rate,note
 S1,supplier,North Mill,0.01,

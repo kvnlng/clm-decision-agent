@@ -26,14 +26,14 @@ import torch
 from safetensors.numpy import save_file
 from torch import nn
 
-import clm_schema
-from clm_router import HEADS_FILE, ClmError, load_engine
-from clm_torch import Head
-from dataset import examples_path, load_examples, training_rows
-from decision import routed_text
-from record import load_records, record_key
-from scenario import ScenarioError
-from scenario import load_for_command
+from . import clm_schema
+from .clm_router import HEADS_FILE, ClmError, load_engine
+from .clm_torch import Head
+from .dataset import examples_path, load_examples, training_rows
+from .decision import routed_text
+from .record import load_records, record_key
+from .scenario import ScenarioError
+from .scenario import load_for_command
 
 
 def _unit(x: torch.Tensor) -> torch.Tensor:

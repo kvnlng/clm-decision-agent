@@ -27,7 +27,7 @@ import anyio
 import httpx
 from mcp import Client, MCPError, StdioServerParameters
 
-from number_check import unsupported
+from .number_check import unsupported
 
 MODEL = "claude-opus-5-5"
 LOCAL_MODEL = "gemma4:26b"
@@ -220,10 +220,10 @@ async def answer(session: Client, question: str, chat: Chat) -> dict:
 
 
 def server_params(environment: str) -> StdioServerParameters:
-    """How to start server.py for the environment. It gets this process's variables, so a password the environment
-    names (NEO4J_PASSWORD) reaches it; the MCP client would otherwise pass on only a few, such as PATH."""
-    server = Path(__file__).with_name("server.py")
-    return StdioServerParameters(command=sys.executable, args=[str(server), environment], env=dict(os.environ))
+    """How to start the decision server for the environment. It gets this process's variables, so a password the
+    environment names (NEO4J_PASSWORD) reaches it; the MCP client would otherwise pass on only a few, such as PATH."""
+    return StdioServerParameters(command=sys.executable, args=["-m", "clm_decision.server", environment],
+                                 env=dict(os.environ))
 
 
 async def _main(args) -> int:

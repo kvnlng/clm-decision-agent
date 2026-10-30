@@ -7,8 +7,8 @@ import fake_tools
 import pytest
 from conftest import BASE_TOML
 
-from scenario import ScenarioError, load_scenario
-from tools import check_tools, load_tools
+from clm_decision.scenario import ScenarioError, load_scenario
+from clm_decision.tools import check_tools, load_tools
 
 
 def test_load_tools_by_name(write_scenario):

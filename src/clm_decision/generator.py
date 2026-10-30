@@ -9,7 +9,7 @@ import os
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from scenario import Scenario
+from .scenario import Scenario
 
 
 class GeneratorError(RuntimeError):

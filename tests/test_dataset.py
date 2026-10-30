@@ -6,8 +6,8 @@ import re
 import pytest
 from conftest import BASE_TOML
 
-from dataset import examples_path, labels, load_examples, save_examples, split_of, training_rows
-from scenario import load_scenario
+from clm_decision.dataset import examples_path, labels, load_examples, save_examples, split_of, training_rows
+from clm_decision.scenario import load_scenario
 
 
 def test_examples_live_beside_the_scenario(scenario):

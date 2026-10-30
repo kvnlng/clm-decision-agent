@@ -8,11 +8,11 @@ import pytest
 from conftest import ENV_TOML, JUDGE_TOML, FakeRouter, decision
 from mcp import Client
 
-import clm_router
-import server
-import tracing
-from environment import Environment, load_environment
-from environment_server import build_environment_server
+from clm_decision import clm_router
+from clm_decision import server
+from clm_decision import tracing
+from clm_decision.environment import Environment, load_environment
+from clm_decision.environment_server import build_environment_server
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "tariff" / "environment.toml"
 QUERIES = ["product_facts", "components_of", "suppliers_of", "key_clients_of", "supply_dependencies",

@@ -12,11 +12,11 @@ from typing import Any
 import numpy as np
 from huggingface_hub import snapshot_download
 
-import clm_schema
-import tracing
-from clm_common import HEADS_FILE, ClmError
-from record import route_verdicts
-from scenario import Scenario
+from . import clm_schema
+from . import tracing
+from .clm_common import HEADS_FILE, ClmError
+from .record import route_verdicts
+from .scenario import Scenario
 
 ROUTE_QID = "__route__"
 
@@ -120,7 +120,7 @@ def load_mlx_engine(model_id: str, heads_dir=None) -> MlxEngine:
 def load_engine(backend: str, model_id: str, heads_dir=None, device: str | None = None):
     """CLM's engine for the backend: "mlx" (an Apple Silicon Mac) or "torch" (a GPU, or any machine slowly)."""
     if backend == "torch":
-        from clm_torch import load_torch_engine  # pylint: disable=import-outside-toplevel
+        from .clm_torch import load_torch_engine  # pylint: disable=import-outside-toplevel
         return load_torch_engine(model_id, heads_dir, device)
     try:
         import mlx.core  # pylint: disable=import-outside-toplevel,import-error,unused-import

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from conftest import limit_dmn
 
-from dmn import DmnError, evaluate, load_table
+from clm_decision.dmn import DmnError, evaluate, load_table
 
 TABLES = Path(__file__).parent / "dmn"
 

@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 import service_desk_tools as desk
 
-from scenario import load_scenario
-from tools import check_tools, load_tools
+from clm_decision.scenario import load_scenario
+from clm_decision.tools import check_tools, load_tools
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "service_desk"
 

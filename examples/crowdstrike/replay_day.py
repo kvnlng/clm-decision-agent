@@ -118,7 +118,7 @@ def _client(args, trace: Path):
                                   timeout=600)
         return Client(streamable_http_client(args.url, http_client=http))
     return Client(StdioServerParameters(command=sys.executable, cwd=str(ROOT),
-                                        args=[str(ROOT / "server.py"), str(Path(args.scenario).resolve()),
+                                        args=["-m", "clm_decision.server", str(Path(args.scenario).resolve()),
                                               "--trace", str(trace)]), read_timeout_seconds=600)
 
 
@@ -133,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--key-env", default="DECISION_SERVER_KEY", help="variable holding the server's key")
     parser.add_argument("--name", default=time.strftime("replay-%Y%m%d-%H%M%S"), help="name of the run's files")
     args = parser.parse_args(argv)
-    from scenario import ScenarioError, load_scenario  # pylint: disable=import-outside-toplevel
+    from clm_decision.scenario import ScenarioError, load_scenario  # pylint: disable=import-outside-toplevel
     try:
         seed = int(load_scenario(args.scenario).tool_settings.get("seed", 0))
     except ScenarioError as error:
@@ -162,11 +162,10 @@ def main(argv: list[str] | None = None) -> int:
     if found.get("stopped"):
         print(f"Stopped early: {found['stopped']}", file=sys.stderr)
     if trace.exists():
-        import trace_report  # pylint: disable=import-outside-toplevel
+        from clm_decision import trace_report  # pylint: disable=import-outside-toplevel
         print(trace_report.report(trace_report.summarise(trace_report.load(str(trace)))))
     return 1 if found.get("stopped") else 0
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, str(ROOT))
     sys.exit(main())

@@ -10,9 +10,9 @@ from __future__ import annotations
 import itertools
 import math
 
-from dmn import DmnError, evaluate
-from environment import Environment
-from scenario import StepError
+from .dmn import DmnError, evaluate
+from .environment import Environment
+from .scenario import StepError
 
 _CHECKS = {"string": lambda v: isinstance(v, str), "boolean": lambda v: isinstance(v, bool),
            "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),

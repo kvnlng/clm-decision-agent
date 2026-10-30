@@ -5,7 +5,6 @@ import argparse
 import json
 import os
 import sys
-from pathlib import Path
 from typing import Callable
 
 import anyio
@@ -13,7 +12,7 @@ import httpx2
 from mcp import Client, MCPError, StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
 
-from server import KEY_ENV
+from .server import KEY_ENV
 
 COMMANDS = "Commands: /routes, /correct <route>, /agreement, /quit"
 NEEDS_REVIEW = "That needs review mode: start the chat, or the server it connects to, with --review."
@@ -138,9 +137,9 @@ async def _chat(args) -> int:
                 print(f"error: could not reach the decision server at {args.url}", file=sys.stderr)
                 return 2
         return 0
-    server = Path(__file__).with_name("server.py")
     params = StdioServerParameters(command=sys.executable,
-                                   args=[str(server), args.scenario] + (["--review"] if args.review else []))
+                                   args=["-m", "clm_decision.server", args.scenario] +
+                                   (["--review"] if args.review else []))
     print("Starting the decision server; loading CLM can take a minute.")
     if not await _session(Client(params), f"Ready. Type a request. {COMMANDS}"):
         print("error: the decision server stopped; see the message above", file=sys.stderr)

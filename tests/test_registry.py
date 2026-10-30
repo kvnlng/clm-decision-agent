@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-import registry
+from clm_decision import registry
 
 TARIFF = Path(__file__).parent.parent / "examples" / "tariff" / "environment.toml"
 URL = "https://decisions.example.org/mcp"

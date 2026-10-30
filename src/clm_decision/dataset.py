@@ -5,10 +5,10 @@ import hashlib
 import json
 from pathlib import Path
 
-import clm_schema
-from decision import heard, routed_text
-from record import route_verdicts
-from scenario import Scenario
+from . import clm_schema
+from .decision import heard, routed_text
+from .record import route_verdicts
+from .scenario import Scenario
 
 
 def examples_path(scenario: Scenario) -> Path:

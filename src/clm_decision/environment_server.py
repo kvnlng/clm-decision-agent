@@ -14,12 +14,12 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-import engine
-import oauth
-import tracing
-from dmn import DmnError
-from environment import Environment
-from scenario import ScenarioError
+from . import engine
+from . import oauth
+from . import tracing
+from .dmn import DmnError
+from .environment import Environment
+from .scenario import ScenarioError
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
 _ANNOTATIONS = {"string": str, "number": float, "integer": int, "boolean": bool, "list": list[Any], "any": Any}

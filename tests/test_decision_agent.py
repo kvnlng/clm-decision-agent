@@ -10,9 +10,9 @@ import httpx
 import pytest
 from mcp import Client
 
-from decision_agent import AgentError, ClaudeChat, OllamaChat, answer, main, server_params
-from environment import load_environment
-from environment_server import build_environment_server
+from clm_decision.decision_agent import AgentError, ClaudeChat, OllamaChat, answer, main, server_params
+from clm_decision.environment import load_environment
+from clm_decision.environment_server import build_environment_server
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "tariff" / "environment.toml"
 QUESTION = "Should we move Product Line X's sourcing to Region B?"

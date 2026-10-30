@@ -6,10 +6,10 @@ import threading
 import pytest
 from conftest import ENV_FUNCTIONS, ENV_TOML, JUDGE_TOML, limit_dmn
 
-from clm_common import ClmError
-from engine import StepError, run_calculation, run_decision, run_judgement, run_query, run_scenario
-from environment import load_environment
-from scenario import ScenarioError
+from clm_decision.clm_common import ClmError
+from clm_decision.engine import StepError, run_calculation, run_decision, run_judgement, run_query, run_scenario
+from clm_decision.environment import load_environment
+from clm_decision.scenario import ScenarioError
 
 
 @pytest.fixture
@@ -171,7 +171,7 @@ def test_empty_text_is_refused(write_environment, fake_clm):
 
 
 def test_a_clm_that_cannot_load_fails_the_branch(write_environment, monkeypatch):
-    import clm_router  # pylint: disable=import-outside-toplevel
+    from clm_decision import clm_router  # pylint: disable=import-outside-toplevel
 
     def broken(*args, **kwargs):
         raise ClmError("The mlx backend needs an Apple Silicon Mac.")
@@ -190,7 +190,7 @@ def judging_branch(steps, params, levers):
 
 
 def test_a_multiline_load_error_is_one_line(write_environment, monkeypatch):
-    import clm_router  # pylint: disable=import-outside-toplevel
+    from clm_decision import clm_router  # pylint: disable=import-outside-toplevel
 
     def missing(*args, **kwargs):
         raise RuntimeError("404 Client Error.\nRepository Not Found for url: https://huggingface.co/x\nCheck the name.")

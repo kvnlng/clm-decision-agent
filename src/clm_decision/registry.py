@@ -19,7 +19,7 @@ import tomllib
 from pathlib import Path
 from urllib.parse import urlparse
 
-from environment import is_environment
+from .environment import is_environment
 
 SCHEMA = "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
 # The registry refuses longer descriptions

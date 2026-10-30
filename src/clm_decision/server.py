@@ -17,17 +17,17 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from starlette.responses import JSONResponse
 
-import decision
-import oauth
-import tracing
-from clm_common import ClmError
-from evaluate import agreement as replay_agreement
-from dataset import labels
-from record import load_records, record_key, save_correction
-from environment import Environment, is_environment, load_environment
-from environment_server import build_environment_server
-from scenario import Scenario, ScenarioError, load_scenario
-from tools import check_tools, load_tools
+from . import decision
+from . import oauth
+from . import tracing
+from .clm_common import ClmError
+from .evaluate import agreement as replay_agreement
+from .dataset import labels
+from .record import load_records, record_key, save_correction
+from .environment import Environment, is_environment, load_environment
+from .environment_server import build_environment_server
+from .scenario import Scenario, ScenarioError, load_scenario
+from .tools import check_tools, load_tools
 
 KEY_ENV = "DECISION_SERVER_KEY"
 MAX_BATCH = 1000
@@ -207,7 +207,7 @@ def load(path: str):
     tools = load_tools(scenario)
     check_tools(scenario, tools)
     key = record_key(scenario)
-    from clm_router import make_router  # pylint: disable=import-outside-toplevel
+    from .clm_router import make_router  # pylint: disable=import-outside-toplevel
     print("Loading CLM...", file=sys.stderr)
     router, note = make_router(scenario)
     print(f"CLM is using {note}.", file=sys.stderr)

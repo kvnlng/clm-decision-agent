@@ -6,12 +6,12 @@ import json
 import pytest
 from conftest import FakeRouter
 
-import clm_router
-import decision
-import evaluate
-from new_scenario import main
-from scenario import load_scenario
-from tools import load_tools
+from clm_decision import clm_router
+from clm_decision import decision
+from clm_decision import evaluate
+from clm_decision.new_scenario import main
+from clm_decision.scenario import load_scenario
+from clm_decision.tools import load_tools
 
 
 @pytest.fixture
@@ -73,9 +73,9 @@ def test_an_existing_folder_with_files_is_left_alone(tmp_path, capsys):
 
 
 def test_the_backend_suits_the_machine(tmp_path, monkeypatch):
-    monkeypatch.setattr("new_scenario.mlx_available", lambda: False)
+    monkeypatch.setattr("clm_decision.new_scenario.mlx_available", lambda: False)
     assert main([str(tmp_path / "linux")]) == 0
     assert load_scenario(tmp_path / "linux" / "scenario.toml").clm_backend == "torch"
-    monkeypatch.setattr("new_scenario.mlx_available", lambda: True)
+    monkeypatch.setattr("clm_decision.new_scenario.mlx_available", lambda: True)
     assert main([str(tmp_path / "mac")]) == 0
     assert load_scenario(tmp_path / "mac" / "scenario.toml").clm_backend == "mlx"

@@ -9,9 +9,10 @@ import stat
 import pytest
 from conftest import BASE_TOML
 
-from record import append_record, load_records, locked_lines, new_key, record_key, route_verdicts, save_correction
-from record import main as record_main
-from scenario import ScenarioError, load_scenario
+from clm_decision.record import (append_record, load_records, locked_lines, new_key, record_key, route_verdicts,
+                                 save_correction)
+from clm_decision.record import main as record_main
+from clm_decision.scenario import ScenarioError, load_scenario
 
 
 def route_record(state_text, clm, human):

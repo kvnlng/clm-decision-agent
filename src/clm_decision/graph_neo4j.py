@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import warnings
 
-from scenario import ScenarioError, StepError
+from .scenario import ScenarioError, StepError
 
 # Bolt, plain or with TLS; the driver's http:// support is a preview that needs further packages
 SCHEMES = ("bolt://", "bolt+s://", "bolt+ssc://", "neo4j://", "neo4j+s://", "neo4j+ssc://")

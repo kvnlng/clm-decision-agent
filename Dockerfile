@@ -16,8 +16,10 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /usr/local/bin/uv
 ENV UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv UV_NO_SYNC=1 HF_HOME=/cache
 WORKDIR /app
 
+# The dependencies first, so a change to the code does not download them again
 COPY pyproject.toml uv.lock ./
-RUN UV_NO_CACHE=1 uv sync --frozen
+RUN UV_NO_CACHE=1 uv sync --frozen --no-install-project
 COPY . .
+RUN UV_NO_CACHE=1 uv sync --frozen
 
 CMD ["uv", "run", "pytest", "-q"]

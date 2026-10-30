@@ -6,7 +6,7 @@ import inspect
 import sys
 from typing import Callable
 
-from scenario import Scenario, ScenarioError
+from .scenario import Scenario, ScenarioError
 
 
 def load_tools(scenario: Scenario) -> dict[str, Callable]:

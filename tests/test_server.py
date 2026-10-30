@@ -10,12 +10,12 @@ from conftest import BASE_TOML, FakeRouter, decision, free_port, serving
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
-import clm_router
-import server
-from decision import decide, routed_text
-from record import load_records
-from scenario import load_scenario
-from tools import load_tools
+from clm_decision import clm_router
+from clm_decision import server
+from clm_decision.decision import decide, routed_text
+from clm_decision.record import load_records
+from clm_decision.scenario import load_scenario
+from clm_decision.tools import load_tools
 
 TEXT = "my app crashes"
 

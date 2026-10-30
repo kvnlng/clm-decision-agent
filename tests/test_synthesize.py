@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 from conftest import BASE_TOML, FakeGenerator
 
-from dataset import load_examples
-from scenario import load_scenario
-from synthesize import STYLES, build_prompt, parse_messages, synthesize
+from clm_decision.dataset import load_examples
+from clm_decision.scenario import load_scenario
+from clm_decision.synthesize import STYLES, build_prompt, parse_messages, synthesize
 
 
 def test_parse_messages_accepts_a_json_list_with_text_around_it():

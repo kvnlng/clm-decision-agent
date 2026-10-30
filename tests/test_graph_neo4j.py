@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 from conftest import ENV_TOML
 
-import load_graph
-from engine import StepError, run_query, run_scenario
-from environment import Query, load_environment
-from graph_neo4j import Neo4jConnector
-from scenario import ScenarioError
+from clm_decision import load_graph
+from clm_decision.engine import StepError, run_query, run_scenario
+from clm_decision.environment import Query, load_environment
+from clm_decision.graph_neo4j import Neo4jConnector
+from clm_decision.scenario import ScenarioError
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "tariff" / "environment.toml"
 NEO4J = '''
@@ -106,7 +106,7 @@ def test_load_graph_writes_nodes_and_edges():
 def test_a_kind_that_cannot_be_a_label_is_refused(tmp_path):
     (tmp_path / "nodes.csv").write_text("id,kind,name\nA,bad kind!,A\n", encoding="utf-8")
     (tmp_path / "edges.csv").write_text("source,relation,target\n", encoding="utf-8")
-    from graph import Graph  # pylint: disable=import-outside-toplevel
+    from clm_decision.graph import Graph  # pylint: disable=import-outside-toplevel
     with pytest.raises(ValueError, match="kind 'bad kind!' cannot be a Neo4j label"):
         load_graph.load(Graph.from_csv(tmp_path / "nodes.csv", tmp_path / "edges.csv"), FakeDriver(), "neo4j")
 
@@ -143,7 +143,7 @@ def test_the_two_graphs_agree():
 @pytest.mark.parametrize("uri", ["localhost:7687", "foo://127.0.0.1:7687"])
 def test_a_malformed_uri_is_one_line(uri, recwarn):
     pytest.importorskip("neo4j")
-    from graph_neo4j import connect  # pylint: disable=import-outside-toplevel
+    from clm_decision.graph_neo4j import connect  # pylint: disable=import-outside-toplevel
     with pytest.raises(ScenarioError, match=f"^graph.neo4j: cannot connect to {uri}") as caught:
         connect(uri, "neo4j", "not-a-real-password")
     assert "\n" not in str(caught.value)

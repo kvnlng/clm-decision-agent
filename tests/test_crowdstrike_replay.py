@@ -18,10 +18,10 @@ from replay_day import LiveLabels, batches, run
 from scoreboard import Scoreboard
 from world import World
 
-import server
-from clm_common import ClmError
-from scenario import load_scenario
-from tools import load_tools
+from clm_decision import server
+from clm_decision.clm_common import ClmError
+from clm_decision.scenario import load_scenario
+from clm_decision.tools import load_tools
 
 
 @pytest.fixture

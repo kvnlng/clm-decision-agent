@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from engine import run_query, run_scenario
-from environment import load_environment
+from clm_decision.engine import run_query, run_scenario
+from clm_decision.environment import load_environment
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "tariff" / "environment.toml"
 LIMITS = ("sla_threshold", "quality_threshold", "supply_concentration")

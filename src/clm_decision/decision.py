@@ -5,8 +5,8 @@ import json
 import time
 from typing import Callable
 
-import tracing
-from scenario import Scenario
+from . import tracing
+from .scenario import Scenario
 
 # A decision's fields that say which route and how sure; routing again with facts replaces them
 ROUTE_KEYS = ("route", "confidence", "probabilities", "source", "clm_route", "similarity")

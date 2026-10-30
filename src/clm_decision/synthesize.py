@@ -16,9 +16,9 @@ import json
 import re
 import sys
 
-from dataset import examples_path, save_examples
-from generator import GeneratorError, make_generator
-from scenario import load_for_command
+from .dataset import examples_path, save_examples
+from .generator import GeneratorError, make_generator
+from .scenario import load_for_command
 
 STYLES = (
     "one short sentence, straight to the point",

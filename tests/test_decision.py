@@ -6,9 +6,9 @@ import fake_tools
 import pytest
 from conftest import BASE_TOML, FakeRouter, decision
 
-from decision import check_call, decide, decide_many, describe, routed_text
-from scenario import load_scenario
-from tools import load_tools
+from clm_decision.decision import check_call, decide, decide_many, describe, routed_text
+from clm_decision.scenario import load_scenario
+from clm_decision.tools import load_tools
 
 RULE = '\n[[rules]]\nwhen = "urgent >= 0.5"\ntell = "Hurry."\n'
 TEXT = "I was charged twice"

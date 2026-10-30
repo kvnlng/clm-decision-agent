@@ -14,11 +14,11 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from test_server import parts  # noqa: F401 pylint: disable=unused-import
 
-import oauth
-import server
-from environment import load_environment
-from environment_server import build_environment_server
-import tracing
+from clm_decision import oauth
+from clm_decision import server
+from clm_decision.environment import load_environment
+from clm_decision.environment_server import build_environment_server
+from clm_decision import tracing
 
 ISSUER = "https://login.example.test/realms/clm"
 AUDIENCE = "decision-server"
