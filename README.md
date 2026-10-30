@@ -1,79 +1,90 @@
 # CLM decision server
 
-A small framework for building a **decision server**: a program that makes narrow, checkable
-decisions with a Contrastive Language Model (CLM) and offers them to other agents over
-[MCP](https://modelcontextprotocol.io). You describe the decisions in one file, train CLM on
-them, and run the server. An agent, for example one your colleagues build on Databricks, then
-calls it whenever it needs that decision made.
+A small framework for building **decision servers**: programs that make checkable decisions and offer them to other
+agents over [MCP](https://modelcontextprotocol.io). The owner writes down what is decided and how; an agent, for
+example one your colleagues build on Databricks, calls the server whenever it needs that decision, and every decision
+is traced to the steps that made it.
 
-It is a prototype, built to learn how CLM behaves and to show the pattern to people who want
-to adapt it. It has not been used in production.
+It is a prototype, built to learn how a Contrastive Language Model (CLM) behaves and to show the pattern to people
+who want to adapt it. It has not been used in production.
 
-**It is not for clinical decisions.** The example is a data service desk in a clinical
-setting; it routes questions about patient care out of scope.
+**It is not for clinical decisions.** One example is a data service desk in a clinical setting; it routes questions
+about patient care out of scope.
 
-## The idea
+## Two kinds of decision
 
-A language model generates text. A CLM does not: it reads a situation and a list of options
-and says which option fits, with a probability. That makes its decisions cheap, fast, and easy
-to log, test and train. The calling agent keeps doing what a language model is good at, such as
-talking and writing, and leans on the decision server for the choices.
+The same server, `server.py`, serves either of two files.
 
-| Job | Done by |
-|---|---|
-| Which kind of request is this? How urgent? Does it involve identifiable data? Is this tool call appropriate? | CLM, in the decision server |
-| Facts that bear on a decision, such as who handles the request | The scenario's informing tools |
-| Acting on a decision, such as opening a ticket | The scenario's acting tools |
-| Talking to the person, asking follow-up questions, writing replies | The calling agent |
-| Was CLM's decision right? | The owner, whose corrections are saved and trained on |
+| | A **scenario** (`scenario.toml`) | An **environment** (`environment.toml`) |
+|---|---|---|
+| Decides | Which route a message takes, quickly and many at once: which kind of request, how urgent, which option | Questions that rest on an organisation's data, arithmetic and policy: "should we move Product Line X to Region B, and what would it do to the Q3 margin?" |
+| Made of | Routes, the questions CLM answers, rules, and informing and acting tools | A knowledge graph with named queries, DMN decision tables, calculations, and scenarios of levers ranked by an objective with every limit checked |
+| Language model in the server | CLM, which reads the message and ranks the options | None, unless a **judge** asks CLM a yes/no question of text no rule can read, such as supplier news |
+| The calling agent | Talks to the person and acts on the decision | Chooses which parts to run and reports them; it never calculates, and `number_check.py` checks every figure in its answer |
+| Example | [service desk](examples/service_desk/README.md); [the CrowdStrike day](examples/crowdstrike/README.md), the benchmark | [tariff](examples/tariff/README.md): a made-up manufacturer after a tariff hike |
+| Guide | [docs/scenario.md](docs/scenario.md), [docs/walkthrough.md](docs/walkthrough.md) | [docs/environment.md](docs/environment.md) |
 
-All of it is driven by one file, the **scenario**: the kinds of request (routes), the questions
-CLM answers, the rules that follow from the answers, and the tools. Information from outside
-reaches a decision only through those tools. There is no language model in the server.
+Both follow one rule: **the owner writes every route, rule, query, calculation and lever, and information from
+outside reaches a decision only through the owner's tools.** The agent chooses among them; it does not invent them.
 
 ```
-test chat  ──MCP──▶  decision server ──▶ CLM (in this process: MLX on a Mac, PyTorch on a GPU)
-(or any agent)            ├──▶ informing tools (facts)
-                          └──▶ acting tools (do things)
+any MCP agent ──MCP──▶ server.py ──┬── scenario:    CLM (MLX on a Mac, PyTorch on a GPU) + informing and acting tools
+ (Claude, a local                  │
+  model, Databricks)               └── environment: graph (built in, or Neo4j) + DMN + calculations + scenarios
+                                                    + judges (CLM, loaded on the first judgement)
 ```
+
+A CLM does not generate text: it reads a situation and a list of options and says which option fits, with a
+probability. That makes its decisions cheap, fast, local and easy to log, test and train. CLM is described in Kwok et
+al. (2026) and published at [Contrastive-LM/CLM](https://github.com/Contrastive-LM/CLM); this project runs the
+authors' released model with PyTorch, or the community MLX builds of it on a Mac.
 
 ## Getting started
 
-You need Python 3.12 or later, [uv](https://docs.astral.sh/uv/), and one of:
+You need Python 3.12 to 3.14, [uv](https://docs.astral.sh/uv/), and for CLM one of:
 
-- **a Mac with Apple Silicon** and 16 GB of memory or more. CLM runs with MLX; the first run
-  downloads about 8 GB.
-- **Linux with an NVIDIA GPU of 24 GB or more**, such as an A100. CLM runs with PyTorch; the
-  first run downloads about 16 GB. Before step 2, switch the example to the torch backend: in
-  `examples/service_desk/scenario.toml`, comment out the MLX lines under `[clm]` and uncomment
-  the torch ones. Install a C compiler and Python's headers first (on Ubuntu,
-  `sudo apt install build-essential python3.12-dev`). A plain CPU works too, slowly. There is a `Dockerfile`:
-  [docs/serving.md](docs/serving.md#in-docker).
+- **a Mac with Apple Silicon** and 16 GB of memory or more. CLM runs with MLX; the first run downloads about 8 GB.
+- **Linux with an NVIDIA GPU of 24 GB or more**, such as an A100 or H100. CLM runs with PyTorch; the first run
+  downloads about 16 GB. Switch a scenario to the torch backend in its `[clm]` table, and install a C compiler and
+  Python's headers first (on Ubuntu, `sudo apt install build-essential python3.12-dev`). A plain CPU works too,
+  slowly. There is a `Dockerfile`: [docs/serving.md](docs/serving.md#in-docker).
 
-**1. Install.** The same command on both machines.
+An environment without judges needs no CLM and no GPU.
 
 ```bash
 uv sync
 ```
 
-**2. Run the example.** It is a small finished scenario: a data service desk. The repository
-does not include trained heads, and as released CLM routes the example poorly (about half
-right), so train it first. It takes under a minute on a Mac or a GPU, using the example
-messages that come with it:
+### An environment: the tariff example
+
+```bash
+uv run python server.py examples/tariff/environment.toml       # serve it over MCP, for any agent
+uv run --group demo python decision_agent.py examples/tariff/environment.toml \
+    "Should we shift Product Line X's sourcing to Region B, and what would it do to Q3 margin and SLA times?"
+```
+
+`decision_agent.py` is a reference agent. It uses Claude through the Anthropic API by default (your usual Anthropic
+credentials), or a local model through Ollama with `--backend ollama` (`gemma4:26b` by default). It answers from the
+server's tools, then lists any figure no tool returned. In the example, buying half from Region B is the best branch
+no limit rejects; buying all of it would earn more but is rejected, because both Region B suppliers depend on one
+raw-material provider. The `sourcing_with_news` scenario adds a CLM judge of supplier news, and rejects Region B over
+a strike.
+
+The graph can live in Neo4j (`uv sync --group graph`, then `load_graph.py`):
+[docs/environment.md](docs/environment.md#on-neo4j).
+
+### A scenario: the service desk
+
+The repository does not include trained heads, and as released CLM routes the example poorly (about half right), so
+train it first. It takes under a minute on a Mac or a GPU:
 
 ```bash
 uv run python train.py examples/service_desk/scenario.toml
-```
-
-Then start it:
-
-```bash
 uv run python examples/service_desk/mock_tracker.py                          # terminal 1: a stand-in issue tracker
 uv run python chat.py examples/service_desk/scenario.toml --review           # terminal 2: the test chat
 ```
 
-The test chat starts the decision server and talks to it over MCP, as an outside agent would.
-Type a request and it shows the decision:
+The test chat starts the decision server and talks to it over MCP, as an outside agent would:
 
 ```
 you> I need access to the oncology registry for an audit, needed this week
@@ -81,137 +92,102 @@ you> I need access to the oncology registry for an audit, needed this week
   answers: urgency 1.61   identifiable 0.54
   facts: lookup_queue: Data Governance handles this kind of request. ...
   rules: urgency >= 1.5: Set the ticket's priority to High and state the deadline in the summary.
-  rules: identifiable >= 0.5: Add the label governance-review and say that data governance ...
   actions: create_ticket done: {"number": 5, "url": "http://127.0.0.1:8765/..."}
 ```
 
-`/routes` shows the scenario's routes and questions, and `/quit` ends the chat.
-[examples/service_desk/README.md](examples/service_desk/README.md) walks through it.
+### Your own
 
-**3. Write your own scenario.** `uv run python new_scenario.py my_scenario` starts a folder with a
-working scenario, a tools module with mock backends and labelled cases to edit into your own.
-[docs/walkthrough.md](docs/walkthrough.md) goes through building one step by step, and
-[docs/scenario.md](docs/scenario.md) explains every part.
+- **A scenario:** `uv run python new_scenario.py my_scenario` starts a folder with a working scenario, mock tools
+  and labelled cases. [docs/walkthrough.md](docs/walkthrough.md) builds one step by step. In review mode, `/correct
+  <route>` saves a correction; `synthesize.py`, `train.py` and `evaluate.py` train CLM on examples and corrections
+  and score it ([docs/fine-tuning.md](docs/fine-tuning.md)).
+- **An environment:** copy `examples/tariff/` and replace its graph, rules and functions
+  ([docs/environment.md](docs/environment.md)).
 
-**4. Check it.** Start the chat with your scenario. A mistake in the file stops start-up with
-one line naming the setting.
+A mistake in either file stops start-up with one line naming the setting.
 
-**5. Correct decisions.** In review mode (`--review`), type `/correct <route>` after a wrong
-decision. The correction is saved, and a near-identical request gets your route straight away.
-`/agreement` shows how often CLM's own route agrees with your corrections.
-
-**6. Train.** Optionally have a language model write example messages for each route, then
-train CLM on them and on your corrections, and see agreement rise:
-
-```bash
-uv run python synthesize.py my_scenario/scenario.toml      # optional; needs a language model
-uv run python train.py my_scenario/scenario.toml
-uv run python evaluate.py my_scenario/scenario.toml        # the corrections
-uv run python evaluate.py my_scenario/scenario.toml --cases my_scenario/scenario.cases.jsonl
-```
-
-[docs/fine-tuning.md](docs/fine-tuning.md) has the details.
-
-**7. Connect an agent.** Serve over HTTP with a key, or with OAuth tokens from your identity
-provider (`--auth oauth`), and point an MCP client at it: [docs/serving.md](docs/serving.md). To
-let agents find it, list it in an MCP registry: [docs/registry.md](docs/registry.md).
+## Connecting agents
 
 ```bash
 export DECISION_SERVER_KEY=<a long random key>
-uv run python server.py my_scenario/scenario.toml --http
+uv run python server.py my_scenario/scenario.toml --http                      # a shared key
+uv run python server.py examples/tariff/environment.toml --http --auth oauth \
+    --issuer https://login.example.org/realms/corp --audience decisions       # tokens from your identity provider
 ```
 
-**The server acts without asking.** When a decision calls for an acting tool, the tool runs
-at once, unless the route is uncertain. Calling `decide` twice with the same request acts twice.
-Point acting tools at real systems with care. Confirmation before acting is planned; the
-scenario and the server's replies are already shaped for it.
+- **Over HTTP**, with a shared key or with OAuth: JWTs from any OIDC issuer (Keycloak, Entra ID and others), checked
+  for signature, issuer, audience, expiry and scopes. [docs/serving.md](docs/serving.md).
+- **In an MCP registry**, so agents can find a deployment: `registry.py` writes its `server.json`, for the public
+  registry or a private one. [docs/registry.md](docs/registry.md).
+- **Traced**: `--trace` records where each call's time went and who called; `trace_report.py` summarises it.
+- **Databricks:** not tried yet. [docs/serving.md](docs/serving.md#databricks) says what it needs.
 
-Read [docs/data-handling.md](docs/data-handling.md) before any real text goes in.
+**A scenario's server acts without asking.** When a decision calls for an acting tool, the tool runs at once, unless
+the route is uncertain; calling `decide` twice acts twice. Point acting tools at real systems with care. An
+environment's tools only read. Read [docs/data-handling.md](docs/data-handling.md) before any real text goes in.
 
 ## The server's tools
 
+For a scenario:
+
 | MCP tool | What it does |
 |---|---|
-| `decide(text, context)` | The route with its confidence and probabilities, `uncertain` below the threshold, each question's answer, the rules that apply, the facts the informing tools found, the option chosen, and what the acting tools did. `context` is optional and goes to the tools, not to CLM |
-| `decide_many(requests)` | The same as `decide` for up to 1000 requests (`{"text", "context"}`) at once, faster per request |
+| `decide(text, context)` | The route with its probabilities, `uncertain` below the threshold, each question's answer, the rules that apply, the facts found, the option chosen, and what the acting tools did |
+| `decide_many(requests)` | The same for up to 1000 requests at once, faster per request |
 | `check_call(text, call)` | CLM's opinion of a tool call the caller proposes: a probability and approved yes or no |
-| `describe()` | The scenario's routes and their options, questions and rules, and the tools whose facts the route considers |
-| `correct(text, route, context, answers, option)` | Review mode only: save the right route for a request, and optionally the right answers and option |
-| `agreement()` | Review mode only: how often CLM's own route agrees with the saved corrections |
+| `describe()` | The routes, options, questions, rules and tools |
+| `correct(...)`, `agreement()` | Review mode only: save the right decision; how often CLM agrees with the corrections |
 
-## Decisions from an organisation's data: environments
+For an environment:
 
-Some decisions rest on data, arithmetic and policy rather than on reading a message: "should we move Product Line
-X's sourcing to Region B, and what would it do to the Q3 margin and our delivery terms?" For those, the same server
-serves an **environment** instead of a scenario:
-
-- **a knowledge graph**, with named queries the owner wrote;
-- **decision models**: DMN decision tables, for the rules and limits;
-- **scenarios**: levers with the values the owner allows, ranked by an objective, with every limit checked on every
-  branch;
-- **an agent**, any MCP client, which only chooses among them. `decision_agent.py` is a reference one, with Claude,
-  and every figure in its answer is checked against what the tools returned;
-- **judges**, optional: CLM answers a yes/no question about text no rule can read, such as supplier news, and a rule
-  decides on its probability. CLM loads only on the first judgement.
-
-```bash
-uv run python server.py examples/tariff/environment.toml
-uv run --group demo python decision_agent.py examples/tariff/environment.toml "Should we move Product Line X to Region B?"
-```
-
-[docs/environment.md](docs/environment.md) explains every part; [examples/tariff](examples/tariff/README.md) is the
-worked example. The graph is built in, or Neo4j; the agent is Claude, or a local model through Ollama.
+| MCP tool | What it does |
+|---|---|
+| `describe` | The environment and every part, with its parameters, levers, objective and limits |
+| `query_<name>`, `decision_<name>`, `calculation_<name>` | One named part, with typed arguments |
+| `scenario_<name>` | Every branch, or those asked for: figures, kept or rejected, the limits that rejected it, and every step |
+| `judge_<name>` | CLM's probability that the judge's question is answered yes for a text |
 
 ## What to expect
 
-Measured on the example scenario, on an M5 Max with 64 GB:
+Measured on an M5 Max with 64 GB unless a GPU is named. Small tests, said plainly.
 
-- **Untrained, CLM routes poorly.** On held-back generated examples the released heads got
-  51%; trained on 199 generated examples, 98%. Through the server, the trained heads routed 15
-  of 17 hand-written test messages correctly. Seventeen messages is a small test.
-- **CLM's probabilities are relative, not calibrated.** Treat the confidence threshold as a
-  setting to tune with `evaluate.py`, not as a probability of being right.
-- **The questions are not trained.** Only routing is. Check the answers to your questions by
-  eye before relying on them.
-- **Decisions are quick.** The slow test loads CLM and makes those 17 decisions, with their
-  tool calls, in under 3 seconds.
-- **The two backends agree.** With the released heads, the torch backend (on the Mac's GPU)
-  and the MLX build chose the same route for 79 of 81 requests from the example. Trained with
-  the torch backend, the example also reached 98% and 15 of 17, on the Mac and on an NVIDIA
-  A100 alike: see [docs/models.md](docs/models.md#what-has-been-checked).
+- **CLM must be trained.** On the service desk the released heads routed 51% of held-back examples right; trained
+  on 199 generated examples, 98%.
+- **Against Claude, on the CrowdStrike day's 600 check cases, Claude was more accurate and, on the Mac, faster.**
+  Sonnet 5.5 got 82% of routes right and Haiku 5.5 79%, against CLM's 75%; each took about 267 ms a decision to
+  CLM's 300 ms. CLM's strengths are cost and place: $0 for the day's 99,806 decisions against about $15 (Haiku) or
+  $158 (Sonnet), the messages never leave the machine, and it marked 119 of its 152 wrong routes uncertain, so they
+  went to a person ([the comparison](examples/crowdstrike/README.md)).
+- **On a data-centre GPU CLM is much faster:** 3.6 decisions a second on the Mac, about 19 on an A100 and 50 on an
+  H100, against a peak need of 10.7 on the CrowdStrike day ([docs/findings.md](docs/findings.md)).
+- **CLM's probabilities are relative, not calibrated.** Tune thresholds on labelled cases; the tariff news judge
+  separated risks from harmless news by a gap of only 0.05.
+- **In the tariff example, Claude and a local `gemma4:26b` reached the same decision** by the same two calls in
+  eight runs. Claude's answers were fuller and explained the dependency; once it worked out a figure itself, which
+  the number check flagged. gemma4 was free and stayed on the Mac, but with news available it did not run the
+  scenario that checks it and missed the strike ([the runs](examples/tariff/README.md#what-happened-when-the-models-were-asked)).
 
 ## Layout
 
 | File | Purpose |
 |---|---|
-| `scenario.py` | Reads and checks a scenario file |
-| `decision.py` | One decision: route, informing tools, questions, rules, acting tools |
-| `server.py` | The decision server: MCP over stdio or HTTP |
-| `oauth.py` | `server.py --auth oauth`: OAuth tokens from any OIDC issuer, checked as JWTs |
-| `registry.py` | The `server.json` that lists a deployment in an MCP registry, public or private |
-| `chat.py` | The test chat, an MCP client |
-| `clm_router.py` | Loads CLM with either backend; routing and the reuse of corrections |
-| `clm_torch.py`, `clm_schema.py`, `clm_common.py` | CLM with PyTorch; the authors' question format, copied unchanged; what both share |
-| `tools.py` | Loads a scenario's tools |
-| `record.py`, `evaluate.py` | The corrections record; its replay, or a file of labelled cases, scored per class |
-| `new_scenario.py` | Starts a scenario folder: scenario, tools with mock backends, labelled cases |
-| `environment.py`, `environment_server.py` | Reads and checks an environment; its named parts as MCP tools |
-| `graph_neo4j.py`, `load_graph.py` | Named queries on Neo4j; copying an environment's CSV graph into it |
-| `graph.py`, `dmn.py`, `engine.py` | The built-in graph; DMN decision tables; queries, decisions and scenarios run with every step recorded |
-| `decision_agent.py`, `number_check.py` | The reference agent over MCP, Claude or a local model; the check that every figure came from a tool |
-| `tracing.py`, `trace_report.py` | `server.py --trace`: where each call's time went, and its summary |
+| `server.py` | The decision server: MCP over stdio or HTTP, for a scenario or an environment |
+| `scenario.py`, `decision.py`, `tools.py` | Reads a scenario; one decision; loads its tools |
+| `environment.py`, `environment_server.py`, `engine.py` | Reads an environment; its parts as MCP tools; queries, decisions, scenarios and judges run with every step recorded |
+| `graph.py`, `graph_neo4j.py`, `load_graph.py`, `dmn.py` | The built-in graph; named queries on Neo4j; copying a CSV graph into it; DMN decision tables |
+| `decision_agent.py`, `number_check.py` | The reference agent, Claude or a local model; the check that every figure came from a tool |
+| `oauth.py`, `registry.py` | OAuth tokens from any OIDC issuer; the `server.json` for an MCP registry |
+| `tracing.py`, `trace_report.py` | `--trace`, and its summary |
+| `chat.py` | The test chat for scenarios, an MCP client |
+| `clm_router.py`, `clm_torch.py`, `clm_schema.py`, `clm_common.py` | CLM with MLX or PyTorch; routing and the reuse of corrections; the authors' question format, unchanged |
+| `record.py`, `evaluate.py`, `new_scenario.py` | Corrections and their scoring; starting a scenario folder |
 | `dataset.py`, `synthesize.py`, `train.py`, `generator.py` | Training, and the language model that writes examples |
-| `examples/service_desk/` | The worked example, with a stand-in issue tracker |
-| `examples/crowdstrike/` | A whole day of a real disruption, replayed through the server: the benchmark ([docs/findings.md](docs/findings.md)) |
-| `examples/tariff/` | An environment: a made-up manufacturer deciding where to source after a tariff hike |
-| `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads CLM; `CLM_TEST_BACKEND=torch` for the torch backend) |
+| `examples/service_desk/`, `examples/crowdstrike/`, `examples/tariff/` | The worked examples |
+| `docs/` | Guides: scenario, walkthrough, environment, serving, registry, fine-tuning, models, findings, data handling |
+| `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads CLM; `CLM_TEST_BACKEND=torch` for torch) |
 | `Dockerfile` | The project on Linux, for the torch backend |
-
-CLM is described in Kwok et al. (2026) and published at
-[Contrastive-LM/CLM](https://github.com/Contrastive-LM/CLM). This project runs the authors'
-released model with PyTorch, or the community MLX builds of it on a Mac.
 
 ## Licence
 
-Copyright 2026 Kevin Long. Licensed under the [Apache License 2.0](LICENSE). The licence covers this
-repository only: the models it downloads have their own terms.
+Copyright 2026 Kevin Long. Licensed under the [Apache License 2.0](LICENSE). The licence covers this repository only:
+the models it downloads have their own terms.
