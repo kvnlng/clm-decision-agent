@@ -10,6 +10,7 @@ from __future__ import annotations
 import itertools
 import math
 
+from . import tracing
 from .dmn import DmnError, evaluate
 from .environment import Environment
 from .scenario import StepError
@@ -57,7 +58,9 @@ class Steps:
         """A named query's rows."""
         query = _part(self.env.queries, "query", name)
         _check(f"query {name}", query.params, params)
-        rows = self.env.connector.run(query, params)
+        tracing.add("query")
+        with tracing.timed("query_ms"):
+            rows = self.env.connector.run(query, params)
         if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
             raise StepError(f"query {name}: its function must return a list of dicts")
         self.steps.append({"kind": "query", "name": name, "inputs": params, "result": rows})
@@ -67,14 +70,16 @@ class Steps:
         """A decision's outputs; a DMN decision also records the rules that fired."""
         decision = _part(self.env.decisions, "decision", name)
         _check(f"decision {name}", decision.params, inputs)
+        tracing.add("decision")
         try:
-            if decision.table is not None:
-                result = evaluate(decision.table, inputs)
-                outputs, fired = result["outputs"], result["fired"]
-            else:
-                outputs, fired = getattr(self.env.functions, decision.function)(**inputs), []
-                if not isinstance(outputs, dict):
-                    raise StepError(f"decision {name}: its function must return a dict")
+            with tracing.timed("decision_ms"):
+                if decision.table is not None:
+                    result = evaluate(decision.table, inputs)
+                    outputs, fired = result["outputs"], result["fired"]
+                else:
+                    outputs, fired = getattr(self.env.functions, decision.function)(**inputs), []
+            if decision.table is None and not isinstance(outputs, dict):
+                raise StepError(f"decision {name}: its function must return a dict")
         except Exception as error:
             # Recorded even if the owner's code catches it, so a limit that failed cannot pass unnoticed
             self.steps.append({"kind": "decision", "name": name, "inputs": inputs, "result": None, "fired": [],
@@ -88,8 +93,10 @@ class Steps:
         judge = _part(self.env.judges, "judge", name)
         if not isinstance(text, str) or not text.strip():
             raise StepError(f"judge {name}: there is no text to judge")
+        tracing.add("judgement")
         try:
-            result = {"probability": self.env.clm.probability(judge, text)}
+            with tracing.timed("judgement_ms"):
+                result = {"probability": self.env.clm.probability(judge, text)}
         except Exception as error:
             self.steps.append({"kind": "judgement", "name": name, "inputs": {"text": text}, "result": None,
                                "error": _message(error)})
@@ -101,7 +108,9 @@ class Steps:
         """A calculation's result."""
         calculation = _part(self.env.calculations, "calculation", name)
         _check(f"calculation {name}", calculation.params, inputs)
-        result = getattr(self.env.functions, calculation.function)(**inputs)
+        tracing.add("calculation")
+        with tracing.timed("calculation_ms"):
+            result = getattr(self.env.functions, calculation.function)(**inputs)
         if not isinstance(result, dict):
             raise StepError(f"calculation {name}: its function must return a dict")
         self.steps.append({"kind": "calculation", "name": name, "inputs": inputs, "result": result})

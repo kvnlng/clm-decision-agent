@@ -227,7 +227,8 @@ def main(argv: list[str] | None = None) -> int:
     """Command-line entry point; returns the process exit code. Messages go to stderr: stdout is MCP's."""
     parser = argparse.ArgumentParser(description="Offer a scenario's or an environment's decisions to other agents "
                                                  "over MCP.")
-    parser.add_argument("scenario", help="path to the scenario file, or to an environment's environment.toml")
+    parser.add_argument("scenario", metavar="FILE",
+                        help="path to the scenario file, or to an environment's environment.toml")
     parser.add_argument("--review", action="store_true", help="also offer correct and agreement")
     parser.add_argument("--http", action="store_true", help="serve Streamable HTTP instead of stdio")
     parser.add_argument("--host", default="127.0.0.1")

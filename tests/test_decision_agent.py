@@ -6,10 +6,14 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import anyio
 import httpx
 import pytest
+from conftest import free_port, serving
 from mcp import Client
 
+from clm_decision import server
+from clm_decision.call import connect
 from clm_decision.decision_agent import AgentError, ClaudeChat, OllamaChat, answer, main, server_params
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
@@ -233,3 +237,27 @@ def test_claude_without_the_agent_extra_says_how_to_install_it(monkeypatch, caps
     monkeypatch.setitem(sys.modules, "anthropic", None)      # None makes the import fail, as when not installed
     assert main([str(EXAMPLE), "Should we move?"]) == 2
     assert capsys.readouterr().err.startswith("error: Claude needs the agent extra (anthropic is missing)")
+
+
+def test_a_url_connects_over_http_with_the_key(monkeypatch):
+    monkeypatch.setenv("DECISION_SERVER_KEY", "k1")
+    port = free_port()
+    with serving(server.http_app(build_environment_server(load_environment(EXAMPLE)), "k1"), port):
+        result = anyio.run(_ask_over, f"http://127.0.0.1:{port}/mcp")
+    assert [call["tool"] for call in result["calls"]] == ["describe"]
+    assert result["calls"][0]["result"]["name"] == "Component sourcing"
+
+
+async def _ask_over(url):
+    async with Client(connect(url)) as session:
+        return await answer(session, "What is this?", ClaudeChat(FakeClaude(
+            message(tool_use("describe", {})), message(text("It is component sourcing."))), "claude-opus-5-5"))
+
+
+def test_a_refused_key_is_one_line(monkeypatch, capsys):
+    monkeypatch.setenv("DECISION_SERVER_KEY", "wrong")
+    port = free_port()
+    with serving(server.http_app(build_environment_server(load_environment(EXAMPLE)), "k1"), port):
+        assert main([f"http://127.0.0.1:{port}/mcp", "Q", "--backend", "ollama"]) == 2
+    err = capsys.readouterr().err
+    assert "the server refused the call (401), with the key in DECISION_SERVER_KEY" in err and "Traceback" not in err

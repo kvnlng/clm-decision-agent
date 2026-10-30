@@ -104,7 +104,8 @@ def server_json(path: str, name: str, url: str, version: str, auth: str, *,  # p
 def main(argv: list[str] | None = None) -> int:
     """Command-line entry point; returns the process exit code."""
     parser = argparse.ArgumentParser(description="Write the server.json that lists a deployment in an MCP registry.")
-    parser.add_argument("scenario", help="the scenario file, or an environment's environment.toml, being served")
+    parser.add_argument("scenario", metavar="FILE",
+                        help="the scenario file, or an environment's environment.toml, being served")
     parser.add_argument("--name", required=True, help="the registry name, such as io.github.you/tariff")
     parser.add_argument("--url", required=True, help="the address callers use, ending in /mcp")
     parser.add_argument("--version", required=True, help="this deployment's version, such as 1.0.0")

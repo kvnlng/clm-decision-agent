@@ -127,3 +127,16 @@ async def test_judge_tool_over_mcp(write_environment, fake_clm):  # pylint: disa
         described = await client.call_tool("describe", {})
     assert "judge_risk" in names and judged.structured_content["result"] == {"probability": 0.9}
     assert described.structured_content["judges"]["risk"]["instructions"].startswith("Does this news")
+
+
+@pytest.mark.anyio
+async def test_a_traced_scenario_counts_its_steps_and_branches(tmp_path):
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
+    async with Client(build_environment_server(load_environment(EXAMPLE), trace=writer)) as client:
+        await client.call_tool("scenario_sourcing", {"product": "PX"})
+    writer.close()
+    record = json.loads((tmp_path / "trace.jsonl").read_text())
+    counts = record["counts"]
+    assert counts["query"] >= 3 and counts["decision"] >= 3 and counts["calculation"] == 6
+    assert all(counts[f"{kind}_ms"] >= 0 for kind in ("query", "decision", "calculation"))
+    assert record["outcome"] == {"ok": True, "kept": 2, "rejected": 1, "failed": 0, "best": {"region_b_share": 0.5}}

@@ -32,13 +32,21 @@ def _signature(params: dict[str, str], extra: tuple[inspect.Parameter, ...] = ()
     return inspect.Signature(declared + list(extra), return_annotation=_RESULT)
 
 
+def _branch_counts(result: dict) -> dict:
+    """For a scenario's result, how many branches were kept, rejected and failed, and the best; else nothing."""
+    if "branches" not in result:
+        return {}
+    statuses = [branch["status"] for branch in result["branches"]]
+    return {**{status: statuses.count(status) for status in ("kept", "rejected", "failed")}, "best": result["best"]}
+
+
 def _tool(run: Callable[[dict], dict], signature: inspect.Signature, trace, name: str) -> Callable[..., dict]:
     """A function with the given signature, which the SDK reads for the tool's schema, calling run(arguments)."""
     def tool(**arguments) -> dict[str, Any]:
         with trace.call(name) if trace else contextlib.nullcontext({}) as record:
             try:
                 result = run(arguments)
-                record["outcome"] = {"ok": True}
+                record["outcome"] = {"ok": True, **_branch_counts(result)}
                 return result
             except (engine.StepError, DmnError, ScenarioError) as error:
                 raise ToolError(str(error)) from error

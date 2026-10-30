@@ -129,6 +129,9 @@ link, and your workspace's outbound network rules must allow it. This has not be
 `--trace <file>` writes one line per call to the file: how long it took, and how much of that
 was waiting for CLM, encoding text, the heads, each of the scenario's tools, and matching stored
 corrections. It also counts the texts and tokens CLM encoded, and how many it found in its cache.
+For an environment, each line counts the call's queries, decisions, calculations and judgements
+with the time each kind took, and a scenario's line says how many branches were kept, rejected
+and failed, and which was best.
 
 ```bash
 uv run clm-server my_scenario.toml --http --trace calls.jsonl
@@ -137,7 +140,8 @@ uv run clm-trace-report calls.jsonl
 
 The report gives each kind of call (`decide`, `check_call`, ...) a table of its stages, with the
 mean, median, 95th and 99th percentile in milliseconds and each stage's share of the time, then
-the cache hit rate, texts and tokens per call, and how much of what was encoded was padding.
+the cache hit rate, texts and tokens per call, and how much of what was encoded was padding; for
+an environment, the steps per call. A stage no call had is left out.
 
 - The trace leaves out the requests' text. `--trace-text` adds it; the trace then needs the same
   care as the corrections record ([data-handling.md](data-handling.md)).

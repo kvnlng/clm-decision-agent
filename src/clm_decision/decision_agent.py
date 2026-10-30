@@ -1,21 +1,21 @@
 """The reference agent: a model answers a question from an environment's tools, over MCP, and its figures are checked.
 
-    uv run clm-agent ENVIRONMENT "QUESTION" [--backend claude|ollama] [--model M]
-                                                 [--out FILE]
+    uv run clm-agent ENVIRONMENT_OR_URL "QUESTION" [--backend claude|ollama] [--model M]
+                                                        [--out FILE]
 
-It starts server.py for the environment, offers the model the server's tools and nothing else, and lets it call them
+It starts server.py for the environment, or connects to a running server at a URL (with the key in
+DECISION_SERVER_KEY, as clm-call does), offers the model the server's tools and nothing else, and lets it call them
 until it answers. The model is Claude through the Anthropic API (the default, claude-opus-5-5) or a local model
 through Ollama (gemma4:26b by default); both get the same instructions and tools. Every figure in the answer is then
 checked against what the tools returned (number_check.py), and the question, the answer, every call and the check
-are written as JSON, by default to the environment's runs/ folder. Claude's credentials are the Anthropic SDK's
-usual ones (ANTHROPIC_API_KEY or `ant auth login`); none are stored.
+are written as JSON, by default to the environment's runs/ folder (for a URL, runs/ here). Claude's credentials are
+the Anthropic SDK's usual ones (ANTHROPIC_API_KEY or `ant auth login`); none are stored.
 """
 from __future__ import annotations
 
 import argparse
 import contextlib
 import json
-import os
 import sys
 import time
 from dataclasses import dataclass
@@ -25,8 +25,9 @@ from typing import Protocol
 
 import anyio
 import httpx
-from mcp import Client, MCPError, StdioServerParameters
+from mcp import Client, MCPError
 
+from .call import connect, is_url, refusal, server_params  # pylint: disable=unused-import
 from .number_check import unsupported
 
 MODEL = "claude-opus-5-5"
@@ -219,15 +220,7 @@ async def answer(session: Client, question: str, chat: Chat) -> dict:
             "stopped": stopped, "model": chat.model}
 
 
-def server_params(environment: str) -> StdioServerParameters:
-    """How to start the decision server for the environment. It gets this process's variables, so a password the
-    environment names (NEO4J_PASSWORD) reaches it; the MCP client would otherwise pass on only a few, such as PATH."""
-    return StdioServerParameters(command=sys.executable, args=["-m", "clm_decision.server", environment],
-                                 env=dict(os.environ))
-
-
-async def _main(args) -> int:
-    params = server_params(args.environment)
+async def _main(args, refused: list[int]) -> int:
     async with contextlib.AsyncExitStack() as stack:
         if args.backend == "ollama":
             chat = OllamaChat(await stack.enter_async_context(httpx.AsyncClient()), args.model or LOCAL_MODEL,
@@ -240,7 +233,7 @@ async def _main(args) -> int:
                       "'clm-decision-agent[agent]', or use --backend ollama", file=sys.stderr)
                 return 2
             chat = ClaudeChat(anthropic.AsyncAnthropic(), args.model or MODEL)
-        session = await stack.enter_async_context(Client(params))
+        session = await stack.enter_async_context(Client(connect(args.environment, refused)))
         started = time.perf_counter()
         try:
             result = await answer(session, args.question, chat)
@@ -253,8 +246,8 @@ async def _main(args) -> int:
         print(f"\nStopped early: {result['stopped']}.")
     if result["unsupported"]:
         print(f"\nFigures no tool returned: {', '.join(result['unsupported'])}")
-    out = Path(args.out) if args.out else (Path(args.environment).resolve().parent / "runs" /
-                                           f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.answer.json")
+    runs = Path("runs") if is_url(args.environment) else Path(args.environment).resolve().parent / "runs"
+    out = Path(args.out) if args.out else runs / f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.answer.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(f"\n{len(result['calls'])} tool calls in {result['seconds']} s; written to {out}", file=sys.stderr)
@@ -265,16 +258,21 @@ def main(argv: list[str] | None = None) -> int:
     """Command-line entry point; returns the process exit code."""
     parser = argparse.ArgumentParser(description="Answer a question from an environment's tools with Claude or a "
                                                  "local model.")
-    parser.add_argument("environment", help="path to the environment's environment.toml")
+    parser.add_argument("environment", help="path to the environment's environment.toml, or a running server's URL")
     parser.add_argument("question")
     parser.add_argument("--backend", choices=("claude", "ollama"), default="claude")
     parser.add_argument("--model", help=f"default: {MODEL} with claude, {LOCAL_MODEL} with ollama")
     parser.add_argument("--ollama-url", default=OLLAMA_URL)
-    parser.add_argument("--out", help="where to write the result as JSON (default: the environment's runs/ folder)")
+    parser.add_argument("--out", help="where to write the result as JSON (default: the environment's runs/ folder, "
+                                      "or runs/ here for a URL)")
     args = parser.parse_args(argv)
+    refused: list[int] = []
     try:
-        return anyio.run(_main, args)
-    except (MCPError, ExceptionGroup):
+        return anyio.run(_main, args, refused)
+    except (MCPError, ExceptionGroup) as error:
+        if is_url(args.environment):
+            print(f"error: cannot connect to {args.environment}: {refusal(refused) or error}", file=sys.stderr)
+            return 2
         # The server stopped, as when its environment does not load; its own message is printed above
         print("error: the decision server stopped; see its message above", file=sys.stderr)
         return 2

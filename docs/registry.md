@@ -102,7 +102,8 @@ run natively.
    ```
 
 5. Find it: `curl "http://localhost:8090/v0.1/servers?search=clm-tariff"` gives the entry, with
-   its address and the header it needs.
+   its address and the header it needs. With the key in `DECISION_SERVER_KEY`, `uv run clm-call <address>`
+   lists the server's tools, and `clm-agent <address> "QUESTION"` asks a model to use them.
 
 In the check, a client found the entry, saw that it needed the `Authorization` header, sent the
 key, and called the server's tools. The entry's internal host name does not resolve on a laptop,

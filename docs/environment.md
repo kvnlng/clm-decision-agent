@@ -2,8 +2,9 @@
 
 A scenario decides one kind of thing quickly: which route a message takes. An **environment** is for decisions that
 rest on an organisation's data, with arithmetic, policy and alternatives to compare, such as "should we move Product
-Line X's sourcing to Region B, and what would it do to the Q3 margin and our delivery terms?". Start from
-[examples/tariff](../examples/tariff/README.md), which uses everything described here.
+Line X's sourcing to Region B, and what would it do to the Q3 margin and our delivery terms?". Start a new one
+with `uv run clm-new-environment my_environment`: a small working environment, a team choosing where to hold an
+offsite, to edit into your own. [examples/tariff](../examples/tariff/README.md) uses everything described here.
 
 ## Four parts, and one rule
 
@@ -46,6 +47,14 @@ uv run clm-server examples/tariff/environment.toml            # MCP over stdio
 DECISION_SERVER_KEY=... uv run clm-server examples/tariff/environment.toml --http
 ```
 
+To try its tools without an agent, `clm-call` starts the server and lists them, or calls one:
+
+```bash
+uv run clm-call examples/tariff/environment.toml
+uv run clm-call examples/tariff/environment.toml scenario_sourcing '{"product": "PX"}'
+uv run clm-call http://127.0.0.1:8000/mcp describe     # a running server, with the key in DECISION_SERVER_KEY
+```
+
 `--http`, the key and `--trace` work as for scenarios ([serving.md](serving.md)); review mode is for CLM scenarios
 only.
 
@@ -73,6 +82,10 @@ description = "Who supplies a component: region, unit price, lead time in days, 
 params = { component = "string" }         # string, number, integer, boolean or list
 function = "suppliers_of"                 # suppliers_of(graph, component) -> a list of dicts
 ```
+
+**A query must fail when what it was asked about does not exist.** An unknown id that gives no rows looks like
+an answer: in a first try at the offsite example, an unknown team had nobody in it, so every venue fitted and the
+cheapest won. Raise an error instead (`LookupError(f"no team {team}")`), and the branch fails, naming it.
 
 The description is what the agent reads, so say what the rows hold and in which units. A question no query can
 answer is answered "not in the graph"; the gap shows the owner which query to add. Queries return rows the tool
@@ -262,9 +275,11 @@ All of them only read. Each tool's description is the owner's.
 
 ```bash
 uv run clm-agent examples/tariff/environment.toml "QUESTION"
+uv run clm-agent https://decisions.example.org/mcp "QUESTION"    # a running server, with DECISION_SERVER_KEY
 ```
 
-It starts `clm-server` for the environment and gives a model the server's tools and nothing else:
+It starts `clm-server` for the environment, or connects to a running one at a URL, and gives a model the server's
+tools and nothing else:
 
 - **Claude** through the Anthropic API, the default, with Opus 5.5 unless `--model` says otherwise;
 - **a local model** through Ollama: `--backend ollama`, with `gemma4:26b` unless `--model` says otherwise, at
@@ -280,7 +295,7 @@ Both get the same instructions and tools. The instructions are to:
 - say plainly when no tool can answer part of the question.
 
 The question, the answer, every call, the model and the time taken are written as JSON to the environment's `runs/`
-folder, which is git-ignored. Claude's credentials are the Anthropic SDK's usual ones; none are stored.
+folder, which is git-ignored (for a URL, to `runs/` in the current folder). Claude's credentials are the Anthropic SDK's usual ones; none are stored.
 
 The number check then lists any figure in the answer that no tool returned. A figure matches a tool's number when
 the number, in the answer's unit and rounded to the answer's decimals, is the figure: "$1.2 million" matches 1234567,

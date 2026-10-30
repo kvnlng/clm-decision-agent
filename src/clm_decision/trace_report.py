@@ -10,7 +10,10 @@ import numpy as np
 
 # Stages of a call, from the counts each line carries; "other" is what is left of the call's time
 STAGES = {"waiting for CLM": "lock_wait_ms", "encode": "encode_ms", "heads": "head_ms",
-          "matching corrections": "match_ms"}
+          "matching corrections": "match_ms", "queries": "query_ms", "rules": "decision_ms",
+          "calculations": "calculation_ms", "judges": "judgement_ms"}
+# An environment's steps, counted per call
+STEPS = {"queries": "query", "decisions": "decision", "calculations": "calculation", "judgements": "judgement"}
 
 
 def load(path: str) -> list[dict]:
@@ -39,7 +42,8 @@ def _summarise_tool(records: list[dict]) -> dict:
     stages = [_stages(record) for record in records]
     total = sum(stage["total"] for stage in stages) or 1.0
     summary: dict = {"calls": len(records), "stages": {}}
-    for name in stages[0]:
+    # A stage no call had, such as CLM's in an environment, is left out
+    for name in [name for name in stages[0] if name in ("total", "other") or any(stage[name] for stage in stages)]:
         values = np.array([stage[name] for stage in stages])
         summary["stages"][name] = {"mean": float(values.mean()), "p50": float(np.percentile(values, 50)),
                                    "p95": float(np.percentile(values, 95)), "p99": float(np.percentile(values, 99)),
@@ -50,7 +54,9 @@ def _summarise_tool(records: list[dict]) -> dict:
         return sum(record["counts"].get(key, 0) for record in records)
     # decide_many makes many decisions a call, so the rate is of decisions where they are counted
     summary["decisions"] = count("decisions") or len(records)
-    summary["per_second"] = summary["decisions"] / span if span > 0 else None
+    # One call of one decision has no rate: its span is only its own time
+    timed = span > 0 and (len(records) > 1 or summary["decisions"] > 1)
+    summary["per_second"] = summary["decisions"] / span if timed else None
     looked_up = count("cache_hits") + count("cache_misses")
     summary["cache_hit_rate"] = count("cache_hits") / looked_up if looked_up else None
     summary["texts_per_call"] = count("texts_encoded") / len(records)
@@ -58,12 +64,13 @@ def _summarise_tool(records: list[dict]) -> dict:
     padded = count("padded_tokens")
     # Torch reports padding; the MLX build does not
     summary["padding"] = (padded - count("tokens")) / padded if padded else None
+    summary["steps_per_call"] = {name: count(key) / len(records) for name, key in STEPS.items() if count(key)}
     return summary
 
 
 def summarise(records: list[dict]) -> dict[str, dict]:
     """Per MCP tool: calls, decisions and decisions per second, each stage's time and share, cache hit rate,
-    texts and tokens."""
+    texts and tokens, and for an environment its steps per call."""
     by_tool: dict[str, list[dict]] = defaultdict(list)
     for record in records:
         by_tool[record["tool"]].append(record)
@@ -86,9 +93,13 @@ def report(summary: dict[str, dict]) -> str:
             share = "" if name == "total" else _percent(stage["share"])
             out.append(f"  {name:<22}{stage['mean']:>10.1f}{stage['p50']:>10.1f}{stage['p95']:>10.1f}"
                        f"{stage['p99']:>10.1f}{share:>8}")
-        out.append(f"  cache hits {_percent(found['cache_hit_rate'])}, texts encoded per call "
-                   f"{found['texts_per_call']:.1f}, tokens per call {found['tokens_per_call']:.0f}, "
-                   f"padding {_percent(found['padding'])}")
+        if found["texts_per_call"] or found["cache_hit_rate"] is not None:
+            out.append(f"  cache hits {_percent(found['cache_hit_rate'])}, texts encoded per call "
+                       f"{found['texts_per_call']:.1f}, tokens per call {found['tokens_per_call']:.0f}, "
+                       f"padding {_percent(found['padding'])}")
+        if found["steps_per_call"]:
+            out.append("  steps per call: " + ", ".join(f"{value:.1f} {name}"
+                                                         for name, value in found["steps_per_call"].items()))
         out.append("")
     return "\n".join(out)
 

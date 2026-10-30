@@ -67,8 +67,8 @@ uv tool install "clm-decision-agent[clm] @ git+https://github.com/kvnlng/clm-dec
 | `agent` | The Anthropic SDK, for `clm-agent` with Claude; with Ollama it needs nothing more |
 
 A command that needs a missing extra says which, in one line. The commands are `clm-server`, `clm-agent`,
-`clm-chat`, `clm-new-scenario`, `clm-synthesize`, `clm-train`, `clm-evaluate`, `clm-record`, `clm-load-graph`,
-`clm-registry` and `clm-trace-report`; each takes `--help`. In Python, the framework is `clm_decision`.
+`clm-chat`, `clm-call`, `clm-new-scenario`, `clm-new-environment`, `clm-synthesize`, `clm-train`, `clm-evaluate`,
+`clm-record`, `clm-load-graph`, `clm-registry` and `clm-trace-report`; each takes `--help`. In Python, the framework is `clm_decision`.
 
 ### An environment: the tariff example
 
@@ -116,8 +116,10 @@ you> I need access to the oncology registry for an audit, needed this week
   and labelled cases. [docs/walkthrough.md](docs/walkthrough.md) builds one step by step. In review mode, `/correct
   <route>` saves a correction; `clm-synthesize`, `clm-train` and `clm-evaluate` train CLM on examples and corrections
   and score it ([docs/fine-tuning.md](docs/fine-tuning.md)).
-- **An environment:** copy `examples/tariff/` and replace its graph, rules and functions
-  ([docs/environment.md](docs/environment.md)).
+- **An environment:** `uv run clm-new-environment my_environment` starts a folder with a working environment, a
+  team choosing where to hold an offsite, to edit into your own ([docs/environment.md](docs/environment.md)).
+- **Either:** `uv run clm-call <file>` lists its tools without an agent, and `uv run clm-call <file> <tool> '<json>'`
+  calls one; for a running server, give its URL instead of the file.
 
 A mistake in either file stops start-up with one line naming the setting.
 
@@ -134,7 +136,9 @@ uv run clm-server examples/tariff/environment.toml --http --auth oauth \
   for signature, issuer, audience, expiry and scopes. [docs/serving.md](docs/serving.md).
 - **In an MCP registry**, so agents can find a deployment: `clm-registry` writes its `server.json`, for the public
   registry or a private one. [docs/registry.md](docs/registry.md).
-- **Traced**: `--trace` records where each call's time went and who called; `clm-trace-report` summarises it.
+- **Traced**: `--trace FILE` records where each call's time went and who called; `clm-trace-report` summarises it.
+- **Reference agent:** `clm-agent` takes a running server's URL as well as a file, with the key in
+  `DECISION_SERVER_KEY`.
 - **Databricks:** not tried yet. [docs/serving.md](docs/serving.md#databricks) says what it needs.
 
 **A scenario's server acts without asking.** When a decision calls for an acting tool, the tool runs at once, unless
@@ -193,11 +197,12 @@ The framework is the package `clm_decision`, in `src/clm_decision/`:
 | `environment.py`, `environment_server.py`, `engine.py` | Reads an environment; its parts as MCP tools; queries, decisions, scenarios and judges run with every step recorded |
 | `graph.py`, `graph_neo4j.py`, `load_graph.py`, `dmn.py` | The built-in graph; named queries on Neo4j; `clm-load-graph`; DMN decision tables |
 | `decision_agent.py`, `number_check.py` | `clm-agent`, Claude or a local model; the check that every figure came from a tool |
+| `call.py` | `clm-call`: a server's tools, listed or called by hand, over stdio or HTTP |
 | `oauth.py`, `registry.py` | OAuth tokens from any OIDC issuer; `clm-registry`, the `server.json` for an MCP registry |
 | `tracing.py`, `trace_report.py` | `--trace`, and `clm-trace-report` |
 | `chat.py` | `clm-chat`, the test chat for scenarios |
 | `clm_router.py`, `clm_torch.py`, `clm_schema.py`, `clm_common.py` | CLM with MLX or PyTorch; routing and the reuse of corrections; the authors' question format, unchanged |
-| `record.py`, `evaluate.py`, `new_scenario.py` | Corrections (`clm-record`) and their scoring (`clm-evaluate`); `clm-new-scenario` |
+| `record.py`, `evaluate.py`, `new_scenario.py`, `new_environment.py` | Corrections (`clm-record`) and their scoring (`clm-evaluate`); `clm-new-scenario`, `clm-new-environment` |
 | `dataset.py`, `synthesize.py`, `train.py`, `generator.py` | `clm-train`; `clm-synthesize` and the language model that writes examples |
 
 Outside the package:

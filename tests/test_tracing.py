@@ -350,3 +350,20 @@ def test_the_trace_file_s_folder_is_made_if_missing(tmp_path):
     with writer.call("decide", TEXT):
         pass
     assert len(lines(tmp_path / "runs" / "trace.jsonl", writer)) == 1
+
+
+def test_the_report_shows_an_environments_steps(tmp_path, capsys):
+    path = tmp_path / "trace.jsonl"
+    path.write_text("\n".join(json.dumps(record(100.0 + i, 10.0, tool="scenario_sourcing", query=9, query_ms=3.0,
+                                                decision=7, decision_ms=2.0, calculation=6, calculation_ms=1.0))
+                              for i in range(3)) + "\n")
+    assert trace_report.main([str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "queries" in out and "rules" in out and "calculations" in out
+    assert "steps per call: 9.0 queries, 7.0 decisions, 6.0 calculations" in out
+    # Stages a call never had, and CLM's counts, are left out
+    assert "encode" not in out and "waiting for CLM" not in out and "cache hits" not in out
+
+
+def test_one_call_has_no_rate():
+    assert trace_report.summarise([record(100.0, 0.01, tool="describe")])["describe"]["per_second"] is None
