@@ -261,3 +261,22 @@ def test_a_refused_key_is_one_line(monkeypatch, capsys):
         assert main([f"http://127.0.0.1:{port}/mcp", "Q", "--backend", "ollama"]) == 2
     err = capsys.readouterr().err
     assert "the server refused the call (401), with the key in DECISION_SERVER_KEY" in err and "Traceback" not in err
+
+
+@pytest.mark.anyio
+async def test_a_figure_from_the_question_is_not_flagged(mcp_server):
+    claude = FakeClaude(message(tool_use("describe", {})),
+                        message(text("For the 37 units you mention, see the scenario.")))
+    async with Client(mcp_server) as session:
+        result = await answer(session, "We could sell 37 units. Should we?", ClaudeChat(claude, "claude-opus-5-5"))
+    assert result["unsupported"] == []
+
+
+def test_the_agent_writes_the_record_beside_the_answer(tmp_path, monkeypatch):
+    claude = FakeClaude(message(tool_use("scenario_sourcing", {"product": "PX"})), message(text("Buy half.")))
+    monkeypatch.setattr("anthropic.AsyncAnthropic", lambda: claude)
+    out = tmp_path / "run.answer.json"
+    assert main([str(EXAMPLE), "Should we?", "--out", str(out)]) == 0
+    record = json.loads((tmp_path / "run.record.json").read_text())
+    assert record["question"] == "Should we?" and record["scenarios"][0]["best"] == {"region_b_share": 0.5}
+    assert "## The agent's explanation (not checked)" in (tmp_path / "run.record.md").read_text()

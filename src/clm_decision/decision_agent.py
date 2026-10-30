@@ -28,6 +28,7 @@ import httpx
 from mcp import Client, MCPError
 
 from .call import connect, is_url, refusal, server_params  # pylint: disable=unused-import
+from . import decision_record
 from .number_check import unsupported
 
 MODEL = "claude-opus-5-5"
@@ -44,7 +45,12 @@ checks every limit on every branch. Do not combine queries and decisions yoursel
 - Say which branch is best and why, which branches were rejected and by which rule, with its reason, and any \
 dependency behind a rejection, naming it.
 - Cite what you relied on: the tool, and for a scenario the branch and the step (query, decision or calculation).
-- If no tool can answer part of the question, say so plainly rather than guessing."""
+- If no tool can answer part of the question, say so plainly rather than guessing.
+- If describe lists topics, call rules for the topic the question is about before anything else. If any item in \
+its to_ask is not given in the question, stop: list each missing item with the rule that needs it, and run no \
+scenario. Never fill in a missing item yourself.
+- Say which figures are estimates, with their range and source, and report each kept branch's warnings, headroom \
+and the approvals it needs."""
 
 
 class AgentError(RuntimeError):
@@ -216,6 +222,8 @@ async def answer(session: Client, question: str, chat: Chat) -> dict:
         stopped = "turn limit"
     # A tool's error is tool output too: a figure quoted from it is one the model was given
     returned = [call["error"] if call["error"] else call["result"] for call in calls]
+    # What the person asking supplied, in the question's own words, counts as given
+    returned.append(question)
     return {"question": question, "answer": text, "calls": calls, "unsupported": unsupported(text, returned),
             "stopped": stopped, "model": chat.model}
 
@@ -250,7 +258,13 @@ async def _main(args, refused: list[int]) -> int:
     out = Path(args.out) if args.out else runs / f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.answer.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2), encoding="utf-8")
-    print(f"\n{len(result['calls'])} tool calls in {result['seconds']} s; written to {out}", file=sys.stderr)
+    record = decision_record.build(result["question"], result["calls"])
+    stem = out.name.removesuffix(".json").removesuffix(".answer")
+    (out.parent / f"{stem}.record.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
+    (out.parent / f"{stem}.record.md").write_text(
+        decision_record.markdown(record, result["answer"], result["unsupported"]), encoding="utf-8")
+    print(f"\n{len(result['calls'])} tool calls in {result['seconds']} s; written to {out}, with the decision "
+          f"record in {out.parent / (stem + '.record.md')}", file=sys.stderr)
     return 0
 
 
