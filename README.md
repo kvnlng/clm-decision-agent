@@ -54,23 +54,13 @@ One tool for each part you write, named after it, so the agent can explore the p
 
 ## What to expect
 
-Measured on an M5 Max with 64 GB unless a GPU is named. Small tests, said plainly.
+Small tests, said plainly ([docs/findings.md](docs/findings.md)):
 
-- **CLM must be trained.** On the service desk the released heads routed 51% of held-back examples right; trained
-  on 199 generated examples, 98%.
-- **Against Claude, on the CrowdStrike day's 600 check cases, Claude was more accurate and, on the Mac, faster.**
-  Sonnet 5.5 got 82% of routes right and Haiku 5.5 79%, against CLM's 75%; each took about 267 ms a decision to
-  CLM's 300 ms. CLM's strengths are cost and place: $0 for the day's 99,806 decisions against about $15 (Haiku) or
-  $158 (Sonnet), the messages never leave the machine, and it marked 119 of its 152 wrong routes uncertain, so they
-  went to a person ([the comparison](examples/crowdstrike/README.md)).
-- **On a data-centre GPU CLM is much faster:** 3.6 decisions a second on the Mac, about 19 on an A100 and 50 on an
-  H100, against a peak need of 10.7 on the CrowdStrike day ([docs/findings.md](docs/findings.md)).
-- **CLM's probabilities are relative, not calibrated.** Tune thresholds on labelled cases; the tariff news judge
-  separated risks from harmless news by a gap of only 0.05.
-- **In the tariff example, Claude and a local `gemma4:26b` reached the same decision** by the same two calls in
-  eight runs. Claude's answers were fuller and explained the dependency; once it worked out a figure itself, which
-  the number check flagged. gemma4 was free and stayed on the Mac, but with news available it did not run the
-  scenario that checks it and missed the strike ([the runs](examples/tariff/README.md#what-happened-when-the-models-were-asked)).
+- **Train CLM first:** 51% of routes right as released, 98% after training on the service desk.
+- **Claude is more accurate:** 82% (Sonnet) against CLM's 75% on the CrowdStrike day, and faster on a Mac. CLM costs
+  nothing to run, keeps data local and sends most of its mistakes to a person.
+- **A GPU makes CLM fast:** about 19 decisions a second on an A100 and 50 on an H100, against 3.6 on a Mac.
+- **CLM's probabilities are relative:** tune thresholds on labelled cases.
 
 ## Layout
 
