@@ -1,7 +1,7 @@
 # Serving decisions to agents
 
 `clm-server` offers a scenario's decisions as MCP tools (see the table in the
-[README](../README.md#the-servers-tools)). It loads CLM once at start-up, then answers calls
+[README](../README.md#tools)). It loads CLM once at start-up, then answers calls
 until it is stopped. Messages about loading go to stderr.
 
 ## On this computer, over stdio

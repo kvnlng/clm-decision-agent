@@ -24,9 +24,13 @@ The framework holds you to three principles:
 the examples, building your own and connecting agents. It is a prototype, not used in production and **not for
 clinical decisions**; a scenario's server runs its acting tools without asking.
 
-## The server's tools
+## Tools
 
-For a scenario:
+These are the MCP tools a decision server offers an agent. Which ones depends on the style of decision.
+
+### Routing: a scenario (`scenario.toml`)
+
+A fixed set. The agent asks for a decision; your informing and acting tools run inside `decide`, not as tools of their own.
 
 | MCP tool | What it does |
 |---|---|
@@ -36,7 +40,9 @@ For a scenario:
 | `describe()` | The routes, options, questions, rules and tools |
 | `correct(...)`, `agreement()` | Review mode only: save the right decision; how often CLM agrees with the corrections |
 
-For an environment:
+### Weighing options: an environment (`environment.toml`)
+
+One tool for each part you write, named after it, so the agent can explore the parts and run the ones it needs.
 
 | MCP tool | What it does |
 |---|---|
