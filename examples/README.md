@@ -1,6 +1,6 @@
 # Examples
 
-Four examples, two of each kind of decision ([the README](../README.md#two-kinds-of-decision) explains the two
+Four examples, two of each kind of decision ([getting started](../docs/getting-started.md#your-environment-and-the-decisions-over-it) explains the two
 kinds). Each folder has its own README with the full story, how to run it and what happened when models were asked.
 
 | Example | Kind | The question | What it shows | Data |
