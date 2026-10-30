@@ -6,9 +6,9 @@ trackers, public data) and to decide from them. You write those tools and the ru
 serves them over [MCP](https://modelcontextprotocol.io) as a **decision server**, runs them, checks them and traces
 every step. It holds no rules or data of its own, and decides nothing until you write the decision down.
 
-Use it when the same kind of decision comes up again and again (which team handles this request, should we change
-supplier, can we afford a new site) and the answer must rest on your information and your rules, not an assistant's
-guess. The agent, whether Claude, a local model or one built on Databricks, talks to the person; the tools supply the
+Use it when a decision must rest on your information and your rules, not an assistant's guess: one made thousands
+of times a day, such as which team handles a request, or one made once, such as whether to change supplier or open a
+new site. The agent, whether Claude, a local model or one built on Databricks, talks to the person; the tools supply the
 information, and the decision comes back with its reasons.
 
 <p align="center"><img src="docs/images/architecture.svg" alt="Any MCP agent (Claude, a local model, Databricks) calls clm-server over MCP. The server serves a scenario (CLM with informing and acting tools) or an environment (a graph, DMN rules, calculations, scenarios of levers and CLM judges)." width="820"></p>
