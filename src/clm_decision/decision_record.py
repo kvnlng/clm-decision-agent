@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 
+from . import number_check
+
 _RANGE_KEYS = ("low", "central", "high", "source", "as_of")
 
 
@@ -29,17 +31,27 @@ def _information(record: dict, steps: list[dict], descriptions: dict) -> None:
             record["information"].append(item)
 
 
+def _in_question(value, question: str) -> bool:
+    """Whether the person asking gave this value: text found in the question, or a figure the question holds."""
+    if isinstance(value, str):
+        return value.strip().lower() in question.lower()
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return not number_check.unsupported(str(value), [question])
+    return False
+
+
 def _scenario(result: dict) -> dict:
     keys = ("levers", "status", "figures", "rejected_by", "warnings", "headroom", "approvals", "error")
-    return {"scenario": result["scenario"], "objective": result["objective"], "maximise": result["maximise"],
+    return {"scenario": result["scenario"], "supplied": result.get("supplied", {}),
+            "objective": result["objective"], "maximise": result["maximise"],
             "best": result["best"], "ranking": result["ranking"],
             "branches": [{key: branch.get(key) for key in keys} for branch in result["branches"]]}
 
 
 def build(question: str, calls: list[dict]) -> dict:
     """The record of one answer, from the calls clm-agent made: each {"tool", "arguments", "result", "error"}."""
-    record: dict = {"question": question, "supplied": {}, "rules": {}, "information": [], "scenarios": [],
-                    "to_ask": [], "failed_calls": []}
+    record: dict = {"question": question, "supplied": {}, "chosen_by_agent": {}, "rules": {}, "rules_consulted": {},
+                    "information": [], "scenarios": [], "to_ask": [], "failed_calls": []}
     asked: list[dict] = []
     for call in calls:
         tool, result = call["tool"], call["result"]
@@ -47,21 +59,27 @@ def build(question: str, calls: list[dict]) -> dict:
             record["failed_calls"].append({"tool": tool, "error": call["error"] or "no result"})
             continue
         if tool.startswith("scenario_"):
-            record["supplied"].update(result.get("supplied", {}))
+            # A parameter is supplied only if the question gives it; otherwise the agent chose it
+            for name, value in result.get("supplied", {}).items():
+                found = record["supplied" if _in_question(value, question) else "chosen_by_agent"]
+                if value not in found.setdefault(name, []):
+                    found[name].append(value)
             record["rules"].update(result.get("rules", {}))
             descriptions = {name: item["description"] for name, item in result.get("information", {}).items()}
             for branch in result["branches"]:
                 _information(record, branch["steps"], descriptions)
             record["scenarios"].append(_scenario(result))
         elif tool == "rules":
-            record["rules"].update({rule["name"]: rule for rule in result["rules"]})
+            record["rules_consulted"].update({rule["name"]: rule for rule in result["rules"]})
             asked += [item for item in result["to_ask"] if item not in asked]
         elif tool == "rule":
-            record["rules"][result["name"]] = {key: value for key, value in result.items() if key != "rows"}
+            record["rules_consulted"][result["name"]] = {key: value for key, value in result.items() if key != "rows"}
         elif "steps" in result:
             _information(record, result["steps"], {})
     # Supplied information is named after the scenario parameter that carries it
     record["to_ask"] = [item for item in asked if item["name"] not in record["supplied"]]
+    record["rules_consulted"] = {name: rule for name, rule in record["rules_consulted"].items()
+                                 if name not in record["rules"]}
     return record
 
 
@@ -88,16 +106,22 @@ def _branch(branch: dict) -> list[str]:
     return lines
 
 
+def _rule(rule: dict) -> str:
+    return (f"- **{rule['name']}** (owner {rule['owner']}, version {rule['version']}): {rule['statement']} "
+            f"Why: {rule['reason']}")
+
+
 def markdown(record: dict, answer: str, unsupported: list[str]) -> str:
     """The record as a page to read: the checked record first, then the agent's explanation, marked as such."""
     out = ["# Decision record", "", "## Question", "", record["question"], "", "## Supplied by the asker", ""]
-    out += [f"- {name}: {value}" for name, value in record["supplied"].items()] or ["Nothing."]
+    out += [f"- {name}: {', '.join(map(str, values))}" for name, values in record["supplied"].items()] or ["Nothing."]
+    if record["chosen_by_agent"]:
+        out += ["", "## Chosen by the agent, not in the question", ""]
+        out += [f"- {name}: {', '.join(map(str, values))}" for name, values in record["chosen_by_agent"].items()]
     out += ["", "## Rules applied", ""]
-    for rule in record["rules"].values():
-        out.append(f"- **{rule['name']}** (owner {rule['owner']}, version {rule['version']}): {rule['statement']} "
-                   f"Why: {rule['reason']}")
-    if not record["rules"]:
-        out.append("No rule metadata was returned.")
+    out += [_rule(rule) for rule in record["rules"].values()] or ["No rule was applied: no scenario ran."]
+    if record["rules_consulted"]:
+        out += ["", "## Rules consulted", ""] + [_rule(rule) for rule in record["rules_consulted"].values()]
     out += ["", "## Information", ""]
     for item in record["information"]:
         inputs = json.dumps(item["inputs"])
@@ -110,7 +134,8 @@ def markdown(record: dict, answer: str, unsupported: list[str]) -> str:
             out += [f"  - {json.dumps(row)}" for row in item["rows"]]
     out += ["", "## Scenarios", ""]
     for scenario in record["scenarios"]:
-        out.append(f"**{scenario['scenario']}**, by {scenario['objective']} "
+        given = ", ".join(f"{name} = {value}" for name, value in scenario["supplied"].items())
+        out.append(f"**{scenario['scenario']}**{f' ({given})' if given else ''}, by {scenario['objective']} "
                    f"({'highest' if scenario['maximise'] else 'lowest'} first); best: {scenario['best']}")
         for branch in scenario["branches"]:
             out += _branch(branch)

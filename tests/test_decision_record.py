@@ -26,8 +26,8 @@ def calls(write_environment):
 
 def test_the_record_is_built_from_calls_only(calls):
     assert decision_record.build("Should we?", calls) == decision_record.build("Should we?", calls)
-    record = decision_record.build("Should we?", calls)
-    assert record["question"] == "Should we?" and record["supplied"] == {"product": "P1"}
+    record = decision_record.build("Should we, for P1?", calls)
+    assert record["question"] == "Should we, for P1?" and record["supplied"] == {"product": ["P1"]}
     scenario = record["scenarios"][0]
     assert scenario["scenario"] == "risky" and scenario["best"] == {"share": 0.5}
     assert {branch["status"] for branch in scenario["branches"]} == {"kept"}
@@ -49,12 +49,12 @@ def test_the_record_shows_what_is_still_to_ask(write_environment):
     found = rules_for(load_environment(path), "open_site")
     record = decision_record.build("Can we open a site?", [call("rules", {"topic": "open_site"}, found)])
     assert [item["name"] for item in record["to_ask"]] == ["site_size"]
-    assert set(record["rules"]) == {"payback", "reserve_policy"}
+    assert set(record["rules_consulted"]) == {"payback", "reserve_policy"}
 
 
 def test_the_record_says_when_no_scenario_ran():
     record = decision_record.build("Q", [call("scenario_risky", {"product": "P9"}, error="unknown product")])
-    assert record["scenarios"] == [] and record["failed_calls"] == [{"tool": "scenario_risky",
+    assert not record["scenarios"] and record["failed_calls"] == [{"tool": "scenario_risky",
                                                                      "error": "unknown product"}]
     assert "No scenario was run." in decision_record.markdown(record, "", [])
 
@@ -72,3 +72,51 @@ def test_the_record_shows_each_facts_values(calls):
     facts = [item for item in decision_record.build("Q", calls)["information"] if item["kind"] == "fact"]
     assert facts[0]["query"] == "suppliers" and facts[0]["rows"][0] == {"id": "S1", "region": "A", "cost": 10}
     assert '"cost": 10' in decision_record.markdown(decision_record.build("Q", calls), "", [])
+
+
+def test_a_value_not_in_the_question_is_the_agents_choice_not_supplied(calls):
+    record = decision_record.build("Should we buy more from Region B?", calls)
+    assert not record["supplied"] and record["chosen_by_agent"] == {"product": ["P1"]}
+    assert "## Chosen by the agent, not in the question" in decision_record.markdown(record, "", [])
+
+
+def test_a_value_in_the_question_is_supplied(calls):
+    assert decision_record.build("Should we, for product P1?", calls)["supplied"] == {"product": ["P1"]}
+
+
+def test_a_missing_item_the_agent_filled_in_stays_to_ask(write_rules_env):
+    env, rules_result = write_rules_env
+    calls = [call("rules", {"topic": "open_site"}, rules_result),
+             call("scenario_x", {}, {"scenario": "x", "objective": "o", "maximise": True, "best": None,
+                                     "ranking": [], "branches": [], "supplied": {"site_size": "large"}})]
+    record = decision_record.build("Can we open a site?", calls)
+    assert [item["name"] for item in record["to_ask"]] == ["site_size"] and env
+
+
+def test_each_scenario_run_shows_its_own_parameters(write_environment):
+    env = load_environment(write_environment(RISK_TOML, RISK_FUNCTIONS))
+    calls = [call("scenario_risky", {"product": product}, engine.run_scenario(env, "risky", {"product": product}))
+             for product in ("P1", "P1")]
+    calls[1]["result"]["supplied"] = {"product": "P2"}
+    record = decision_record.build("Compare P1 and P2", calls)
+    assert [scenario["supplied"] for scenario in record["scenarios"]] == [{"product": "P1"}, {"product": "P2"}]
+    assert record["supplied"] == {"product": ["P1", "P2"]}
+    assert "**risky** (product = P2)" in decision_record.markdown(record, "", [])
+
+
+def test_rules_only_looked_at_are_consulted_not_applied(write_rules_env):
+    _, rules_result = write_rules_env
+    record = decision_record.build("Q", [call("rules", {"topic": "open_site"}, rules_result)])
+    assert not record["rules"] and set(record["rules_consulted"]) == {"payback", "reserve_policy"}
+    text = decision_record.markdown(record, "", [])
+    assert "## Rules consulted" in text and "No rule was applied" in text
+
+
+@pytest.fixture
+def write_rules_env(write_environment):
+    path = write_environment(RULES_TOML)
+    (path.parent / "rules" / "payback.dmn").write_text(one_input_dmn("payback", "payback_years", "&gt; 4"))
+    (path.parent / "rules" / "reserve_policy.dmn").write_text(
+        one_input_dmn("reserve_policy", "share_of_reserves", "&gt; 0.5"))
+    env = load_environment(path)
+    return env, rules_for(env, "open_site")

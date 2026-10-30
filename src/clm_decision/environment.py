@@ -471,7 +471,7 @@ def _scenario(name: str, table: dict, functions: ModuleType, decisions: dict, qu
                        branch, _text(table, "objective", where), maximise, tuple(limits), uncertain, approvals)
 
 
-def load_environment(path: str | Path, backend: str | None = None) -> Environment:
+def load_environment(path: str | Path, backend: str | None = None) -> Environment:  # pylint: disable=too-many-locals
     """Read and check an environment file; raises ScenarioError naming the setting. `backend` overrides the file's
     [graph] backend, to run the same environment on the other graph."""
     path = Path(path)

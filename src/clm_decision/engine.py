@@ -275,7 +275,8 @@ def _failing(run: dict) -> tuple[str | None, str] | None:
     return None
 
 
-def _headroom(env: Environment, scenario, params: dict, branch: dict, estimate: str, direction: str) -> dict:
+def _headroom(env: Environment, scenario, params: dict, branch: dict,  # pylint: disable=too-many-arguments
+              estimate: str, direction: str) -> dict:  # pylint: disable=too-many-positional-arguments
     """How far the estimate can move from its central value, down or up, before the branch fails a limit: the
     smallest change found by bisection to within half a percent, over a fall to zero or a rise to double. It assumes
     a limit's verdict changes once along the way, as for a threshold."""
