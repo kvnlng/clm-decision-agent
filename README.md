@@ -1,25 +1,30 @@
 # CLM decision server
 
-Organisations make the same kinds of decision again and again: which team handles this request, should we change
-supplier, can we afford a new site. What decides them lives in data, rules and policy that people own, and an AI
-assistant asked directly can only guess at it.
+**This is a framework, not a finished product.** It gives you a way to build a **decision server**: a program that
+holds your organisation's rules, data and policy for one kind of decision, and that any AI agent can call over
+[MCP](https://modelcontextprotocol.io). It decides nothing until you write the decision down. The examples show how;
+your rules, your data and your tools are yours to write.
 
-This project lets the owners write that down once, as a **decision server**, and lets any AI agent call it over
-[MCP](https://modelcontextprotocol.io): Claude, a local model, or one your colleagues build on Databricks. The agent
-talks to the person; the server makes the decision and says why.
+Use it when the same kind of decision comes up again and again (which team handles this request, should we change
+supplier, can we afford a new site) and the answer must follow your rules, not an assistant's guess. The agent,
+whether Claude, a local model or one built on Databricks, talks to the person; your server makes the decision and
+says why.
 
 <p align="center"><img src="docs/images/architecture.svg" alt="Any MCP agent (Claude, a local model, Databricks) calls clm-server over MCP. The server serves a scenario (CLM with informing and acting tools) or an environment (a graph, DMN rules, calculations, scenarios of levers and CLM judges)." width="820"></p>
 
-Three ideas run through it:
+The framework holds you to three principles:
 
-- **Owners write the rules; agents choose among them.** Every route, rule, query, calculation and option comes from
-  the owner, and outside information reaches a decision only through the owner's tools.
-- **Every decision can be checked.** Each one is traced to the steps that made it, figures in an agent's answer are
+- **You write the rules; agents only choose among them.** Every route, rule, query, calculation and option is yours,
+  and outside information reaches a decision only through your tools. An agent never invents one.
+- **Every decision must be checkable.** Each one is traced to the steps that made it, figures in an agent's answer are
   checked against what the tools returned, and a decision record sets out the rules, facts, estimates and risks
   for whoever signs it off.
-- **Small and local where it can be.** Where the server must read language it uses a Contrastive Language Model
+- **Keep it small and local where you can.** Where the server must read language it uses a Contrastive Language Model
   (CLM), which picks among options instead of writing text. It runs on a Mac or one GPU, so it costs little and the
   data stays with you; in the benchmark, Claude was more accurate.
+
+To build your own, pick the kind of decision below, start from an example ([examples/README.md](examples/README.md))
+or from `uv run clm-new-environment my_environment`, write your rules and tools, and serve it with `clm-server`.
 
 It is a prototype, built to learn how CLM behaves and to show the pattern to people who want to adapt it. It has not
 been used in production, and **it is not for clinical decisions**: one example is a data service desk in a clinical
