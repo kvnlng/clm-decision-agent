@@ -227,6 +227,11 @@ account for every number.
 - **The kept branches are ranked** by the objective. A lever value the owner did not list is refused before anything
   runs.
 
+**What the question fixes is a parameter; only the real alternatives are levers.** In the offsite example the team
+and the number of days are parameters, and the venue is the lever. Were the days a lever, a scenario ranked by lowest
+cost would always choose one day: an answer to a question nobody asked, since whoever asked had already fixed the
+length.
+
 ## Judges
 
 Some evidence is text no rule can read, such as news about a supplier. A judge asks CLM one yes/no question of a
@@ -270,6 +275,36 @@ steps.decide("news_risk", probability=probability, supplier=supplier)
 | `describe` | The environment's name and description, and every part with its parameters, levers, objective and limits |
 
 All of them only read. Each tool's description is the owner's.
+
+## From a new folder to a registered server
+
+The whole path, as a new user takes it, with the starter environment. Each step's result is what to expect.
+
+```bash
+uv run clm-new-environment offsite                  # a working environment to edit
+uv run clm-call offsite/environment.toml            # its tools, without an agent
+uv run clm-call offsite/environment.toml scenario_offsite '{"team": "T1", "days": 2}'
+```
+
+Leith Studio (V3) is best at 6,960 pounds; Northern Works is cheaper but rejected, too small for everyone; Thames Loft
+is kept at 7,380. Then serve it, list it in a registry and use it from there:
+
+```bash
+export DECISION_SERVER_KEY=<a long random key>
+uv run clm-server offsite/environment.toml --http --trace calls.jsonl
+uv run clm-registry offsite/environment.toml --name io.github.you/offsite \
+    --url https://offsite.corp.internal/mcp --version 0.1.0 --description "Where a team should hold its offsite"
+mcp-publisher validate server.json && mcp-publisher publish server.json
+uv run clm-call http://127.0.0.1:8000/mcp describe  # without the key: refused (401)
+uv run clm-agent http://127.0.0.1:8000/mcp "Where should the Platform team hold its two-day offsite?"
+uv run clm-trace-report calls.jsonl                 # the steps behind each call
+```
+
+- **The registry needs an HTTPS address with a host name** others can find, so a server on your own computer is listed
+  under the name it will have, and reached locally at `127.0.0.1` while you try it
+  ([registry.md](registry.md#a-private-registry-on-this-computer)).
+- **Change one thing at a time and call it again:** a query, a rule's threshold, a lever's values. `clm-call` shows
+  each branch's figures, the limits that rejected it and every step, which is what an agent will read.
 
 ## The reference agent and the number check
 
