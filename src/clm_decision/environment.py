@@ -13,7 +13,7 @@ import re
 import sys
 import threading
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 from typing import Protocol
@@ -23,6 +23,8 @@ from .graph import Graph
 from .scenario import CLM_BACKENDS, DEFAULT_CLM, ScenarioError, StepError
 
 BACKENDS = ("builtin", "neo4j")
+INFORMATION_KINDS = ("fact", "estimate", "supplied")
+QUERY_KINDS = ("fact", "estimate")
 TYPES = ("string", "number", "integer", "boolean", "list")
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
 # A DMN input's typeRef, as a parameter type; "any" is not checked
@@ -49,6 +51,31 @@ class Query:
     params: dict[str, str]
     function: str | None
     cypher: str | None
+    kind: str = "fact"
+
+
+@dataclass(frozen=True)
+class RuleInfo:  # pylint: disable=too-many-instance-attributes
+    """What a person needs to know about a rule: what it says, why it exists, who owns it and which version applies;
+    the kinds of decision it governs, the rules it depends on and the information it needs."""
+    statement: str
+    reason: str
+    owner: str
+    version: str
+    governs: tuple[str, ...]
+    depends_on: tuple[str, ...]
+    needs: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Information:
+    """A piece of information a rule needs: a recorded fact or an estimate a query provides, or something the person
+    asking must supply."""
+    name: str
+    description: str
+    kind: str
+    query: str | None
+    unit: str | None
 
 
 @dataclass(frozen=True)
@@ -59,6 +86,7 @@ class Decision:
     params: dict[str, str]
     table: Table | None
     function: str | None
+    rule: RuleInfo | None = None
 
 
 @dataclass(frozen=True)
@@ -150,6 +178,12 @@ class Environment:  # pylint: disable=too-many-instance-attributes
     scenarios: dict[str, ScenarioDef]
     judges: dict[str, Judge]
     clm: Clm | None
+    information: dict[str, Information] = field(default_factory=dict)
+
+    def topics(self) -> list[str]:
+        """The kinds of decision the rules govern."""
+        return sorted({topic for decision in self.decisions.values() if decision.rule
+                       for topic in decision.rule.governs})
 
 
 def _read(path: Path) -> dict:
@@ -315,7 +349,69 @@ def _query(name: str, table: dict, functions: ModuleType, backend: str) -> Query
     cypher = table.get("cypher")
     if backend == "neo4j" and (not isinstance(cypher, str) or not cypher.strip()):
         raise ScenarioError(f"{where}.cypher: the neo4j backend runs a query's cypher; write one")
-    return Query(name, _text(table, "description", where), _params(table, where), function, cypher)
+    kind = table.get("kind", "fact")
+    if kind not in QUERY_KINDS:
+        raise ScenarioError(f"{where}.kind: must be {' or '.join(QUERY_KINDS)}, not {kind!r}")
+    return Query(name, _text(table, "description", where), _params(table, where), function, cypher, kind)
+
+
+def _names(table: dict, key: str, where: str) -> tuple[str, ...]:
+    value = table.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ScenarioError(f"{where}.{key}: must be a list of names")
+    return tuple(value)
+
+
+def _rule(table: dict, where: str) -> RuleInfo | None:
+    if "rule" not in table:
+        return None
+    rule = _table(table, "rule", where)
+    where = f"{where}.rule"
+    return RuleInfo(*(_text(rule, key, where) for key in ("statement", "reason", "owner", "version")),
+                    *(_names(rule, key, where) for key in ("governs", "depends_on", "needs")))
+
+
+def _information(name: str, table: dict, queries: dict[str, Query]) -> Information:
+    where = f"information.{name}"
+    kind = table.get("kind")
+    if kind not in INFORMATION_KINDS:
+        raise ScenarioError(f"{where}.kind: must be {', '.join(INFORMATION_KINDS)}, not {kind!r}")
+    query = table.get("query")
+    if kind == "supplied":
+        if query is not None:
+            raise ScenarioError(f"{where}.query: supplied information comes from the person asking, not a query")
+    else:
+        query = _text(table, "query", where)
+        if query not in queries:
+            raise ScenarioError(f"{where}.query: unknown query '{query}'")
+        if queries[query].kind != kind:
+            raise ScenarioError(f"{where}.kind: '{kind}', but query {query} gives a {queries[query].kind}")
+    unit = _text(table, "unit", where) if "unit" in table else None
+    return Information(name, _text(table, "description", where), kind, query, unit)
+
+
+def _check_rules(decisions: dict[str, Decision], information: dict[str, Information]) -> None:
+    """Every rule's dependencies are rules and its needs are information; no rule depends on itself."""
+    for name, decision in decisions.items():
+        if decision.rule is None:
+            continue
+        where = f"decisions.{name}.rule"
+        for other in decision.rule.depends_on:
+            if other not in decisions or decisions[other].rule is None:
+                raise ScenarioError(f"{where}.depends_on: '{other}' is not a decision with a rule")
+        for item in decision.rule.needs:
+            if item not in information:
+                raise ScenarioError(f"{where}.needs: unknown information '{item}'")
+    for name in decisions:
+        path, todo = [], [(name, 0)]
+        while todo:
+            current, depth = todo.pop()
+            del path[depth:]
+            if current in path:
+                raise ScenarioError(f"decisions.{name}.rule.depends_on: a cycle: {' -> '.join(path + [current])}")
+            path.append(current)
+            rule = decisions[current].rule
+            todo.extend((other, depth + 1) for other in (rule.depends_on if rule else ()))
 
 
 def _decision(name: str, table: dict, folder: Path, functions: ModuleType) -> Decision:
@@ -323,8 +419,9 @@ def _decision(name: str, table: dict, folder: Path, functions: ModuleType) -> De
     description = _text(table, "description", where)
     if ("dmn" in table) == ("function" in table):
         raise ScenarioError(f"{where}: needs either dmn or function")
+    rule = _rule(table, where)
     if "function" in table:
-        return Decision(name, description, _params(table, where), None, _function(table, where, functions))
+        return Decision(name, description, _params(table, where), None, _function(table, where, functions), rule)
     path = folder / _text(table, "dmn", where)
     if not path.is_file():
         raise ScenarioError(f"{where}.dmn: no file {path.name}")
@@ -336,7 +433,7 @@ def _decision(name: str, table: dict, folder: Path, functions: ModuleType) -> De
         if _bad_name(item):
             raise ScenarioError(f"{where}.dmn: input '{item}' cannot be a parameter: {_bad_name(item)}")
     params = {item: _DMN_TYPES.get(kind.rsplit(":", 1)[-1], "any") for item, kind in zip(dmn.inputs, dmn.types)}
-    return Decision(name, description, params, dmn, None)
+    return Decision(name, description, params, dmn, None, rule)
 
 
 def _scenario(name: str, table: dict, functions: ModuleType, decisions: dict) -> ScenarioDef:
@@ -377,6 +474,8 @@ def load_environment(path: str | Path, backend: str | None = None) -> Environmen
     queries = {name: _query(name, table, functions, settings.backend)
                for name, table in _parts(data, "queries").items()}
     decisions = {name: _decision(name, table, folder, functions) for name, table in _parts(data, "decisions").items()}
+    information = {name: _information(name, table, queries) for name, table in _parts(data, "information").items()}
+    _check_rules(decisions, information)
     calculations = {name: Calculation(name, _text(table, "description", f"calculations.{name}"),
                                       _params(table, f"calculations.{name}"),
                                       _function(table, f"calculations.{name}", functions))
@@ -388,4 +487,4 @@ def load_environment(path: str | Path, backend: str | None = None) -> Environmen
     # Connected last, once everything else is known to be right
     return Environment(path, _text(head, "name", "environment"), _text(head, "description", "environment"), graph,
                        functions, _connector(settings, graph, functions), queries, decisions, calculations, scenarios,
-                       judges, clm)
+                       judges, clm, information)

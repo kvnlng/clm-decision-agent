@@ -40,6 +40,7 @@ class Rule:
     id: str
     tests: tuple[Callable[[Any], bool], ...]
     values: tuple[Any, ...]
+    entries: tuple[str, ...] = ()       # each input entry as written, for showing the row to a person
 
 
 @dataclass(frozen=True)
@@ -165,7 +166,7 @@ def _rules(path: Path, table, inputs: int, outputs: int) -> list[Rule]:
             results = tuple(_literal(_text(value)) for value in values)
         except ValueError as error:
             raise DmnError(f'{path.name} rule {rule_id}: unsupported expression "{error}"') from error
-        rules.append(Rule(rule_id, tests, results))
+        rules.append(Rule(rule_id, tests, results, tuple(_text(entry).strip() or "-" for entry in entries)))
     return rules
 
 
