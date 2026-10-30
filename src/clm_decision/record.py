@@ -37,7 +37,7 @@ def record_key(scenario: Scenario) -> bytes | None:
     try:
         Fernet(key)
     except ValueError as error:
-        raise ScenarioError(f"record: {source} is not a key made by `python record.py newkey`") from error
+        raise ScenarioError(f"record: {source} is not a key made by `clm-record newkey`") from error
     return key
 
 

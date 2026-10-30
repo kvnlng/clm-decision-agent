@@ -1,6 +1,6 @@
 """The server.json that lists one deployment of the decision server in an MCP registry.
 
-    uv run python registry.py examples/tariff/environment.toml --name io.github.you/tariff \\
+    uv run clm-registry examples/tariff/environment.toml --name io.github.you/tariff \\
         --url https://decisions.example.org/mcp --version 0.1.0 [--auth key|oauth] [--out server.json]
 
 The server is offered as a remote server: an address an MCP client connects to over Streamable HTTP. With the

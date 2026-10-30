@@ -27,7 +27,7 @@ example's `create_ticket` puts the text in the ticket.
 informing tools return. Keep the key secret, and serve over HTTPS when callers are elsewhere:
 [serving.md](serving.md).
 
-The language model named in `[generator]` is used only by `synthesize.py`, which sends it the
+The language model named in `[generator]` is used only by `clm-synthesize`, which sends it the
 scenario's route descriptions and examples, not requests.
 
 ## Keep sensitive text out
@@ -54,9 +54,9 @@ key_file = "record.key"               # encrypt each line with this key ...
 ```
 
 - The file is created readable by its owner only.
-- `uv run python record.py newkey record.key` makes a key. Keep it out of version control,
+- `uv run clm-record newkey record.key` makes a key. Keep it out of version control,
   and back it up: a record written with a key cannot be read without it.
-- `uv run python record.py purge <scenario>` deletes the record, after asking.
+- `uv run clm-record purge <scenario>` deletes the record, after asking.
 - `purge` only deletes a file that is plainly a corrections record, since `path` can name any
   file.
 

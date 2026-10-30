@@ -14,14 +14,14 @@ First train CLM for the scenario, once; the repository does not include trained 
 [Training CLM for the scenario](#training-clm-for-the-scenario)):
 
 ```bash
-uv run python train.py examples/service_desk/scenario.toml
+uv run clm-train examples/service_desk/scenario.toml
 ```
 
 Then two terminals, from the project root.
 
 ```bash
 uv run python examples/service_desk/mock_tracker.py                    # terminal 1: the mock tracker
-uv run python chat.py examples/service_desk/scenario.toml --review     # terminal 2: the test chat
+uv run clm-chat examples/service_desk/scenario.toml --review     # terminal 2: the test chat
 ```
 
 Try:
@@ -62,7 +62,7 @@ As released, CLM routes poorly, and the repository does not include trained head
 made on the machine that serves them. One command fits CLM to this scenario in under a minute:
 
 ```bash
-uv run python train.py examples/service_desk/scenario.toml
+uv run clm-train examples/service_desk/scenario.toml
 ```
 
 That learns from `scenario.examples.jsonl` (example messages written by a language model and
@@ -71,7 +71,7 @@ you have corrected. It saves the result in `scenario.heads/`, which the server p
 next start.
 
 To write a fresh set of examples, delete `scenario.examples.jsonl` and run
-`uv run python synthesize.py examples/service_desk/scenario.toml`.
+`uv run clm-synthesize examples/service_desk/scenario.toml`.
 
 What it did here: on 55 held-back generated examples, 51% with the released heads and 98%
 trained. Through the server, the trained heads routed 15 of 17 hand-written test messages

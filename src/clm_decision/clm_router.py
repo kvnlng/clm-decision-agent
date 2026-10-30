@@ -10,13 +10,17 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from huggingface_hub import snapshot_download
 
 from . import clm_schema
 from . import tracing
-from .clm_common import HEADS_FILE, ClmError
+from .clm_common import HEADS_FILE, ClmError, not_installed
 from .record import route_verdicts
 from .scenario import Scenario
+
+try:
+    from huggingface_hub import snapshot_download
+except ModuleNotFoundError as missing:
+    raise not_installed(missing) from missing
 
 ROUTE_QID = "__route__"
 
@@ -133,21 +137,21 @@ def load_engine(backend: str, model_id: str, heads_dir=None, device: str | None 
 def _stale(folder: Path, facts: dict, scenario: Scenario) -> str | None:
     """Why the trained heads in `folder` do not fit the scenario, or None if they do."""
     if facts.get("routing_sha") != scenario.routing_sha:
-        return f"the routes or routing question changed since {folder.name} was trained; run train.py again"
+        return f"the routes or routing question changed since {folder.name} was trained; run clm-train again"
     if facts.get("clm_backend", "mlx") != scenario.clm_backend:
-        return f"{folder.name} was trained with the {facts.get('clm_backend', 'mlx')} backend; run train.py again"
+        return f"{folder.name} was trained with the {facts.get('clm_backend', 'mlx')} backend; run clm-train again"
     if facts.get("clm_model_id") != scenario.clm_model_id:
         return (f"{folder.name} was trained for a different CLM build, {facts.get('clm_model_id')}; "
-                f"run train.py again")
+                f"run clm-train again")
     # Heads trained before questions were trained have no questions_sha: they learned the route alone
     for name, sha in facts.get("questions_sha", {}).items():
         if name.startswith("options of ") and name[len("options of "):] not in scenario.routes:
             continue
         if sha != scenario.question_sha(name):
             what = f"the {name}" if name.startswith("options of ") else f"the question '{name}'"
-            return f"{what} changed since {folder.name} was trained; run train.py again"
+            return f"{what} changed since {folder.name} was trained; run clm-train again"
     if not (folder / HEADS_FILE).is_file():
-        return f"the weights file is missing from {folder.name}; run train.py again"
+        return f"the weights file is missing from {folder.name}; run clm-train again"
     return None
 
 
@@ -162,7 +166,7 @@ def resolve_heads(scenario: Scenario):
         facts = None
     if not isinstance(facts, dict):
         return None, (f"released heads ({folder.name} has no trained heads yet; "
-                      f"create them with synthesize.py and train.py)")
+                      f"create them with clm-synthesize and clm-train)")
     reason = _stale(folder, facts, scenario)
     return (None, f"released heads ({reason})") if reason else (folder, f"trained heads from {folder.name}")
 

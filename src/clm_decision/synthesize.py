@@ -1,6 +1,6 @@
 """Write labelled example messages for each route of a scenario, using the scenario's generator.
 
-    uv run python synthesize.py <scenario>
+    uv run clm-synthesize <scenario>
 
 The examples are what `train.py` learns from. They are the generator's idea of how people write,
 so read some of them: the file is plain text, one example per line, and can be edited.
@@ -16,9 +16,14 @@ import json
 import re
 import sys
 
+from .clm_common import not_installed
 from .dataset import examples_path, save_examples
-from .generator import GeneratorError, make_generator
 from .scenario import load_for_command
+
+try:
+    from .generator import GeneratorError, make_generator
+except ModuleNotFoundError as missing:
+    raise SystemExit(f"error: {not_installed(missing)}") from missing
 
 STYLES = (
     "one short sentence, straight to the point",

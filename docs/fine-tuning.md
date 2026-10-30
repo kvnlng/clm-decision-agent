@@ -12,7 +12,7 @@ those vectors are projected so that each message lands nearest the right answer.
 
 The route is always trained. So is every question your examples label, and the choice among a
 route's options where examples say which option was right; all of them in the same heads.
-Questions no example labels, and the tool check, stay as released, and `train.py` reports how
+Questions no example labels, and the tool check, stay as released, and `clm-train` reports how
 far training moved their answers.
 
 **Rare answers count as much as common ones.** If one example in ten is urgent, each urgent one
@@ -23,12 +23,12 @@ otherwise "never urgent" would score 90% and look like success.
 
 **1. Get labelled examples.** Either source works, and they combine:
 
-- `uv run python synthesize.py <scenario>` has the language model write example messages for
+- `uv run clm-synthesize <scenario>` has the language model write example messages for
   each route, in eight styles, into `<scenario>.examples.jsonl`. Say who is writing and to what
   with `[synthesize] messages` in the scenario; the example's is "messages that staff might send
   to a help desk". Read some of the results. The file is plain text, one example per line, and
   you can edit it or add your own: `{"text": "<a message>", "route": "<a route's name>"}`
-- Correct decisions in the test chat's review mode (`chat.py <scenario> --review`). Every route
+- Correct decisions in the test chat's review mode (`clm-chat <scenario> --review`). Every route
   you correct is a real example.
 
 **Labelling the questions and options.** A line can also say the right answer to each question,
@@ -51,7 +51,7 @@ and for a route with options, which option is right. Only what a line labels is 
   (`{"situation": ["..."], "lookup": ["..."]}`), each question hears only the facts its
   `[tools.inform]` settings give it, and the facts of `[routing] inform` tools are added to the
   text the route is trained on, as when deciding.
-- A line that names a question the scenario lacks, or an answer it cannot take, stops `train.py`
+- A line that names a question the scenario lacks, or an answer it cannot take, stops `clm-train`
   with the line's number.
 
 **2. Say where to save the result**, in the scenario:
@@ -64,7 +64,7 @@ heads = "scenario.heads"
 **3. Train.**
 
 ```bash
-uv run python train.py <scenario>
+uv run clm-train <scenario>
 ```
 
 It prints accuracy before and after on examples it held back, and how far the answers to your
@@ -102,7 +102,7 @@ Two earlier measurements on a similar problem (issue reports, 450 generated exam
 
 - Most of the gain arrived by 100 to 200 examples.
 - A plain classifier on the encoder's vectors did about as well as trained heads. Trained
-  heads were chosen because CLM then keeps doing every job through one model. `train.py`
+  heads were chosen because CLM then keeps doing every job through one model. `clm-train`
   prints the classifier's accuracy beside its own so you can see the comparison on your data.
 
 ## Reading the numbers
@@ -113,7 +113,7 @@ Two earlier measurements on a similar problem (issue reports, 450 generated exam
 - **Small tests move.** With the earlier five-route example, the trained result on 20 messages
   was 16 or 17 depending on the run.
 - **Look at confidence as well as accuracy.** A wrong route below the confidence threshold is
-  marked uncertain and runs no action; a confident wrong one acts. Run `evaluate.py` on your
+  marked uncertain and runs no action; a confident wrong one acts. Run `clm-evaluate` on your
   corrections to choose the threshold.
 
 ## When to train again

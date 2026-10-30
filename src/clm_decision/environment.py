@@ -105,9 +105,9 @@ class Clm:
         load."""
         with self._lock:
             if self._engine is None:
-                from . import clm_router  # pylint: disable=import-outside-toplevel
-                # Loading can fail in many ways (no MLX, no network for the download, no memory)
+                # Loading can fail in many ways (no clm extra, no MLX, no network for the download, no memory)
                 try:
+                    from . import clm_router  # pylint: disable=import-outside-toplevel
                     self._engine = clm_router.load_engine(self.backend, self.model_id, None, self.device)
                 except Exception as error:  # pylint: disable=broad-exception-caught
                     # Download errors run to several lines; the first says what failed

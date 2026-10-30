@@ -72,14 +72,14 @@ Two calls worth knowing about:
 
 ```bash
 uv run python examples/crowdstrike/write_examples.py      # 1,500 examples and 600 check cases
-uv run python train.py examples/crowdstrike/scenario.toml
-uv run python evaluate.py examples/crowdstrike/scenario.toml --cases examples/crowdstrike/check.cases.jsonl
+uv run clm-train examples/crowdstrike/scenario.toml
+uv run clm-evaluate examples/crowdstrike/scenario.toml --cases examples/crowdstrike/check.cases.jsonl
 ```
 
 `write_examples.py` writes 250 examples of each route from seed 1's day, with the facts and
 options the scenario's own tools give, and 100 check cases of each route from seed 0's day, the
 demo's. A fifth of the message pool's lines, chosen by a hash of the text, is kept out of training
-and used only for the check cases, so the check is on wording CLM never saw. `evaluate.py --cases` runs them
+and used only for the check cases, so the check is on wording CLM never saw. `clm-evaluate --cases` runs them
 through the server's own steps, without actions, reports every result per class and suggests a
 confidence threshold.
 
@@ -118,7 +118,7 @@ unseen cases (each count is right of all with that answer):
 
 ```bash
 uv run python examples/crowdstrike/replay_day.py examples/crowdstrike/scenario.toml --hub ATL
-uv run --group demo python examples/crowdstrike/compare_models.py examples/crowdstrike/scenario.toml
+uv run python examples/crowdstrike/compare_models.py examples/crowdstrike/scenario.toml
 ```
 
 `replay_day.py` plays the coordinator. It starts the decision server (with `--trace`), sends the day's
@@ -225,7 +225,7 @@ Agent 812 of 1,454, No_Action 1,262 of 1,532.
   tools (searching for alternatives, holding seats) take about 3 ms a call.
 - **Too many go to a person.** The confidence threshold of 0.6 keeps wrong answers not marked uncertain to 5%,
   but marks 43% of all bookings uncertain, most of them answered rightly. Lowering it is not the answer:
-  on the check cases `evaluate.py --cases` suggests 0.63 as the lowest threshold at which the routes kept
+  on the check cases `clm-evaluate --cases` suggests 0.63 as the lowest threshold at which the routes kept
   are 90% right. Better-trained heads are what would move that balance.
 - Seats lost to a race are real: 28 bookings were offered a journey whose last seats went to someone
   decided a moment earlier, and their hold failed visibly, as it should.

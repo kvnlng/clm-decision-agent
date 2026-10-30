@@ -1,20 +1,20 @@
 # Serving decisions to agents
 
-`server.py` offers a scenario's decisions as MCP tools (see the table in the
+`clm-server` offers a scenario's decisions as MCP tools (see the table in the
 [README](../README.md#the-servers-tools)). It loads CLM once at start-up, then answers calls
 until it is stopped. Messages about loading go to stderr.
 
 ## On this computer, over stdio
 
 ```bash
-uv run python server.py my_scenario.toml [--review]
+uv run clm-server my_scenario.toml [--review]
 ```
 
 The client starts the server and talks to it through its standard input and output. This is
 what the test chat does, and what a desktop agent such as Claude Code does with a local server:
 
 ```bash
-claude mcp add decisions -- uv run --directory /path/to/this/repo python server.py my_scenario.toml
+claude mcp add decisions -- uv run --directory /path/to/this/repo clm-server my_scenario.toml
 ```
 
 Loading CLM takes a few seconds; if a client gives up waiting, raise its start-up timeout
@@ -24,7 +24,7 @@ Loading CLM takes a few seconds; if a client gives up waiting, raise its start-u
 
 ```bash
 export DECISION_SERVER_KEY=<a long random key>
-uv run python server.py my_scenario.toml --http [--host 127.0.0.1] [--port 8000] [--review]
+uv run clm-server my_scenario.toml --http [--host 127.0.0.1] [--port 8000] [--review]
 ```
 
 - The server answers at `http://<host>:<port>/mcp`, using MCP's Streamable HTTP transport,
@@ -46,7 +46,7 @@ issuer, such as Entra ID or Keycloak. Each caller is then known by name, and acc
 and taken away in the identity provider. The server only checks tokens; it never issues them.
 
 ```bash
-uv run python server.py my_scenario.toml --http --auth oauth \
+uv run clm-server my_scenario.toml --http --auth oauth \
     --issuer https://login.example.org/realms/clm --audience decision-server --scope decide \
     --resource-url https://decisions.example.org/mcp
 ```
@@ -104,7 +104,7 @@ uv run python server.py my_scenario.toml --http --auth oauth \
 Try it with the test chat, which then uses the same connection an outside agent would:
 
 ```bash
-DECISION_SERVER_KEY=<the key> uv run python chat.py --url http://127.0.0.1:8000/mcp
+DECISION_SERVER_KEY=<the key> uv run clm-chat --url http://127.0.0.1:8000/mcp
 ```
 
 Other clients:
@@ -131,8 +131,8 @@ was waiting for CLM, encoding text, the heads, each of the scenario's tools, and
 corrections. It also counts the texts and tokens CLM encoded, and how many it found in its cache.
 
 ```bash
-uv run python server.py my_scenario.toml --http --trace calls.jsonl
-uv run python trace_report.py calls.jsonl
+uv run clm-server my_scenario.toml --http --trace calls.jsonl
+uv run clm-trace-report calls.jsonl
 ```
 
 The report gives each kind of call (`decide`, `check_call`, ...) a table of its stages, with the
@@ -206,7 +206,7 @@ docker run --rm --gpus all -v clm-hf:/cache -e CLM_TEST_BACKEND=torch clm-decisi
 - Models download into `/cache`; the volume keeps them between runs.
 - `--gpus all` needs the NVIDIA container toolkit, and a driver of version 580 or later on the host. Without it, CLM runs on the CPU, which
   needs about 24 GB of memory for the container and is slow.
-- To serve from the container, run `uv run python server.py <scenario> --http --host 0.0.0.0`
+- To serve from the container, run `uv run clm-server <scenario> --http --host 0.0.0.0`
   with the key variable set (`-e DECISION_SERVER_KEY=...`) and the port published (`-p 8000:8000`).
 
 What has been checked so far is listed in [models.md](models.md#what-has-been-checked), including

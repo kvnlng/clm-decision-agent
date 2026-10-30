@@ -1,4 +1,4 @@
-"""Tests for oauth.py and `server.py --auth oauth`: tokens from an OIDC issuer, checked as JWTs."""
+"""Tests for oauth.py and `clm-server --auth oauth`: tokens from an OIDC issuer, checked as JWTs."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import asyncio

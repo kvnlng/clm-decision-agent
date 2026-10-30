@@ -91,9 +91,9 @@ on the wrong side. The judgement is a reason for a person to look at Borealis Mo
 ## Run it
 
 ```bash
-uv run python server.py examples/tariff/environment.toml     # serve it over MCP, for any agent
-uv run --group demo python decision_agent.py examples/tariff/environment.toml "With the recent tariff hikes in Region A, should we shift our primary component sourcing for Product Line X to Region B, and what would be the impact on our Q3 profit margins and SLA delivery times?"
-uv run --group demo python decision_agent.py examples/tariff/environment.toml "..." --backend ollama   # gemma4:26b
+uv run clm-server examples/tariff/environment.toml     # serve it over MCP, for any agent
+uv run clm-agent examples/tariff/environment.toml "With the recent tariff hikes in Region A, should we shift our primary component sourcing for Product Line X to Region B, and what would be the impact on our Q3 profit margins and SLA delivery times?"
+uv run clm-agent examples/tariff/environment.toml "..." --backend ollama   # gemma4:26b
 uv run python examples/tariff/judge_news.py   # the news measurement, with CLM
 ```
 
@@ -105,7 +105,7 @@ loaded before the `news` column has no news, so `sourcing_with_news` would find 
 
 ```bash
 set -a; . ./.neo4j-local.env; set +a
-uv run --group graph python load_graph.py examples/tariff/environment.toml
+uv run clm-load-graph examples/tariff/environment.toml
 ```
 
 ## What happened when the models were asked

@@ -161,7 +161,7 @@ def test_heads_are_used_only_when_they_match_the_scenario(write_scenario):
     path = write_scenario(BASE_TOML.replace('model_id = "test/clm"', 'model_id = "test/clm"\nheads = "my.heads"'))
     scenario = load_scenario(path)
     folder, note = resolve_heads(scenario)
-    assert folder is None and "train.py" in note
+    assert folder is None and "clm-train" in note
 
     scenario.clm_heads.mkdir()
     (scenario.clm_heads / "training.json").write_text(json.dumps({"routing_sha": "something else"}))
@@ -201,7 +201,7 @@ def test_heads_trained_on_the_other_backend_are_not_used(write_scenario):
     facts = {"routing_sha": scenario.routing_sha, "clm_model_id": "test/clm"}     # no backend: made with mlx
     (scenario.clm_heads / "training.json").write_text(json.dumps(facts))
     assert resolve_heads(scenario) == (None, "released heads (my.heads was trained with the mlx backend; "
-                                             "run train.py again)")
+                                             "run clm-train again)")
     (scenario.clm_heads / "training.json").write_text(json.dumps({**facts, "clm_backend": "torch"}))
     assert resolve_heads(scenario) == (scenario.clm_heads, "trained heads from my.heads")
 
@@ -294,7 +294,7 @@ def test_changing_a_trained_questions_wording_makes_heads_stale(write_scenario):
     changed = load_scenario(write_scenario(
         scenario.path.read_text(encoding="utf-8").replace("Is this urgent?", "Is it urgent?")))
     assert resolve_heads(changed) == (None, "released heads (the question 'urgent' changed since my.heads was "
-                                            "trained; run train.py again)")
+                                            "trained; run clm-train again)")
 
 
 def test_changing_an_untrained_question_does_not(write_scenario):
@@ -313,3 +313,13 @@ def test_a_trained_ranking_goes_stale_with_its_instructions(write_scenario):
     scenario = load_scenario(write_scenario(text))
     assert scenario.question_sha("options of Billing") != load_scenario(
         write_scenario(text.replace("Which refund", "What refund"))).question_sha("options of Billing")
+
+
+def test_without_the_clm_extra_the_error_says_how_to_install_it(monkeypatch):
+    import importlib  # pylint: disable=import-outside-toplevel
+    import sys  # pylint: disable=import-outside-toplevel
+    from clm_decision.clm_common import ClmError  # pylint: disable=import-outside-toplevel
+    monkeypatch.setitem(sys.modules, "huggingface_hub", None)      # None makes the import fail, as when not installed
+    monkeypatch.delitem(sys.modules, "clm_decision.clm_router")
+    with pytest.raises(ClmError, match=r"^CLM is not installed \(huggingface_hub is missing\): install the clm extra"):
+        importlib.import_module("clm_decision.clm_router")

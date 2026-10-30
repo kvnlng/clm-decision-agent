@@ -1,7 +1,7 @@
 """Copy an environment's CSV graph into Neo4j, replacing what the database holds.
 
     set -a; . ./.neo4j-local.env; set +a
-    uv run --group graph python load_graph.py ENVIRONMENT
+    uv run clm-load-graph ENVIRONMENT
 
 Each node becomes (:Node:<Kind> {id, kind, name, ...}), its kind capitalised as a label, and each edge a relationship
 whose type is the relation in capitals, with the edge's other columns as its properties. The connection comes from

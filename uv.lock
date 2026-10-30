@@ -259,57 +259,64 @@ source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "httpx" },
+    { name = "mcp" },
+    { name = "numpy" },
+    { name = "pyjwt", extra = ["crypto"] },
+]
+
+[package.optional-dependencies]
+agent = [
+    { name = "anthropic" },
+]
+clm = [
     { name = "huggingface-hub" },
     { name = "langchain-core" },
     { name = "langchain-ollama" },
     { name = "langchain-openai" },
-    { name = "mcp" },
     { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "numpy" },
-    { name = "pyjwt", extra = ["crypto"] },
     { name = "safetensors" },
     { name = "torch" },
     { name = "transformers" },
 ]
+neo4j = [
+    { name = "neo4j" },
+]
 
 [package.dev-dependencies]
-demo = [
-    { name = "anthropic" },
-]
 dev = [
+    { name = "clm-decision-agent", extra = ["agent", "clm", "neo4j"] },
     { name = "pylint" },
     { name = "pytest" },
-]
-graph = [
-    { name = "neo4j" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "anthropic", marker = "extra == 'agent'", specifier = ">=2.1.0,<3" },
     { name = "cryptography", specifier = ">=50.0.2" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "huggingface-hub" },
-    { name = "langchain-core", specifier = ">=1.6.6,<2" },
-    { name = "langchain-ollama", specifier = ">=1.1.0,<2" },
-    { name = "langchain-openai", specifier = ">=1.6.7" },
+    { name = "huggingface-hub", marker = "extra == 'clm'" },
+    { name = "langchain-core", marker = "extra == 'clm'", specifier = ">=1.6.6,<2" },
+    { name = "langchain-ollama", marker = "extra == 'clm'", specifier = ">=1.1.0,<2" },
+    { name = "langchain-openai", marker = "extra == 'clm'", specifier = ">=1.6.7" },
     { name = "mcp", specifier = ">=2.3,<3" },
-    { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.32" },
-    { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.32.0" },
+    { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'clm'", specifier = ">=0.32" },
+    { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'clm'", specifier = ">=0.32.0" },
+    { name = "neo4j", marker = "extra == 'neo4j'", specifier = ">=6,<7" },
     { name = "numpy" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15.1" },
-    { name = "safetensors" },
-    { name = "torch", specifier = ">=2.4" },
-    { name = "transformers", specifier = ">=5.18.0" },
+    { name = "safetensors", marker = "extra == 'clm'" },
+    { name = "torch", marker = "extra == 'clm'", specifier = ">=2.4" },
+    { name = "transformers", marker = "extra == 'clm'", specifier = ">=5.18.0" },
 ]
+provides-extras = ["clm", "neo4j", "agent"]
 
 [package.metadata.requires-dev]
-demo = [{ name = "anthropic", specifier = ">=2.1.0,<3" }]
 dev = [
+    { name = "clm-decision-agent", extras = ["clm", "neo4j", "agent"] },
     { name = "pylint", specifier = ">=4.1.2" },
     { name = "pytest", specifier = ">=8" },
 ]
-graph = [{ name = "neo4j", specifier = ">=6,<7" }]
 
 [[package]]
 name = "colorama"

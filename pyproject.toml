@@ -1,38 +1,57 @@
 [project]
 name = "clm-decision-agent"
 version = "0.1.0"
-description = "A decision server: CLM makes a scenario's decisions and offers them to agents over MCP"
+description = "A framework for decision servers: checkable decisions offered to agents over MCP"
 requires-python = ">=3.12,<3.15"          # torch has no wheels for 3.15 yet
 license = "Apache-2.0"
 license-files = ["LICENSE"]
+readme = "README.md"
+# The core serves environments (graph, DMN, calculations, scenarios), with keys or OAuth, and writes registry entries
 dependencies = [
+    "mcp>=2.3,<3",
+    "httpx>=0.28.1",
+    "pyjwt[crypto]>=2.15.1",
+    "cryptography>=50.0.2",
+    "numpy",
+]
+
+[project.optional-dependencies]
+# CLM: scenarios, judges, training, and the language models that write examples
+clm = [
     # MLX runs only on Apple Silicon Macs; elsewhere CLM runs with torch
     "mlx>=0.32; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "mlx-lm>=0.32.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "torch>=2.4",
-    "numpy",
     "safetensors",
     "transformers>=5.18.0",
     "huggingface_hub",
     "langchain-core>=1.6.6,<2",
     "langchain-ollama>=1.1.0,<2",
-    "httpx>=0.28.1",
     "langchain-openai>=1.6.7",
-    "cryptography>=50.0.2",
-    "mcp>=2.3,<3",
-    "pyjwt[crypto]>=2.15.1",
 ]
+neo4j = ["neo4j>=6,<7"]
+# The reference agent with Claude; with Ollama it needs nothing more
+agent = ["anthropic>=2.1.0,<3"]
+
+[project.scripts]
+clm-server = "clm_decision.server:main"
+clm-agent = "clm_decision.decision_agent:main"
+clm-chat = "clm_decision.chat:main"
+clm-new-scenario = "clm_decision.new_scenario:main"
+clm-train = "clm_decision.train:main"
+clm-evaluate = "clm_decision.evaluate:main"
+clm-synthesize = "clm_decision.synthesize:main"
+clm-record = "clm_decision.record:main"
+clm-load-graph = "clm_decision.load_graph:main"
+clm-registry = "clm_decision.registry:main"
+clm-trace-report = "clm_decision.trace_report:main"
 
 [dependency-groups]
-demo = [
-    "anthropic>=2.1.0,<3",
-]
+# A checkout gets every extra, so `uv sync` and the tests have everything
 dev = [
+    "clm-decision-agent[clm,neo4j,agent]",
     "pylint>=4.1.2",
     "pytest>=8",
-]
-graph = [
-    "neo4j>=6,<7",
 ]
 
 [build-system]

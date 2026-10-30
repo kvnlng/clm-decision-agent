@@ -13,7 +13,7 @@ about patient care out of scope.
 
 ## Two kinds of decision
 
-The same server, `server.py`, serves either of two files.
+The same server, `clm-server`, serves either of two files.
 
 | | A **scenario** (`scenario.toml`) | An **environment** (`environment.toml`) |
 |---|---|---|
@@ -28,7 +28,7 @@ Both follow one rule: **the owner writes every route, rule, query, calculation a
 outside reaches a decision only through the owner's tools.** The agent chooses among them; it does not invent them.
 
 ```
-any MCP agent ──MCP──▶ server.py ──┬── scenario:    CLM (MLX on a Mac, PyTorch on a GPU) + informing and acting tools
+any MCP agent ──MCP──▶ clm-server ─┬── scenario:    CLM (MLX on a Mac, PyTorch on a GPU) + informing and acting tools
  (Claude, a local                  │
   model, Databricks)               └── environment: graph (built in, or Neo4j) + DMN + calculations + scenarios
                                                     + judges (CLM, loaded on the first judgement)
@@ -49,28 +49,43 @@ You need Python 3.12 to 3.14, [uv](https://docs.astral.sh/uv/), and for CLM one 
   Python's headers first (on Ubuntu, `sudo apt install build-essential python3.12-dev`). A plain CPU works too,
   slowly. There is a `Dockerfile`: [docs/serving.md](docs/serving.md#in-docker).
 
-An environment without judges needs no CLM and no GPU.
+**In a checkout,** `uv sync` installs everything, with the tests' tools, and `uv run` gives the commands below.
+
+**As a package,** with no checkout, for example in a Databricks notebook or as a tool on another computer. The core
+serves environments without judges, with keys or OAuth, in about 50 MB; extras add the rest:
 
 ```bash
-uv sync
+pip install "clm-decision-agent @ git+https://github.com/kvnlng/clm-decision-agent"               # the core
+pip install "clm-decision-agent[clm,neo4j,agent] @ git+https://github.com/kvnlng/clm-decision-agent"
+uv tool install "clm-decision-agent[clm] @ git+https://github.com/kvnlng/clm-decision-agent"       # commands only
 ```
+
+| Extra | Adds |
+|---|---|
+| `clm` | CLM (MLX on a Mac, PyTorch elsewhere): scenarios, judges, training and the example writer |
+| `neo4j` | The Neo4j driver, for an environment's graph in Neo4j |
+| `agent` | The Anthropic SDK, for `clm-agent` with Claude; with Ollama it needs nothing more |
+
+A command that needs a missing extra says which, in one line. The commands are `clm-server`, `clm-agent`,
+`clm-chat`, `clm-new-scenario`, `clm-synthesize`, `clm-train`, `clm-evaluate`, `clm-record`, `clm-load-graph`,
+`clm-registry` and `clm-trace-report`; each takes `--help`. In Python, the framework is `clm_decision`.
 
 ### An environment: the tariff example
 
 ```bash
-uv run python server.py examples/tariff/environment.toml       # serve it over MCP, for any agent
-uv run --group demo python decision_agent.py examples/tariff/environment.toml \
+uv run clm-server examples/tariff/environment.toml               # serve it over MCP, for any agent
+uv run clm-agent examples/tariff/environment.toml \
     "Should we shift Product Line X's sourcing to Region B, and what would it do to Q3 margin and SLA times?"
 ```
 
-`decision_agent.py` is a reference agent. It uses Claude through the Anthropic API by default (your usual Anthropic
+`clm-agent` is a reference agent. It uses Claude through the Anthropic API by default (your usual Anthropic
 credentials), or a local model through Ollama with `--backend ollama` (`gemma4:26b` by default). It answers from the
 server's tools, then lists any figure no tool returned. In the example, buying half from Region B is the best branch
 no limit rejects; buying all of it would earn more but is rejected, because both Region B suppliers depend on one
 raw-material provider. The `sourcing_with_news` scenario adds a CLM judge of supplier news, and rejects Region B over
 a strike.
 
-The graph can live in Neo4j (`uv sync --group graph`, then `load_graph.py`):
+The graph can live in Neo4j (the `neo4j` extra, then `clm-load-graph`):
 [docs/environment.md](docs/environment.md#on-neo4j).
 
 ### A scenario: the service desk
@@ -79,9 +94,9 @@ The repository does not include trained heads, and as released CLM routes the ex
 train it first. It takes under a minute on a Mac or a GPU:
 
 ```bash
-uv run python train.py examples/service_desk/scenario.toml
-uv run python examples/service_desk/mock_tracker.py                          # terminal 1: a stand-in issue tracker
-uv run python chat.py examples/service_desk/scenario.toml --review           # terminal 2: the test chat
+uv run clm-train examples/service_desk/scenario.toml
+uv run python examples/service_desk/mock_tracker.py              # terminal 1: a stand-in issue tracker
+uv run clm-chat examples/service_desk/scenario.toml --review     # terminal 2: the test chat
 ```
 
 The test chat starts the decision server and talks to it over MCP, as an outside agent would:
@@ -97,9 +112,9 @@ you> I need access to the oncology registry for an audit, needed this week
 
 ### Your own
 
-- **A scenario:** `uv run python new_scenario.py my_scenario` starts a folder with a working scenario, mock tools
+- **A scenario:** `uv run clm-new-scenario my_scenario` starts a folder with a working scenario, mock tools
   and labelled cases. [docs/walkthrough.md](docs/walkthrough.md) builds one step by step. In review mode, `/correct
-  <route>` saves a correction; `synthesize.py`, `train.py` and `evaluate.py` train CLM on examples and corrections
+  <route>` saves a correction; `clm-synthesize`, `clm-train` and `clm-evaluate` train CLM on examples and corrections
   and score it ([docs/fine-tuning.md](docs/fine-tuning.md)).
 - **An environment:** copy `examples/tariff/` and replace its graph, rules and functions
   ([docs/environment.md](docs/environment.md)).
@@ -110,16 +125,16 @@ A mistake in either file stops start-up with one line naming the setting.
 
 ```bash
 export DECISION_SERVER_KEY=<a long random key>
-uv run python server.py my_scenario/scenario.toml --http                      # a shared key
-uv run python server.py examples/tariff/environment.toml --http --auth oauth \
-    --issuer https://login.example.org/realms/corp --audience decisions       # tokens from your identity provider
+uv run clm-server my_scenario/scenario.toml --http                   # a shared key
+uv run clm-server examples/tariff/environment.toml --http --auth oauth \
+    --issuer https://login.example.org/realms/corp --audience decisions   # tokens from your identity provider
 ```
 
 - **Over HTTP**, with a shared key or with OAuth: JWTs from any OIDC issuer (Keycloak, Entra ID and others), checked
   for signature, issuer, audience, expiry and scopes. [docs/serving.md](docs/serving.md).
-- **In an MCP registry**, so agents can find a deployment: `registry.py` writes its `server.json`, for the public
+- **In an MCP registry**, so agents can find a deployment: `clm-registry` writes its `server.json`, for the public
   registry or a private one. [docs/registry.md](docs/registry.md).
-- **Traced**: `--trace` records where each call's time went and who called; `trace_report.py` summarises it.
+- **Traced**: `--trace` records where each call's time went and who called; `clm-trace-report` summarises it.
 - **Databricks:** not tried yet. [docs/serving.md](docs/serving.md#databricks) says what it needs.
 
 **A scenario's server acts without asking.** When a decision calls for an acting tool, the tool runs at once, unless
@@ -169,20 +184,27 @@ Measured on an M5 Max with 64 GB unless a GPU is named. Small tests, said plainl
 
 ## Layout
 
-| File | Purpose |
+The framework is the package `clm_decision`, in `src/clm_decision/`:
+
+| Module | Purpose |
 |---|---|
-| `server.py` | The decision server: MCP over stdio or HTTP, for a scenario or an environment |
+| `server.py` | `clm-server`: MCP over stdio or HTTP, for a scenario or an environment |
 | `scenario.py`, `decision.py`, `tools.py` | Reads a scenario; one decision; loads its tools |
 | `environment.py`, `environment_server.py`, `engine.py` | Reads an environment; its parts as MCP tools; queries, decisions, scenarios and judges run with every step recorded |
-| `graph.py`, `graph_neo4j.py`, `load_graph.py`, `dmn.py` | The built-in graph; named queries on Neo4j; copying a CSV graph into it; DMN decision tables |
-| `decision_agent.py`, `number_check.py` | The reference agent, Claude or a local model; the check that every figure came from a tool |
-| `oauth.py`, `registry.py` | OAuth tokens from any OIDC issuer; the `server.json` for an MCP registry |
-| `tracing.py`, `trace_report.py` | `--trace`, and its summary |
-| `chat.py` | The test chat for scenarios, an MCP client |
+| `graph.py`, `graph_neo4j.py`, `load_graph.py`, `dmn.py` | The built-in graph; named queries on Neo4j; `clm-load-graph`; DMN decision tables |
+| `decision_agent.py`, `number_check.py` | `clm-agent`, Claude or a local model; the check that every figure came from a tool |
+| `oauth.py`, `registry.py` | OAuth tokens from any OIDC issuer; `clm-registry`, the `server.json` for an MCP registry |
+| `tracing.py`, `trace_report.py` | `--trace`, and `clm-trace-report` |
+| `chat.py` | `clm-chat`, the test chat for scenarios |
 | `clm_router.py`, `clm_torch.py`, `clm_schema.py`, `clm_common.py` | CLM with MLX or PyTorch; routing and the reuse of corrections; the authors' question format, unchanged |
-| `record.py`, `evaluate.py`, `new_scenario.py` | Corrections and their scoring; starting a scenario folder |
-| `dataset.py`, `synthesize.py`, `train.py`, `generator.py` | Training, and the language model that writes examples |
-| `examples/service_desk/`, `examples/crowdstrike/`, `examples/tariff/` | The worked examples |
+| `record.py`, `evaluate.py`, `new_scenario.py` | Corrections (`clm-record`) and their scoring (`clm-evaluate`); `clm-new-scenario` |
+| `dataset.py`, `synthesize.py`, `train.py`, `generator.py` | `clm-train`; `clm-synthesize` and the language model that writes examples |
+
+Outside the package:
+
+| Folder | Purpose |
+|---|---|
+| `examples/` | The worked examples: `service_desk/`, `crowdstrike/` and `tariff/` |
 | `docs/` | Guides: scenario, walkthrough, environment, serving, registry, fine-tuning, models, findings, data handling |
 | `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads CLM; `CLM_TEST_BACKEND=torch` for torch) |
 | `Dockerfile` | The project on Linux, for the torch backend |

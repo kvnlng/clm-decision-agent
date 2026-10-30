@@ -1,7 +1,7 @@
 """Did an edit to scenario.toml, or training, make the decisions better?
 
-    uv run python evaluate.py SCENARIO                     # replay the record of corrections
-    uv run python evaluate.py SCENARIO --cases FILE        # score a file of labelled cases
+    uv run clm-evaluate SCENARIO                     # replay the record of corrections
+    uv run clm-evaluate SCENARIO --cases FILE        # score a file of labelled cases
 
 A labelled case is one JSON line: {"text", "context" (optional), "route", "option" (optional, the right
 option's id), "answers" (optional, {question: the right answer})}. The cases go through the server's own
@@ -21,6 +21,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from . import clm_schema
+from .clm_common import ClmError
 from .dataset import reviewed_row
 from .decision import decide_many, routed_text
 from .record import route_verdicts, load_records, record_key
@@ -303,8 +304,8 @@ def _main_cases(path: Path, scenario_path: str) -> int:
     except (ScenarioError, OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    from .clm_router import ClmError, make_router  # pylint: disable=import-outside-toplevel
     try:
+        from .clm_router import make_router  # pylint: disable=import-outside-toplevel
         router, clm_note = make_router(scenario)
     except ClmError as error:
         print(f"error: {error}", file=sys.stderr)
@@ -335,12 +336,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if not records:
         print(f"No corrections in {scenario.record_path}. "
-              f"Correct some decisions with `python chat.py {args.scenario} --review` first.")
+              f"Correct some decisions with `clm-chat {args.scenario} --review` first.")
         return 0
     if skipped:
         print(f"{skipped} unreadable lines skipped in {scenario.record_path.name}")
-    from .clm_router import ClmError, make_router  # pylint: disable=import-outside-toplevel
     try:
+        from .clm_router import make_router  # pylint: disable=import-outside-toplevel
         router, clm_note = make_router(scenario)
         print(f"CLM is using {clm_note}.")
         if "trained heads from" in clm_note:

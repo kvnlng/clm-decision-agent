@@ -1,4 +1,4 @@
-"""Summarise a trace written by server.py --trace: how many calls, how fast, and where the time went."""
+"""Summarise a trace written by clm-server --trace: how many calls, how fast, and where the time went."""
 from __future__ import annotations
 
 import argparse
@@ -95,7 +95,7 @@ def report(summary: dict[str, dict]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     """Command-line entry point; returns the process exit code."""
-    parser = argparse.ArgumentParser(description="Summarise a trace written by server.py --trace.")
+    parser = argparse.ArgumentParser(description="Summarise a trace written by clm-server --trace.")
     parser.add_argument("trace", help="the trace file")
     args = parser.parse_args(argv)
     try:

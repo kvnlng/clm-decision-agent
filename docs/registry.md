@@ -7,10 +7,10 @@ not the framework.
 
 ## The entry
 
-`registry.py` writes a deployment's `server.json`, the format registries take:
+`clm-registry` writes a deployment's `server.json`, the format registries take:
 
 ```bash
-uv run python registry.py examples/tariff/environment.toml --name io.github.you/tariff \
+uv run clm-registry examples/tariff/environment.toml --name io.github.you/tariff \
     --url https://decisions.example.org/mcp --version 0.1.0 [--auth key|oauth] \
     [--description "..."] [--repository https://github.com/you/repo]
 ```
@@ -26,7 +26,7 @@ uv run python registry.py examples/tariff/environment.toml --name io.github.you/
   environment it defaults to the environment's name; a CLM scenario has no description of its
   own, so give one.
 - **The address must be HTTPS and name a host.** The registry refuses `localhost` and
-  `127.0.0.1`. `registry.py` also refuses every other bare IP address, so that an entry names a
+  `127.0.0.1`. `clm-registry` also refuses every other bare IP address, so that an entry names a
   host other computers can find. An internal name such as `decisions.corp.internal` is
   accepted. A path before `/mcp`, as behind a gateway, is fine
   (`https://gateway.corp/tools/decisions/mcp`).
@@ -93,7 +93,7 @@ run natively.
 4. Write and publish the entry:
 
    ```bash
-   uv run python registry.py examples/tariff/environment.toml \
+   uv run clm-registry examples/tariff/environment.toml \
        --name io.modelcontextprotocol.anonymous/clm-tariff \
        --url https://decisions.corp.internal/mcp --version 0.1.0 \
        --description "Sourcing decisions over a supplier graph, DMN rules and what-if scenarios"

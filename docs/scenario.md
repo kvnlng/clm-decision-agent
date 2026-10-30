@@ -65,7 +65,7 @@ criteria = { reporting = "Dashboards and reports", data = "Tables and data quali
 ```
 
 The answers are returned to the agent and given to the acting tools. They are not trained by
-`train.py`; check them by eye before relying on them.
+`clm-train`; check them by eye before relying on them.
 
 ## Rules
 
@@ -118,7 +118,7 @@ still returned.
 
 Give each tool a mock backend as well as the live one, switched by a setting such as
 `backend = "mock"`, so the scenario can be trained and checked before real systems are connected:
-`new_scenario.py` writes tools that way ([walkthrough.md](walkthrough.md#4-act-on-it-acting-tools)).
+`clm-new-scenario` writes tools that way ([walkthrough.md](walkthrough.md#4-act-on-it-acting-tools)).
 
 Make clients and connections once, in `configure()`, and reuse them: an HTTP client made on every
 call can cost more than CLM's part of the decision. The server calls tools from several threads
@@ -239,9 +239,9 @@ In review mode the owner's corrections are saved to the record. Afterwards:
 - `correct` can also say the right answers (`"answers": {"urgency": 2, "identifiable": true}`) and,
   on a route with options, the right option's id. The route's informing tools run again to find
   the facts and options, so send the same `context` as with `decide`;
-- `evaluate.py` replays the corrections, answers and options too, and suggests a confidence
+- `clm-evaluate` replays the corrections, answers and options too, and suggests a confidence
   threshold;
-- `train.py` learns from them.
+- `clm-train` learns from them.
 
 Where the record is kept and how to encrypt it: [data-handling.md](data-handling.md). The
 models: [models.md](models.md).
@@ -254,5 +254,5 @@ models: [models.md](models.md).
 | `[clm] model_id` | the 8-bit MLX build, or the authors' release with torch | Which CLM to download |
 | `[clm] device` | the first of cuda, mps, cpu | Torch only: where CLM runs |
 | `[clm] heads` | none | Folder of trained heads, beside the scenario |
-| `[generator]` | MLX Qwen3-4B | The language model `synthesize.py` uses; not used by the server. On Linux, use `ollama` or `openai` |
-| `[synthesize] messages` | "messages that a person might send to an assistant" | What `synthesize.py` asks the language model to write: say who is writing and to what |
+| `[generator]` | MLX Qwen3-4B | The language model `clm-synthesize` uses; not used by the server. On Linux, use `ollama` or `openai` |
+| `[synthesize] messages` | "messages that a person might send to an assistant" | What `clm-synthesize` asks the language model to write: say who is writing and to what |

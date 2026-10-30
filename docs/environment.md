@@ -12,7 +12,7 @@ Line X's sourcing to Region B, and what would it do to the Q3 margin and our del
 | Knowledge graph | What exists and how it is connected | The data, and named queries over it |
 | Decision models | What the rules, formulas and limits say | DMN decision tables, or rule functions |
 | Scenarios | Which alternatives there are, and which is best | The levers and their allowed values, the objective and the limits |
-| Agent | Turns a question into calls, and the results into an answer | Nothing: any MCP client can be the agent, and `decision_agent.py` is a reference one |
+| Agent | Turns a question into calls, and the results into an answer | Nothing: any MCP client can be the agent, and `clm-agent` is a reference one |
 
 **The owner writes every query, rule, calculation and lever; the agent only chooses among them.** The agent never
 writes a graph query, states a rule or invents a lever value, and it is told never to calculate. So every figure and
@@ -39,11 +39,11 @@ nodes = "graph/nodes.csv"
 edges = "graph/edges.csv"
 ```
 
-`server.py` serves the folder's decisions when the file has an `[environment]` table, and does not load CLM:
+`clm-server` serves the folder's decisions when the file has an `[environment]` table, and does not load CLM:
 
 ```bash
-uv run python server.py examples/tariff/environment.toml            # MCP over stdio
-DECISION_SERVER_KEY=... uv run python server.py examples/tariff/environment.toml --http
+uv run clm-server examples/tariff/environment.toml            # MCP over stdio
+DECISION_SERVER_KEY=... uv run clm-server examples/tariff/environment.toml --http
 ```
 
 `--http`, the key and `--trace` work as for scenarios ([serving.md](serving.md)); review mode is for CLM scenarios
@@ -106,11 +106,12 @@ ORDER BY s.id"""
   same columns as the function, so the branch functions work on either graph.
 - **On neo4j, every query needs `cypher`;** a query without one stops loading, naming it. Nothing else changes:
   decisions, calculations and scenarios run as before.
-- **The driver** is the optional `graph` dependency group: `uv sync --group graph`.
+- **The driver** is the optional `neo4j` extra: `pip install 'clm-decision-agent[neo4j]'`, or `uv sync` in a
+  checkout.
 - **The server connects when it starts.** A database it cannot reach, or a password that is wrong, stops start-up
   with one line naming the URI; a query that fails is reported in one line naming the query.
 
-`load_graph.py` copies the environment's CSV graph into the database, **replacing what it holds**:
+`clm-load-graph` copies the environment's CSV graph into the database, **replacing what it holds**:
 
 - each node becomes `(:Node:<Kind> {id, kind, name, ...})`, with its kind capitalised as a label;
 - each edge becomes a relationship whose type is the relation in capitals, carrying the edge's other columns;
@@ -120,11 +121,11 @@ ORDER BY s.id"""
 brew install neo4j                        # natively; it brings Java 21
 neo4j-admin dbms set-initial-password "$NEO4J_PASSWORD"      # before the first start
 neo4j start
-uv run --group graph python load_graph.py examples/tariff/environment.toml
+uv run clm-load-graph examples/tariff/environment.toml
 ```
 
 Keep the password in a git-ignored file such as `.neo4j-local.env` (`NEO4J_PASSWORD=...`) and load it into the
-shell with `set -a; . ./.neo4j-local.env; set +a`. With it set, `uv run --group graph pytest -m slow
+shell with `set -a; . ./.neo4j-local.env; set +a`. With it set, `uv run pytest -m slow
 tests/test_graph_neo4j.py` loads the tariff example into the database and checks that every query and every branch
 give the same results on both graphs. Point it only at a database you can wipe.
 
@@ -260,10 +261,10 @@ All of them only read. Each tool's description is the owner's.
 ## The reference agent and the number check
 
 ```bash
-uv run --group demo python decision_agent.py examples/tariff/environment.toml "QUESTION"
+uv run clm-agent examples/tariff/environment.toml "QUESTION"
 ```
 
-It starts `server.py` for the environment and gives a model the server's tools and nothing else:
+It starts `clm-server` for the environment and gives a model the server's tools and nothing else:
 
 - **Claude** through the Anthropic API, the default, with Opus 5.5 unless `--model` says otherwise;
 - **a local model** through Ollama: `--backend ollama`, with `gemma4:26b` unless `--model` says otherwise, at

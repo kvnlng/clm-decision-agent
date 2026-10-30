@@ -1,6 +1,6 @@
 """The reference agent: a model answers a question from an environment's tools, over MCP, and its figures are checked.
 
-    uv run --group demo python decision_agent.py ENVIRONMENT "QUESTION" [--backend claude|ollama] [--model M]
+    uv run clm-agent ENVIRONMENT "QUESTION" [--backend claude|ollama] [--model M]
                                                  [--out FILE]
 
 It starts server.py for the environment, offers the model the server's tools and nothing else, and lets it call them
@@ -233,7 +233,12 @@ async def _main(args) -> int:
             chat = OllamaChat(await stack.enter_async_context(httpx.AsyncClient()), args.model or LOCAL_MODEL,
                               args.ollama_url)
         else:
-            import anthropic  # pylint: disable=import-outside-toplevel
+            try:
+                import anthropic  # pylint: disable=import-outside-toplevel
+            except ModuleNotFoundError as missing:
+                print(f"error: Claude needs the agent extra ({missing.name} is missing): pip install "
+                      "'clm-decision-agent[agent]', or use --backend ollama", file=sys.stderr)
+                return 2
             chat = ClaudeChat(anthropic.AsyncAnthropic(), args.model or MODEL)
         session = await stack.enter_async_context(Client(params))
         started = time.perf_counter()

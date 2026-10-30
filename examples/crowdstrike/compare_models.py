@@ -1,12 +1,12 @@
 """Compare CLM with language models on the check cases: the same message, facts and options for every model.
 
-    uv run --group demo python examples/crowdstrike/compare_models.py examples/crowdstrike/scenario.toml \\
+    uv run python examples/crowdstrike/compare_models.py examples/crowdstrike/scenario.toml \\
         [--models clm,local,sonnet,haiku] [--limit N] [--workers 8]
 
 Each language model reads the policy's route descriptions, the passenger's message, the situation's facts
 and the journeys every rebooking route could book, fetched beforehand; it answers with a route and, where
 it applies, a journey. It calls no tools. CLM decides the same cases through the server's own steps, without
-actions. Scores are per route, as evaluate.py --cases gives them, plus an accuracy weighted by each route's share of
+actions. Scores are per route, as clm-evaluate --cases gives them, plus an accuracy weighted by each route's share of
 the day; time and cost are scaled to the day's 99,806 decisions. Results go to runs/, which git ignores.
 """
 import argparse

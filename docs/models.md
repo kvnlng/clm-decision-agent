@@ -1,7 +1,7 @@
 # Choosing and pointing at models
 
 A scenario names two models: CLM, which the decision server uses for every decision, and a
-language model, which only `synthesize.py` uses to write training examples. Both can run in
+language model, which only `clm-synthesize` uses to write training examples. Both can run in
 the same process or on a server.
 
 ## CLM
@@ -77,10 +77,10 @@ precision. The first start downloads about 16 GB.
 
 ### Heads belong to one backend
 
-Heads trained with `train.py` record the backend and the CLM build they were trained with.
+Heads trained with `clm-train` record the backend and the CLM build they were trained with.
 The MLX build's encoder is compressed and the torch backend's is not, so heads trained on one
 do not fit the other. The server checks this, says so at start-up, and uses the released heads
-until you run `train.py` on the machine you serve from. There is no conversion; training takes
+until you run `clm-train` on the machine you serve from. There is no conversion; training takes
 under a minute.
 
 The heads file itself has the same layout for both backends.

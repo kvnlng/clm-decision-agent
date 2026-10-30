@@ -205,3 +205,13 @@ def test_clm_heads_is_refused_for_judges(write_environment):
     toml = ENV_TOML + JUDGE_TOML.replace('backend = "mlx"\n', 'backend = "mlx"\nheads = "heads"\n')
     with pytest.raises(ScenarioError, match="^clm.heads: not supported for judges yet"):
         load_environment(write_environment(toml))
+
+
+def test_a_judge_without_the_clm_extra_says_how_to_install_it(write_environment, monkeypatch):
+    import sys  # pylint: disable=import-outside-toplevel
+    monkeypatch.setitem(sys.modules, "huggingface_hub", None)
+    monkeypatch.delitem(sys.modules, "clm_decision.clm_router")
+    monkeypatch.delattr("clm_decision.clm_router")             # so that `from . import clm_router` imports it again
+    env = load_environment(write_environment(ENV_TOML + JUDGE_TOML))
+    with pytest.raises(StepError, match=r"^judge risk: CLM could not load: CLM is not installed \(huggingface_hub"):
+        run_judgement(env, "risk", {"text": "a strike is called"})

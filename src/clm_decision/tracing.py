@@ -1,4 +1,4 @@
-"""Optional tracing of the server's work: one JSON line per call to an MCP tool (server.py --trace).
+"""Optional tracing of the server's work: one JSON line per call to an MCP tool (clm-server --trace).
 
 Each line says how long the call took and where the time went: waiting for CLM, encoding text, the
 heads, the scenario's tools, and matching stored corrections. The engines and the decision report into

@@ -1,6 +1,6 @@
 """Fine-tune CLM's two heads on a scenario's labelled examples, so routing fits the scenario.
 
-    uv run python train.py <scenario>
+    uv run clm-train <scenario>
 
 The encoder stays frozen. Each example's state (the message plus the routing question) and each
 route's description are encoded once; training then only adjusts the two small heads so that a
@@ -22,11 +22,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import torch
-from safetensors.numpy import save_file
-from torch import nn
 
 from . import clm_schema
+from .clm_common import not_installed
+
+try:
+    import torch
+    from safetensors.numpy import save_file
+    from torch import nn
+except ModuleNotFoundError as missing:
+    raise SystemExit(f"error: {not_installed(missing)}") from missing
+
 from .clm_router import HEADS_FILE, ClmError, load_engine
 from .clm_torch import Head
 from .dataset import examples_path, load_examples, training_rows
@@ -431,7 +437,7 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-retu
         return 2
     if len(train_rows) < 20 or not test_rows:
         print(f"error: too few examples to train on ({len(train_rows)} for training, {len(test_rows)} held back). "
-              f"Run `python synthesize.py {args.scenario}` first.", file=sys.stderr)
+              f"Run `clm-synthesize {args.scenario}` first.", file=sys.stderr)
         return 2
     print(f"Loading CLM ({scenario.clm_model_id}, {scenario.clm_backend} backend)...")
     try:

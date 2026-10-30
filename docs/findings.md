@@ -1,6 +1,6 @@
 # What the traces showed
 
-The CrowdStrike example is also the benchmark: runs were traced (`server.py --trace`) before and after
+The CrowdStrike example is also the benchmark: runs were traced (`clm-server --trace`) before and after
 each change. This page records where the time went, what each change bought and what broke. The numbers
 behind it are in the [example's README](../examples/crowdstrike/README.md) and in
 [serving.md](serving.md).
@@ -65,7 +65,7 @@ The H100 decided the whole day at 50.1 a second.
 
 - **Many bookings go to a person.** With the threshold at 0.6, 5% of the day's bookings got a wrong
   route not marked uncertain, but 46% were marked uncertain, most of them answered rightly.
-  `evaluate.py --cases` puts the lowest threshold that keeps the routes 90% right at 0.63, so lowering
+  `clm-evaluate --cases` puts the lowest threshold that keeps the routes 90% right at 0.63, so lowering
   it is not the fix; better-trained heads are.
 - **Claude was more accurate, and on the Mac faster.** On 600 unseen cases Sonnet 5.5 got 82% of routes
   right, Haiku 5.5 79%, CLM 75%, at 267 against 300 ms a decision. CLM costs nothing per decision, keeps

@@ -1,16 +1,16 @@
 """Start a new scenario: a folder with a scenario file, a tools module and labelled cases to check it on.
 
-    uv run python new_scenario.py FOLDER
+    uv run clm-new-scenario FOLDER
 
 The folder holds a small working scenario for a shop's customer messages, to edit into your own:
 
     scenario.toml           routes, a question, a rule, an informing and an acting tool
     <folder>_tools.py       order_status (informing) and open_case (acting), each with a mock backend
                             and a live one to write, switched by [tools.settings] backend
-    scenario.cases.jsonl    labelled cases: `evaluate.py --cases` scores the scenario on them
+    scenario.cases.jsonl    labelled cases: `clm-evaluate --cases` scores the scenario on them
 
-Then: `synthesize.py` writes training examples, `train.py` trains the heads, `evaluate.py --cases` checks
-them and `server.py` serves the decisions. docs/walkthrough.md goes through it step by step.
+Then: `clm-synthesize` writes training examples, `clm-train` trains the heads, `clm-evaluate --cases` checks
+them and `clm-server` serves the decisions. docs/walkthrough.md goes through it step by step.
 """
 import argparse
 import json
@@ -27,7 +27,7 @@ SCENARIO = '''\
 # Keep one of the two blocks below and comment out the other.
 [clm]
 {clm}
-heads = "scenario.heads"            # trained heads, made by train.py; the released ones are used until then
+heads = "scenario.heads"            # trained heads, made by clm-train; the released ones are used until then
 
 # Only synthesize.py uses a language model, to write example messages for training
 [generator]
@@ -216,9 +216,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     scenario = write(args.folder)
     print(f"Wrote {scenario}, its tools and its cases. Next:\n"
-          f"  uv run python synthesize.py {scenario}        # training examples\n"
-          f"  uv run python train.py {scenario}\n"
-          f"  uv run python evaluate.py {scenario} --cases {args.folder / 'scenario.cases.jsonl'}")
+          f"  uv run clm-synthesize {scenario}        # training examples\n"
+          f"  uv run clm-train {scenario}\n"
+          f"  uv run clm-evaluate {scenario} --cases {args.folder / 'scenario.cases.jsonl'}")
     return 0
 
 

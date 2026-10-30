@@ -1,6 +1,6 @@
 """Named queries on Neo4j: each query's `cypher` runs with its parameters, and its rows come back as dicts.
 
-The neo4j driver is the optional `graph` dependency group (`uv sync --group graph`); it is imported only when an
+The neo4j driver is the optional `neo4j` extra; it is imported only when an
 environment's graph backend is neo4j. load_graph.py copies an environment's CSV graph into the database.
 """
 from __future__ import annotations
@@ -29,7 +29,8 @@ def connect(uri: str, user: str, password: str):
         import neo4j  # pylint: disable=import-outside-toplevel
         from neo4j.warnings import PreviewWarning  # pylint: disable=import-outside-toplevel
     except ImportError as error:
-        raise ScenarioError("graph.backend: neo4j needs the driver: run `uv sync --group graph`") from error
+        raise ScenarioError("graph.backend: neo4j needs the driver: install the neo4j extra, "
+                            "pip install 'clm-decision-agent[neo4j]'") from error
     if not uri.startswith(SCHEMES):
         raise ScenarioError(f"graph.neo4j: cannot connect to {uri}: the uri must start with "
                             f"{' or '.join(SCHEMES)}")

@@ -226,3 +226,10 @@ def test_a_server_that_stops_is_one_line(tmp_path, capsys):
     assert main([str(missing), "a question", "--backend", "ollama", "--ollama-url", "http://127.0.0.1:9"]) == 2
     err = capsys.readouterr().err
     assert "error: the decision server stopped" in err and "Traceback" not in err
+
+
+def test_claude_without_the_agent_extra_says_how_to_install_it(monkeypatch, capsys):
+    import sys  # pylint: disable=import-outside-toplevel
+    monkeypatch.setitem(sys.modules, "anthropic", None)      # None makes the import fail, as when not installed
+    assert main([str(EXAMPLE), "Should we move?"]) == 2
+    assert capsys.readouterr().err.startswith("error: Claude needs the agent extra (anthropic is missing)")
