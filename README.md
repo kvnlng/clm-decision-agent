@@ -1,15 +1,29 @@
 # CLM decision server
 
-A small framework for building **decision servers**: programs that make checkable decisions and offer them to other
-agents over [MCP](https://modelcontextprotocol.io). The owner writes down what is decided and how; an agent, for
-example one your colleagues build on Databricks, calls the server whenever it needs that decision, and every decision
-is traced to the steps that made it.
+Organisations make the same kinds of decision again and again: which team handles this request, should we change
+supplier, can we afford a new site. What decides them lives in data, rules and policy that people own, and an AI
+assistant asked directly can only guess at it.
 
-It is a prototype, built to learn how a Contrastive Language Model (CLM) behaves and to show the pattern to people
-who want to adapt it. It has not been used in production.
+This project lets the owners write that down once, as a **decision server**, and lets any AI agent call it over
+[MCP](https://modelcontextprotocol.io): Claude, a local model, or one your colleagues build on Databricks. The agent
+talks to the person; the server makes the decision and says why.
 
-**It is not for clinical decisions.** One example is a data service desk in a clinical setting; it routes questions
-about patient care out of scope.
+<p align="center"><img src="docs/images/architecture.svg" alt="Any MCP agent (Claude, a local model, Databricks) calls clm-server over MCP. The server serves a scenario (CLM with informing and acting tools) or an environment (a graph, DMN rules, calculations, scenarios of levers and CLM judges)." width="820"></p>
+
+Three ideas run through it:
+
+- **Owners write the rules; agents choose among them.** Every route, rule, query, calculation and option comes from
+  the owner, and outside information reaches a decision only through the owner's tools.
+- **Every decision can be checked.** Each one is traced to the steps that made it, figures in an agent's answer are
+  checked against what the tools returned, and a decision record sets out the rules, facts, estimates and risks
+  for whoever signs it off.
+- **Small and local where it can be.** Where the server must read language it uses a Contrastive Language Model
+  (CLM), which picks among options instead of writing text. It runs on a Mac or one GPU, so it costs little and the
+  data stays with you; in the benchmark, Claude was more accurate.
+
+It is a prototype, built to learn how CLM behaves and to show the pattern to people who want to adapt it. It has not
+been used in production, and **it is not for clinical decisions**: one example is a data service desk in a clinical
+setting, and it routes questions about patient care out of scope.
 
 ## Two kinds of decision
 
@@ -25,11 +39,6 @@ The same server, `clm-server`, serves either of two files.
 | Guide | [docs/scenario.md](docs/scenario.md), [docs/walkthrough.md](docs/walkthrough.md) | [docs/environment.md](docs/environment.md) |
 
 [examples/README.md](examples/README.md) lists the examples, what each shows and where to start.
-
-Both follow one rule: **the owner writes every route, rule, query, calculation and lever, and information from
-outside reaches a decision only through the owner's tools.** The agent chooses among them; it does not invent them.
-
-<p align="center"><img src="docs/images/architecture.svg" alt="Any MCP agent (Claude, a local model, Databricks) calls clm-server over MCP. The server serves a scenario (CLM with informing and acting tools) or an environment (a graph, DMN rules, calculations, scenarios of levers and CLM judges)." width="820"></p>
 
 A CLM does not generate text: it reads a situation and a list of options and says which option fits, with a
 probability. That makes its decisions cheap, fast, local and easy to log, test and train. CLM is described in Kwok et
