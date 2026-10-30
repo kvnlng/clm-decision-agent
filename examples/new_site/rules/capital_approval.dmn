@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="capital_approval_definitions" name="capital_approval" namespace="https://example.org/new_site">
+  <decision id="capital_approval" name="capital_approval">
+    <decisionTable id="capital_approval_table" hitPolicy="FIRST">
+      <input id="capital_approval_in1" label="investment"><inputExpression typeRef="number"><text>investment</text></inputExpression></input>
+      <output id="capital_approval_out1" name="required" typeRef="boolean"/>
+      <output id="capital_approval_out2" name="who" typeRef="string"/>
+      <output id="capital_approval_out3" name="reason" typeRef="string"/>
+      <rule id="board"><inputEntry><text>&gt; 400000</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>"the board"</text></outputEntry><outputEntry><text>"An investment above 400,000 dollars needs the board's approval"</text></outputEntry></rule>
+      <rule id="delegated"><inputEntry><text>-</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"the finance director"</text></outputEntry><outputEntry><text>"Within the finance director's authority"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

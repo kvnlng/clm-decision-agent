@@ -15,14 +15,15 @@ _RANGE_KEYS = ("low", "central", "high", "source", "as_of")
 
 
 def _information(record: dict, steps: list[dict], descriptions: dict) -> None:
-    """Add each query a run used, once per query and inputs; an estimate with its rows' ranges and sources."""
+    """Add each query a run used, once per query and inputs, with its rows; an estimate's with their ranges and
+    sources."""
     for step in steps:
         if step["kind"] != "query" or step.get("case", "central") != "central":
             continue
         item = {"query": step["name"], "kind": step.get("information", "fact"), "inputs": step["inputs"],
                 "description": descriptions.get(step["name"], "")}
-        if item["kind"] == "estimate":
-            item["rows"] = [{key: row[key] for key in _RANGE_KEYS} for row in step["result"]]
+        item["rows"] = [{key: row[key] for key in _RANGE_KEYS} for row in step["result"]] \
+            if item["kind"] == "estimate" else step["result"]
         if not any(seen["query"] == item["query"] and seen["inputs"] == item["inputs"]
                    for seen in record["information"]):
             record["information"].append(item)
@@ -106,6 +107,7 @@ def markdown(record: dict, answer: str, unsupported: list[str]) -> str:
                            f"{row['high']}; {row['source']}, {row['as_of']}")
         else:
             out.append(f"- {item['query']} {inputs} (fact): {item['description']}")
+            out += [f"  - {json.dumps(row)}" for row in item["rows"]]
     out += ["", "## Scenarios", ""]
     for scenario in record["scenarios"]:
         out.append(f"**{scenario['scenario']}**, by {scenario['objective']} "

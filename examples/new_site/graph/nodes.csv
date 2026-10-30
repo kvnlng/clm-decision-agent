@@ -1,0 +1,10 @@
+id,kind,name,profit_2024,profit_2025,reserves,net_debt,ebitda,debt_share,revenue_shortfall,spend_share,gross_margin,sqft,fit_out,wages,capture,households,rent_per_sqft,census_tract
+cedar,company,Cedar Loaf Bakeries,410000,465000,1200000,900000,780000,0.4,,,,,,,,,,
+plan,policy,Finance's planning assumptions,,,,,,,0.2,0.006,0.65,,,,,,,
+small,size,Small site,,,,,,,,,,1200,450000,220000,0.25,,,
+large,size,Large site,,,,,,,,,,2400,800000,380000,0.40,,,
+tract_3900,neighbourhood,Census Tract 39,,,,,,,,,,,,,,1500,70,003900
+tract_4102,neighbourhood,Census Tract 41.02,,,,,,,,,,,,,,2100,60,004102
+tract_6400,neighbourhood,Census Tract 64,,,,,,,,,,,,,,2300,65,006400
+tract_11500,neighbourhood,Census Tract 115,,,,,,,,,,,,,,2400,38,011500
+seattle,city,"Seattle, King County, Washington",,,,,,,,,,,,,,,,

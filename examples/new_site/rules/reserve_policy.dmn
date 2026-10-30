@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="reserve_policy_definitions" name="reserve_policy" namespace="https://example.org/new_site">
+  <decision id="reserve_policy" name="reserve_policy">
+    <decisionTable id="reserve_policy_table" hitPolicy="FIRST">
+      <input id="reserve_policy_in1" label="profitable_years"><inputExpression typeRef="number"><text>profitable_years</text></inputExpression></input>
+      <input id="reserve_policy_in2" label="share_of_reserves"><inputExpression typeRef="number"><text>share_of_reserves</text></inputExpression></input>
+      <output id="reserve_policy_out1" name="allowed" typeRef="boolean"/>
+      <output id="reserve_policy_out2" name="reason" typeRef="string"/>
+      <rule id="not_yet"><inputEntry><text>&lt; 2</text></inputEntry><inputEntry><text>&gt; 0</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"Reserves may fund expansion only after two profitable years"</text></outputEntry></rule>
+      <rule id="too_much"><inputEntry><text>-</text></inputEntry><inputEntry><text>&gt; 0.5</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"At most half the reserves may fund expansion"</text></outputEntry></rule>
+      <rule id="within"><inputEntry><text>-</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>"Within the reserve policy"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

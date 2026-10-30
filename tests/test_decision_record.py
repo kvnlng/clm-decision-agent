@@ -66,3 +66,9 @@ def test_markdown_marks_the_agents_explanation_as_unchecked(calls):
     assert "board_approval" in text and "the board" in text
     assert "demand: down -25" in text.replace(".0%", "%")
     assert "42" in text.split("## Figures no tool returned")[1]
+
+
+def test_the_record_shows_each_facts_values(calls):
+    facts = [item for item in decision_record.build("Q", calls)["information"] if item["kind"] == "fact"]
+    assert facts[0]["query"] == "suppliers" and facts[0]["rows"][0] == {"id": "S1", "region": "A", "cost": 10}
+    assert '"cost": 10' in decision_record.markdown(decision_record.build("Q", calls), "", [])

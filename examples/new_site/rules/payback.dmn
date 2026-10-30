@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="payback_definitions" name="payback" namespace="https://example.org/new_site">
+  <decision id="payback" name="payback">
+    <decisionTable id="payback_table" hitPolicy="FIRST">
+      <input id="payback_in1" label="payback_years"><inputExpression typeRef="number"><text>payback_years</text></inputExpression></input>
+      <output id="payback_out1" name="allowed" typeRef="boolean"/>
+      <output id="payback_out2" name="reason" typeRef="string"/>
+      <rule id="too_slow"><inputEntry><text>&gt; 4</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"A new site must pay back its investment within 4 years"</text></outputEntry></rule>
+      <rule id="in_time"><inputEntry><text>-</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>"Pays back within 4 years"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

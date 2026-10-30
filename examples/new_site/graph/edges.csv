@@ -1,0 +1,5 @@
+source,relation,target
+tract_3900,located_in,seattle
+tract_4102,located_in,seattle
+tract_6400,located_in,seattle
+tract_11500,located_in,seattle

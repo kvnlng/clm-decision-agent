@@ -301,9 +301,11 @@ def _risk(env: Environment, scenario, params: dict, branch: dict) -> None:
     used = {step["name"] for step in branch["steps"] if step["kind"] == "query"}
     for estimate in (name for name in scenario.uncertain if name in used):
         for case in ("low", "high"):
-            seen = _failing(_run_branch(env, scenario, params, branch["levers"], {estimate: case}))
-            if seen is not None:
-                branch["warnings"].append({"estimate": estimate, "case": case, "limit": seen[0], "reason": seen[1]})
+            run = _run_branch(env, scenario, params, branch["levers"], {estimate: case})
+            failed = [(item["decision"], item["reason"]) for item in run["rejected_by"]] or \
+                ([_failing(run)] if run["status"] == "failed" else [])
+            branch["warnings"] += [{"estimate": estimate, "case": case, "limit": limit, "reason": reason}
+                                   for limit, reason in failed]
         branch["headroom"] += [_headroom(env, scenario, params, branch, estimate, direction)
                                for direction in ("down", "up")]
 

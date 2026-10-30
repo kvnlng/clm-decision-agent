@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="stress_test_definitions" name="stress_test" namespace="https://example.org/new_site">
+  <decision id="stress_test" name="stress_test">
+    <decisionTable id="stress_test_table" hitPolicy="FIRST">
+      <input id="stress_test_in1" label="stressed_payback_years"><inputExpression typeRef="number"><text>stressed_payback_years</text></inputExpression></input>
+      <output id="stress_test_out1" name="allowed" typeRef="boolean"/>
+      <output id="stress_test_out2" name="reason" typeRef="string"/>
+      <rule id="fails_stress"><inputEntry><text>&gt; 7</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"With revenue 20% below plan, the site must still pay back within 7 years"</text></outputEntry></rule>
+      <rule id="survives"><inputEntry><text>-</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>"Pays back within 7 years with revenue 20% below plan"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

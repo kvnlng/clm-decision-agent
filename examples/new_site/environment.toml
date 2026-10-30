@@ -1,0 +1,165 @@
+# A made-up bakery chain asking whether it can open a site in an expensive area. The household incomes are real:
+# a small snapshot of the American Community Survey (README.md). docs/environment.md explains every part.
+
+[environment]
+name = "New site"
+description = """Whether Cedar Loaf Bakeries (made up) can open a new site, and where. Start with rules for the \
+topic open_site: it lists the rules, why each exists, and what the person asking must supply. The candidate \
+neighbourhoods are census tracts in Seattle: tract_3900, tract_4102, tract_6400 and tract_11500. Run \
+scenario_new_site for one neighbourhood: it compares a small and a large site, checks every rule, reports what \
+household income's uncertainty does to each, and which approvals are needed."""
+functions = "new_site_functions"
+
+[graph]
+backend = "builtin"
+nodes = "graph/nodes.csv"
+edges = "graph/edges.csv"
+
+[queries.company_finances]
+description = "The company's reserves, net debt and EBITDA in dollars, and the share of an investment financed by debt."
+params = {}
+function = "company_finances"
+
+[queries.profit_history]
+description = "The company's profit in dollars for each recorded year."
+params = {}
+function = "profit_history"
+
+[queries.planning_assumptions]
+description = """Finance's planning assumptions: the share of household income spent at bakery cafes, the gross \
+margin, and the revenue shortfall the stress test uses."""
+params = {}
+function = "planning_assumptions"
+
+[queries.site_options]
+description = """A site size's floor area in square feet, fit-out cost and yearly wages in dollars, and the share \
+of the neighbourhood's spending it is expected to capture."""
+params = { size = "string" }
+function = "site_options"
+
+[queries.neighbourhood_facts]
+description = "A neighbourhood's name, households and commercial rent in dollars per square foot a year."
+params = { neighbourhood = "string" }
+function = "neighbourhood_facts"
+
+[queries.household_income]
+description = """Median household income in the neighbourhood in dollars: the American Community Survey's estimate \
+(central) with its 90% margin of error (low and high)."""
+params = { neighbourhood = "string" }
+function = "household_income"
+kind = "estimate"
+
+[information.neighbourhood]
+description = "Which neighbourhood the site would be in (a census tract id, such as tract_4102)"
+kind = "supplied"
+
+[information.profit_history]
+description = "The company's profit for each recorded year"
+kind = "fact"
+query = "profit_history"
+
+[information.company_finances]
+description = "Reserves, net debt and EBITDA"
+kind = "fact"
+query = "company_finances"
+
+[information.household_income]
+description = "Median household income in the neighbourhood"
+kind = "estimate"
+query = "household_income"
+
+[information.site_costs]
+description = "A site's fit-out cost, wages and rent"
+kind = "fact"
+query = "site_options"
+
+[decisions.capital_approval]
+description = "Who must approve an investment of the given size in dollars."
+dmn = "rules/capital_approval.dmn"
+
+[decisions.capital_approval.rule]
+statement = "An investment above 400,000 dollars needs the board's approval; below it, the finance director's."
+reason = "Large commitments of capital are the board's to make."
+owner = "Board of directors"
+version = "2025-06"
+governs = ["open_site"]
+needs = ["site_costs"]
+
+[decisions.payback]
+description = "Whether a site pays back its investment within 4 years."
+dmn = "rules/payback.dmn"
+
+[decisions.payback.rule]
+statement = "A new site must pay back its investment within 4 years."
+reason = "Capital is limited; slower projects crowd out better ones."
+owner = "Finance"
+version = "2026-02"
+governs = ["open_site"]
+needs = ["neighbourhood", "household_income", "site_costs"]
+
+[decisions.stress_test]
+description = "Whether a site still pays back within 7 years with revenue 20% below plan."
+dmn = "rules/stress_test.dmn"
+
+[decisions.stress_test.rule]
+statement = "With revenue 20% below plan, a new site must still pay back within 7 years."
+reason = "Plans are often optimistic; a site must survive a bad start."
+owner = "Finance"
+version = "2026-02"
+governs = ["open_site"]
+depends_on = ["payback"]
+needs = ["neighbourhood", "household_income", "site_costs"]
+
+[decisions.debt_covenant]
+description = "Whether net debt after the investment stays within 1.5 times EBITDA."
+dmn = "rules/debt_covenant.dmn"
+
+[decisions.debt_covenant.rule]
+statement = "Net debt may not exceed 1.5 times EBITDA."
+reason = "The bank's loan covenant; breaching it makes the loan repayable at once."
+owner = "Finance"
+version = "2024-09"
+governs = ["open_site"]
+needs = ["company_finances", "site_costs"]
+
+[decisions.reserve_policy]
+description = "Whether the share of reserves an investment uses is allowed, given the years of profit."
+dmn = "rules/reserve_policy.dmn"
+
+[decisions.reserve_policy.rule]
+statement = "After two profitable years, up to half the reserves may fund expansion; before that, none."
+reason = "Keep a cushion for a bad year; risk savings only on a record of profit."
+owner = "Finance"
+version = "2025-11"
+governs = ["open_site"]
+needs = ["profit_history", "company_finances", "site_costs"]
+
+[calculations.site_figures]
+description = """A site's yearly revenue, gross profit and operating profit in dollars, its payback in years, and its \
+payback with revenue reduced by the stress test's shortfall, from households, income, the planning assumptions and \
+the site's costs."""
+params = { households = "number", income = "number", rent_per_sqft = "number", site = "list", assumptions = "list" }
+function = "site_figures"
+
+[calculations.financing]
+description = "How an investment is financed: the share of reserves it uses and net debt to EBITDA afterwards."
+params = { investment = "number", finances = "list" }
+function = "financing"
+
+[calculations.profitable_years]
+description = "How many of the recorded years made a profit."
+params = { history = "list" }
+function = "profitable_years"
+
+[scenarios.new_site]
+description = """Whether to open a small or large site in a neighbourhood. Every branch checks payback, the stress \
+test, the loan covenant and the reserve policy; household income is uncertain, so each kept branch also reports what \
+the estimate's low and high do, and how far income can fall before a rule fails. Ranked by operating profit."""
+params = { neighbourhood = "string" }
+levers = { size = ["small", "large"] }
+branch = "new_site_branch"
+objective = "operating_profit"
+maximise = true
+limits = ["payback", "stress_test", "debt_covenant", "reserve_policy"]
+uncertain = ["household_income"]
+approvals = ["capital_approval"]

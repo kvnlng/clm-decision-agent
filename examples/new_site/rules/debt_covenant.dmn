@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="debt_covenant_definitions" name="debt_covenant" namespace="https://example.org/new_site">
+  <decision id="debt_covenant" name="debt_covenant">
+    <decisionTable id="debt_covenant_table" hitPolicy="FIRST">
+      <input id="debt_covenant_in1" label="debt_to_ebitda"><inputExpression typeRef="number"><text>debt_to_ebitda</text></inputExpression></input>
+      <output id="debt_covenant_out1" name="allowed" typeRef="boolean"/>
+      <output id="debt_covenant_out2" name="reason" typeRef="string"/>
+      <rule id="breach"><inputEntry><text>&gt; 1.5</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"Net debt may not exceed 1.5 times EBITDA, as the loan covenant requires"</text></outputEntry></rule>
+      <rule id="within"><inputEntry><text>-</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>"Within the loan covenant"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>
