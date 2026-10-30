@@ -1,7 +1,9 @@
 # Writing an environment
 
-A scenario decides one kind of thing quickly: which route a message takes. An **environment** is for decisions that
-rest on an organisation's data, with arithmetic, policy and alternatives to compare, such as "should we move Product
+Your environment is the tools you define: queries that reach your data, actions, and your rules. A decision runs over
+it in one of two styles: routing a message with CLM ([scenario.md](scenario.md)), or weighing options against your
+rules, which this file, `environment.toml`, describes. It is for decisions that rest on an organisation's data, with
+arithmetic, policy and alternatives to compare, such as "should we move Product
 Line X's sourcing to Region B, and what would it do to the Q3 margin and our delivery terms?". Start a new one
 with `uv run clm-new-environment my_environment`: a small working environment, a team choosing where to hold an
 offsite, to edit into your own. [examples/tariff](../examples/tariff/README.md) uses everything described here.

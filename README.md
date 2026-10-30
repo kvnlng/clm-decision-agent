@@ -11,7 +11,7 @@ of times a day, such as which team handles a request, or one made once, such as 
 new site. The agent, whether Claude, a local model or one built on Databricks, talks to the person; the tools supply the
 information, and the decision comes back with its reasons.
 
-<p align="center"><img src="docs/images/architecture.svg" alt="Any MCP agent (Claude, a local model, Databricks) calls clm-server over MCP. The server serves a scenario (CLM with informing and acting tools) or an environment (a graph, DMN rules, calculations, scenarios of levers and CLM judges)." width="820"></p>
+<p align="center"><img src="docs/images/architecture.svg" alt="Any MCP agent (Claude, a local model, Databricks) calls clm-server over MCP. The server runs decisions, by routing with CLM or by weighing options against rules, over your environment: the tools you define, which reach your data, take actions and hold your rules." width="820"></p>
 
 The framework holds you to three principles:
 
@@ -24,25 +24,36 @@ The framework holds you to three principles:
   (CLM), which picks among options instead of writing text. It runs on a Mac or one GPU, so it costs little and the
   data stays with you; in the benchmark, Claude was more accurate.
 
-To build your own, pick the kind of decision below, start from an example ([examples/README.md](examples/README.md))
+To build your own, pick the style of decision below, start from an example ([examples/README.md](examples/README.md))
 or from `uv run clm-new-environment my_environment`, write your rules and tools, and serve it with `clm-server`.
 
 It is a prototype, built to learn how CLM behaves and to show the pattern to people who want to adapt it. It has not
 been used in production, and **it is not for clinical decisions**: one example is a data service desk in a clinical
 setting, and it routes questions about patient care out of scope.
 
-## Two kinds of decision
+## Your environment, and the decisions over it
 
-The same server, `clm-server`, serves either of two files.
+**Your environment is the tools you define.** Some reach data where it already lives: a query over a database or
+a knowledge graph, a look-up in an issue tracker, a public dataset. Some take actions: open a ticket, hold a seat,
+book a hotel. Some hold your rules: DMN decision tables, calculations and limits. The framework adds nothing to
+your environment; it runs your tools, records what each returned and traces every step.
 
-| | A **scenario** (`scenario.toml`) | An **environment** (`environment.toml`) |
+**A decision runs over your environment, in one of two styles:**
+
+| | **Routing** | **Weighing options** |
 |---|---|---|
-| Decides | Which route a message takes, quickly and many at once: which kind of request, how urgent, which option | Questions that rest on an organisation's data, arithmetic and policy: "should we move Product Line X to Region B, and what would it do to the Q3 margin?" |
-| Made of | Routes, the questions CLM answers, rules, and informing and acting tools | A knowledge graph with named queries, DMN decision tables, calculations, and scenarios of levers ranked by an objective with every limit checked |
-| Language model in the server | CLM, which reads the message and ranks the options | None, unless a **judge** asks CLM a yes/no question of text no rule can read, such as supplier news |
-| The calling agent | Talks to the person and acts on the decision | Chooses which parts to run and reports them; it never calculates, and `number_check.py` checks every figure in its answer |
-| Example | [service desk](examples/service_desk/README.md); [the CrowdStrike day](examples/crowdstrike/README.md), the benchmark | [tariff](examples/tariff/README.md): a made-up manufacturer after a tariff hike; [new site](examples/new_site/README.md): rules to explore, estimates with their range, risk and a decision record for an officer |
+| Decides | Which route a message takes, quickly and many at once: which kind of request, how urgent, which option | A question with alternatives to compare against your rules: "should we move Product Line X to Region B, and what would it do to the Q3 margin?" |
+| How | CLM reads the message, with facts from your informing tools, and picks the route; your acting tools then carry it out | Your queries supply the figures, your calculations work out each alternative, and your rules reject the ones that break a limit; the rest are ranked by an objective |
+| Language model in the server | CLM, which ranks the options | None, unless a **judge** asks CLM a yes/no question of text no rule can read, such as supplier news |
+| The calling agent | Talks to the person and acts on the decision | Chooses which tools and decisions to run and reports them; it never calculates, and every figure in its answer is checked |
+| Written in, today | `scenario.toml`: the routes, the questions CLM answers, and the tools | `environment.toml`: the queries over a graph, the rules, the calculations and the decisions (`[scenarios.*]`) |
+| Example | [service desk](examples/service_desk/README.md); [the CrowdStrike day](examples/crowdstrike/README.md), the benchmark | [tariff](examples/tariff/README.md); [new site](examples/new_site/README.md), with estimates, risk and a decision record |
 | Guide | [docs/scenario.md](docs/scenario.md), [docs/walkthrough.md](docs/walkthrough.md) | [docs/environment.md](docs/environment.md) |
+
+**Today each style has its own file**, and `clm-server` serves one file at a time, so a routing decision and a
+weighing decision cannot yet share one set of tools. The file names come from that history: `scenario.toml` holds a
+routing decision with its tools, and `environment.toml` holds weighing decisions with theirs. One environment serving
+both styles is a possible next step, not built.
 
 [examples/README.md](examples/README.md) lists the examples, what each shows and where to start.
 

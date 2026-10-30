@@ -1,14 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 330" width="920" height="330" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
-  <title>Any MCP agent calls clm-server, which serves a scenario or an environment</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 380" width="960" height="380" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Any MCP agent calls clm-server, which runs decisions over your environment of tools</title>
   <style>
     .bg { fill: #ffffff; }
     .box { fill: #f6f8fa; stroke: #d0d7de; }
     .server { fill: #ddf4ff; stroke: #54aeff; }
-    .scenario { fill: #fff8c5; stroke: #d4a72c; }
-    .environment { fill: #dafbe1; stroke: #4ac26b; }
-    .title { fill: #1f2328; font-size: 17px; font-weight: 600; }
-    .text { fill: #1f2328; font-size: 13.5px; }
-    .muted { fill: #59636e; font-size: 13px; }
+    .routing { fill: #fff8c5; stroke: #d4a72c; }
+    .weighing { fill: #fbefff; stroke: #c297ff; }
+    .env { fill: #dafbe1; stroke: #4ac26b; }
+    .frame { fill: none; stroke: #d0d7de; stroke-dasharray: 5 4; }
+    .title { fill: #1f2328; font-size: 16px; font-weight: 600; }
+    .text { fill: #1f2328; font-size: 13px; }
+    .muted { fill: #59636e; font-size: 12.5px; }
     .line { stroke: #59636e; stroke-width: 1.6; fill: none; }
     .head { fill: #59636e; }
     .label { fill: #59636e; font-size: 12.5px; font-weight: 600; }
@@ -16,8 +18,10 @@
       .bg { fill: #0d1117; }
       .box { fill: #161b22; stroke: #3d444d; }
       .server { fill: #0c2d4a; stroke: #1f6feb; }
-      .scenario { fill: #2e2408; stroke: #9e6a03; }
-      .environment { fill: #0f2d1a; stroke: #238636; }
+      .routing { fill: #2e2408; stroke: #9e6a03; }
+      .weighing { fill: #2a1640; stroke: #8957e5; }
+      .env { fill: #0f2d1a; stroke: #238636; }
+      .frame { stroke: #3d444d; }
       .title, .text { fill: #e6edf3; }
       .muted, .label { fill: #9198a1; }
       .line { stroke: #9198a1; }
@@ -29,41 +33,53 @@
       <path class="head" d="M0,0 L10,5 L0,10 z"/>
     </marker>
   </defs>
-  <rect class="bg" width="920" height="330" rx="12"/>
+  <rect class="bg" width="960" height="380" rx="12"/>
 
   <!-- The agent -->
-  <rect class="box" x="24" y="120" width="190" height="96" rx="10"/>
-  <text class="title" x="119" y="152" text-anchor="middle">Any MCP agent</text>
-  <text class="muted" x="119" y="176" text-anchor="middle">Claude, a local model,</text>
-  <text class="muted" x="119" y="195" text-anchor="middle">Databricks</text>
+  <rect class="box" x="20" y="142" width="160" height="96" rx="10"/>
+  <text class="title" x="100" y="176" text-anchor="middle">Any MCP agent</text>
+  <text class="muted" x="100" y="198" text-anchor="middle">Claude, a local model,</text>
+  <text class="muted" x="100" y="216" text-anchor="middle">Databricks</text>
 
-  <!-- MCP, both ways -->
-  <path class="line" d="M214,168 L286,168" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
-  <text class="label" x="250" y="158" text-anchor="middle">MCP</text>
+  <path class="line" d="M180,190 L238,190" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text class="label" x="209" y="180" text-anchor="middle">MCP</text>
 
-  <!-- The server -->
-  <rect class="server" x="288" y="128" width="150" height="80" rx="10"/>
-  <text class="title" x="363" y="164" text-anchor="middle">clm-server</text>
-  <text class="muted" x="363" y="186" text-anchor="middle">serves one of</text>
+  <!-- The server frame -->
+  <rect class="frame" x="240" y="20" width="520" height="340" rx="12"/>
+  <rect class="server" x="256" y="34" width="488" height="38" rx="8"/>
+  <text class="title" x="500" y="58" text-anchor="middle">clm-server: runs, checks and traces every step</text>
 
-  <!-- Branches -->
-  <path class="line" d="M438,152 C470,152 470,82 500,82" marker-end="url(#arrow)"/>
-  <path class="line" d="M438,184 C470,184 470,248 500,248" marker-end="url(#arrow)"/>
+  <!-- Decisions -->
+  <text class="label" x="256" y="98">DECISIONS, IN ONE OF TWO STYLES</text>
+  <rect class="routing" x="256" y="108" width="236" height="100" rx="10"/>
+  <text class="title" x="272" y="134">Routing</text>
+  <text class="text" x="272" y="158">CLM reads a message and picks</text>
+  <text class="text" x="272" y="176">the route; tools carry it out</text>
+  <text class="muted" x="272" y="198">scenario.toml</text>
 
-  <!-- Scenario -->
-  <rect class="scenario" x="502" y="24" width="394" height="116" rx="10"/>
-  <text class="title" x="520" y="52">A scenario</text>
-  <text class="muted" x="880" y="52" text-anchor="end">scenario.toml</text>
-  <text class="text" x="520" y="78">Which route a message takes, quickly and many at once</text>
-  <text class="text" x="520" y="102">• CLM: MLX on a Mac, PyTorch on a GPU</text>
-  <text class="text" x="520" y="124">• informing and acting tools</text>
+  <rect class="weighing" x="508" y="108" width="236" height="100" rx="10"/>
+  <text class="title" x="524" y="134">Weighing options</text>
+  <text class="text" x="524" y="158">Alternatives worked out, checked</text>
+  <text class="text" x="524" y="176">against rules, ranked; CLM judges</text>
+  <text class="muted" x="524" y="198">environment.toml</text>
+
+  <path class="line" d="M374,208 L374,228" marker-end="url(#arrow)"/>
+  <path class="line" d="M626,208 L626,228" marker-end="url(#arrow)"/>
 
   <!-- Environment -->
-  <rect class="environment" x="502" y="160" width="394" height="148" rx="10"/>
-  <text class="title" x="520" y="188">An environment</text>
-  <text class="muted" x="880" y="188" text-anchor="end">environment.toml</text>
-  <text class="text" x="520" y="214">Questions on an organisation's data, arithmetic and policy</text>
-  <text class="text" x="520" y="238">• a graph (built in, or Neo4j) and DMN rules</text>
-  <text class="text" x="520" y="260">• calculations and scenarios of levers</text>
-  <text class="text" x="520" y="282">• judges: CLM, loaded on the first judgement</text>
+  <rect class="env" x="256" y="230" width="488" height="116" rx="10"/>
+  <text class="title" x="272" y="256">Your environment: the tools you define</text>
+  <text class="text" x="272" y="280">• queries that reach your data</text>
+  <text class="text" x="272" y="302">• actions: open a ticket, hold a seat, book a hotel</text>
+  <text class="text" x="272" y="324">• your rules: DMN tables, calculations, limits</text>
+
+  <!-- Resources -->
+  <path class="line" d="M744,292 L796,292" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <rect class="box" x="798" y="190" width="142" height="168" rx="10"/>
+  <text class="title" x="869" y="218" text-anchor="middle">Your resources</text>
+  <text class="muted" x="869" y="246" text-anchor="middle">databases</text>
+  <text class="muted" x="869" y="268" text-anchor="middle">knowledge graphs</text>
+  <text class="muted" x="869" y="290" text-anchor="middle">issue trackers</text>
+  <text class="muted" x="869" y="312" text-anchor="middle">booking systems</text>
+  <text class="muted" x="869" y="334" text-anchor="middle">public data</text>
 </svg>

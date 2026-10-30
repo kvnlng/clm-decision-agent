@@ -1,6 +1,9 @@
 # Writing a scenario
 
-A scenario is one TOML file that says which decisions the server makes. Start from
+Your environment is the tools you define: queries that reach your data, actions, and your rules. A decision runs over
+it in one of two styles: weighing options against your rules ([environment.md](environment.md)), or routing a
+message with CLM, which this file, `scenario.toml`, describes: one TOML file that says which routing decisions the
+server makes and which tools they use. Start from
 [examples/service_desk/scenario.toml](../examples/service_desk/scenario.toml), which uses
 everything described here. A mistake in the file stops start-up with one line naming the
 setting.
