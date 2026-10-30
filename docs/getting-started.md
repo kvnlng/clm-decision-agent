@@ -38,7 +38,7 @@ probability. That makes its decisions cheap, fast, local and easy to log, test a
 al. (2026) and published at [Contrastive-LM/CLM](https://github.com/Contrastive-LM/CLM); this project runs the
 authors' released model with PyTorch, or the community MLX builds of it on a Mac.
 
-## Getting started
+## Installing
 
 You need Python 3.12 to 3.14, [uv](https://docs.astral.sh/uv/), and for CLM one of:
 

@@ -90,7 +90,7 @@ Outside the package:
 | Folder | Purpose |
 |---|---|
 | `examples/` | The worked examples: `service_desk/`, `crowdstrike/`, `tariff/` and `new_site/` |
-| `docs/` | Guides: scenario, walkthrough, environment, serving, registry, fine-tuning, models, findings, data handling |
+| `docs/` | Guides: getting started, scenario, walkthrough, environment, serving, registry, fine-tuning, models, findings, data handling |
 | `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads CLM; `CLM_TEST_BACKEND=torch` for torch) |
 
 ## Licence
