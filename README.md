@@ -29,12 +29,7 @@ The same server, `clm-server`, serves either of two files.
 Both follow one rule: **the owner writes every route, rule, query, calculation and lever, and information from
 outside reaches a decision only through the owner's tools.** The agent chooses among them; it does not invent them.
 
-```
-any MCP agent ──MCP──▶ clm-server ─┬── scenario:    CLM (MLX on a Mac, PyTorch on a GPU) + informing and acting tools
- (Claude, a local                  │
-  model, Databricks)               └── environment: graph (built in, or Neo4j) + DMN + calculations + scenarios
-                                                    + judges (CLM, loaded on the first judgement)
-```
+<p align="center"><img src="docs/images/architecture.svg" alt="Any MCP agent (Claude, a local model, Databricks) calls clm-server over MCP. The server serves a scenario (CLM with informing and acting tools) or an environment (a graph, DMN rules, calculations, scenarios of levers and CLM judges)." width="820"></p>
 
 A CLM does not generate text: it reads a situation and a list of options and says which option fits, with a
 probability. That makes its decisions cheap, fast, local and easy to log, test and train. CLM is described in Kwok et
