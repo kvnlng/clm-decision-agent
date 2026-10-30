@@ -109,6 +109,8 @@ class ScenarioDef:  # pylint: disable=too-many-instance-attributes
     objective: str
     maximise: bool
     limits: tuple[str, ...]
+    uncertain: tuple[str, ...] = ()     # estimate queries whose low and high are tried, and headroom searched
+    approvals: tuple[str, ...] = ()     # decisions saying whether someone must approve: listed, never rejecting
 
 
 @dataclass(frozen=True)
@@ -436,7 +438,7 @@ def _decision(name: str, table: dict, folder: Path, functions: ModuleType) -> De
     return Decision(name, description, params, dmn, None, rule)
 
 
-def _scenario(name: str, table: dict, functions: ModuleType, decisions: dict) -> ScenarioDef:
+def _scenario(name: str, table: dict, functions: ModuleType, decisions: dict, queries: dict) -> ScenarioDef:
     where = f"scenarios.{name}"
     levers = _table(table, "levers", where)
     if not levers:
@@ -456,9 +458,17 @@ def _scenario(name: str, table: dict, functions: ModuleType, decisions: dict) ->
     maximise = table.get("maximise", True)
     if not isinstance(maximise, bool):
         raise ScenarioError(f"{where}.maximise: must be true or false")
+    uncertain = _names(table, "uncertain", where)
+    for query in uncertain:
+        if query not in queries or queries[query].kind != "estimate":
+            raise ScenarioError(f"{where}.uncertain: '{query}' is not an estimate query")
+    approvals = _names(table, "approvals", where)
+    for decision in approvals:
+        if decision not in decisions:
+            raise ScenarioError(f"{where}.approvals: unknown decision '{decision}'")
     return ScenarioDef(name, _text(table, "description", where), _params(table, where),
                        {lever: tuple(values) for lever, values in levers.items()},
-                       branch, _text(table, "objective", where), maximise, tuple(limits))
+                       branch, _text(table, "objective", where), maximise, tuple(limits), uncertain, approvals)
 
 
 def load_environment(path: str | Path, backend: str | None = None) -> Environment:
@@ -480,7 +490,7 @@ def load_environment(path: str | Path, backend: str | None = None) -> Environmen
                                       _params(table, f"calculations.{name}"),
                                       _function(table, f"calculations.{name}", functions))
                     for name, table in _parts(data, "calculations").items()}
-    scenarios = {name: _scenario(name, table, functions, decisions)
+    scenarios = {name: _scenario(name, table, functions, decisions, queries)
                  for name, table in _parts(data, "scenarios").items()}
     clm = _clm(data)
     judges = {name: _judge(name, table, clm) for name, table in _parts(data, "judges").items()}

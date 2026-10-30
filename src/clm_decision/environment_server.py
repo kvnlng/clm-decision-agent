@@ -72,7 +72,8 @@ def describe(env: Environment) -> dict:
             "scenarios": {name: {"description": scenario.description, "params": scenario.params,
                                  "levers": {lever: list(values) for lever, values in scenario.levers.items()},
                                  "objective": scenario.objective, "maximise": scenario.maximise,
-                                 "limits": list(scenario.limits)}
+                                 "limits": list(scenario.limits), "uncertain": list(scenario.uncertain),
+                                 "approvals": list(scenario.approvals)}
                           for name, scenario in env.scenarios.items()},
             **({"topics": env.topics()} if env.topics() else {})}
 

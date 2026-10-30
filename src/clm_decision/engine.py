@@ -223,10 +223,29 @@ def _limits(scenario, steps: list[dict]) -> list[dict]:
     return rejected
 
 
-def _run_branch(env: Environment, scenario, params: dict, levers: dict) -> dict:
-    steps = Steps(env)
+def _approvals(scenario, steps: list[dict]) -> list[dict]:
+    """The approvals the branch needs; raises StepError for an approval never checked or badly answered."""
+    needed = []
+    for approval in scenario.approvals:
+        checks = [step for step in steps if step["kind"] == "decision" and step["name"] == approval]
+        if not checks:
+            raise StepError(f"approval {approval} was not checked")
+        for check in checks:
+            if check.get("error"):
+                raise StepError(f"approval {approval} failed: {check['error']}")
+            outputs = check["result"]
+            if not isinstance(outputs, dict) or not isinstance(outputs.get("required"), bool) \
+                    or not all(isinstance(outputs.get(key), str) for key in ("who", "reason")):
+                raise StepError(f"approval {approval}: its outputs need required (true or false), who and reason")
+            if outputs["required"]:
+                needed.append({"decision": approval, "who": outputs["who"], "reason": outputs["reason"]})
+    return needed
+
+
+def _run_branch(env: Environment, scenario, params: dict, levers: dict, case: dict | None = None) -> dict:
+    steps = Steps(env, case)
     branch = {"levers": levers, "status": "failed", "figures": {}, "objective": None, "rejected_by": [],
-              "error": None, "steps": steps.steps}
+              "error": None, "steps": steps.steps, "warnings": [], "headroom": [], "approvals": []}
     try:
         figures = getattr(env.functions, scenario.branch)(steps, dict(params), dict(levers))
         if not isinstance(figures, dict):
@@ -239,6 +258,7 @@ def _run_branch(env: Environment, scenario, params: dict, levers: dict) -> dict:
             raise StepError(f"scenario {scenario.name}: the figures' {scenario.objective} is not a finite number")
         branch["objective"] = objective
         branch["rejected_by"] = _limits(scenario, steps.steps)
+        branch["approvals"] = _approvals(scenario, steps.steps)
         branch["status"] = "rejected" if branch["rejected_by"] else "kept"
     # The owner's code can fail in any way; one branch failing should not stop the others
     except Exception as error:  # pylint: disable=broad-exception-caught
@@ -246,11 +266,56 @@ def _run_branch(env: Environment, scenario, params: dict, levers: dict) -> dict:
     return branch
 
 
+def _failing(run: dict) -> tuple[str | None, str] | None:
+    """The first limit a run's branch failed, with its reason; (None, the error) if the branch failed; else None."""
+    if run["status"] == "failed":
+        return None, f"the branch failed: {run['error']}"
+    if run["rejected_by"]:
+        return run["rejected_by"][0]["decision"], run["rejected_by"][0]["reason"]
+    return None
+
+
+def _headroom(env: Environment, scenario, params: dict, branch: dict, estimate: str, direction: str) -> dict:
+    """How far the estimate can move from its central value, down or up, before the branch fails a limit: the
+    smallest change found by bisection to within half a percent, over a fall to zero or a rise to double. It assumes
+    a limit's verdict changes once along the way, as for a threshold."""
+    def failing(multiple: float):
+        return _failing(_run_branch(env, scenario, params, branch["levers"], {estimate: multiple}))
+    found = {"estimate": estimate, "direction": direction, "change": None, "limit": None}
+    passing, failed = 1.0, (0.0 if direction == "down" else 2.0)
+    verdict = failing(failed)
+    if verdict is None:
+        return found
+    while abs(passing - failed) > 0.005:
+        middle = (passing + failed) / 2
+        if (seen := failing(middle)) is None:
+            passing = middle
+        else:
+            failed, verdict = middle, seen
+    return {**found, "change": round(failed - 1, 3), "limit": verdict[0]}
+
+
+def _risk(env: Environment, scenario, params: dict, branch: dict) -> None:
+    """A kept branch's warnings at each uncertain estimate's low and high, and its headroom, for the estimates the
+    branch used. Only the owner's limits reject: these are reported, never judged."""
+    used = {step["name"] for step in branch["steps"] if step["kind"] == "query"}
+    for estimate in (name for name in scenario.uncertain if name in used):
+        for case in ("low", "high"):
+            seen = _failing(_run_branch(env, scenario, params, branch["levers"], {estimate: case}))
+            if seen is not None:
+                branch["warnings"].append({"estimate": estimate, "case": case, "limit": seen[0], "reason": seen[1]})
+        branch["headroom"] += [_headroom(env, scenario, params, branch, estimate, direction)
+                               for direction in ("down", "up")]
+
+
 def run_scenario(env: Environment, name: str, params: dict, branches: list[dict] | None = None) -> dict:
     """Run each branch (every combination of the levers by default) and rank the ones no limit rejected."""
     scenario = _part(env.scenarios, "scenario", name)
     _check(f"scenario {name}", scenario.params, params)
     results = [_run_branch(env, scenario, params, levers) for levers in _branches(scenario, branches)]
+    for branch in results:
+        if branch["status"] == "kept":
+            _risk(env, scenario, params, branch)
     kept = sorted((branch for branch in results if branch["status"] == "kept"),
                   key=lambda branch: branch["objective"], reverse=scenario.maximise)
     ranking = [branch["levers"] for branch in kept]
