@@ -24,6 +24,8 @@ The same server, `clm-server`, serves either of two files.
 | Example | [service desk](examples/service_desk/README.md); [the CrowdStrike day](examples/crowdstrike/README.md), the benchmark | [tariff](examples/tariff/README.md): a made-up manufacturer after a tariff hike; [new site](examples/new_site/README.md): rules to explore, estimates with their range, risk and a decision record for an officer |
 | Guide | [docs/scenario.md](docs/scenario.md), [docs/walkthrough.md](docs/walkthrough.md) | [docs/environment.md](docs/environment.md) |
 
+[examples/README.md](examples/README.md) lists the examples, what each shows and where to start.
+
 Both follow one rule: **the owner writes every route, rule, query, calculation and lever, and information from
 outside reaches a decision only through the owner's tools.** The agent chooses among them; it does not invent them.
 
