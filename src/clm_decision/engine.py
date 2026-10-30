@@ -47,11 +47,41 @@ def _part(parts: dict, kind: str, name: str):
     return parts[name]
 
 
-class Steps:
-    """What a branch function, or a single call, asks of the environment, each answer recorded in `steps`."""
+_RANGE = ("low", "central", "high")
 
-    def __init__(self, env: Environment):
+
+def rule_info(env: Environment, name: str) -> dict:
+    """A rule as a person reads it: what it says, why, who owns it, its version, and what it depends on and needs."""
+    decision = env.decisions[name]
+    rule = decision.rule
+    return {"name": name, "description": decision.description, "statement": rule.statement, "reason": rule.reason,
+            "owner": rule.owner, "version": rule.version, "governs": list(rule.governs),
+            "depends_on": list(rule.depends_on), "needs": list(rule.needs)}
+
+
+def _estimate(name: str, rows: list[dict], setting) -> list[dict]:
+    """An estimate's rows, each checked for its range, source and date, with "value" chosen by the case's setting:
+    "central" (the default), "low", "high", or a number multiplying the central value."""
+    chosen = []
+    for row in rows:
+        if any(key not in row for key in (*_RANGE, "source", "as_of")):
+            raise StepError(f"query {name}: an estimate's rows need low, central, high, source and as_of")
+        low, central, high = (row[key] for key in _RANGE)
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (low, central, high)) \
+                or not low <= central <= high:
+            raise StepError(f"query {name}: an estimate's low <= central <= high, not {low}, {central}, {high}")
+        value = central * setting if isinstance(setting, (int, float)) else row[setting]
+        chosen.append({**row, "value": value})
+    return chosen
+
+
+class Steps:
+    """What a branch function, or a single call, asks of the environment, each answer recorded in `steps`. `case`
+    sets, for an estimate query by name, which value its rows give (see _estimate); "central" when not set."""
+
+    def __init__(self, env: Environment, case: dict | None = None):
         self.env = env
+        self.case = case or {}
         self.steps: list[dict] = []
 
     def query(self, name: str, **params) -> list[dict]:
@@ -63,7 +93,11 @@ class Steps:
             rows = self.env.connector.run(query, params)
         if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
             raise StepError(f"query {name}: its function must return a list of dicts")
-        self.steps.append({"kind": "query", "name": name, "inputs": params, "result": rows})
+        step = {"kind": "query", "name": name, "inputs": params, "result": rows, "information": query.kind}
+        if query.kind == "estimate":
+            step["case"] = self.case.get(name, "central")
+            rows = step["result"] = _estimate(name, rows, step["case"])
+        self.steps.append(step)
         return rows
 
     def decide(self, name: str, **inputs) -> dict:
@@ -220,5 +254,11 @@ def run_scenario(env: Environment, name: str, params: dict, branches: list[dict]
     kept = sorted((branch for branch in results if branch["status"] == "kept"),
                   key=lambda branch: branch["objective"], reverse=scenario.maximise)
     ranking = [branch["levers"] for branch in kept]
+    used = [step for branch in results for step in branch["steps"]]
+    rules = {step["name"]: rule_info(env, step["name"]) for step in used
+             if step["kind"] == "decision" and env.decisions[step["name"]].rule}
+    information = {step["name"]: {"kind": step["information"], "description": env.queries[step["name"]].description}
+                   for step in used if step["kind"] == "query"}
     return {"scenario": name, "objective": scenario.objective, "maximise": scenario.maximise, "branches": results,
-            "ranking": ranking, "best": ranking[0] if ranking else None}
+            "ranking": ranking, "best": ranking[0] if ranking else None, "supplied": dict(params), "rules": rules,
+            "information": information}

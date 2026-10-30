@@ -21,7 +21,7 @@ def test_steps_record_every_number(env):
     result = run_query(env, "suppliers", {"product": "P1"})
     assert [row["cost"] for row in result["rows"]] == [10, 6]
     assert result["steps"] == [{"kind": "query", "name": "suppliers", "inputs": {"product": "P1"},
-                                "result": result["rows"]}]
+                                "result": result["rows"], "information": "fact"}]
     decided = run_decision(env, "share_limit", {"share": 1.0})
     assert decided["outputs"]["allowed"] is False and decided["fired"] == ["too_much"]
     assert decided["steps"][0]["fired"] == ["too_much"]

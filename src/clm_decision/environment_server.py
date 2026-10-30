@@ -77,15 +77,6 @@ def describe(env: Environment) -> dict:
             **({"topics": env.topics()} if env.topics() else {})}
 
 
-def rule_info(env: Environment, name: str) -> dict:
-    """A rule as a person reads it: what it says, why, who owns it, its version, and what it depends on and needs."""
-    decision = env.decisions[name]
-    rule = decision.rule
-    return {"name": name, "description": decision.description, "statement": rule.statement, "reason": rule.reason,
-            "owner": rule.owner, "version": rule.version, "governs": list(rule.governs),
-            "depends_on": list(rule.depends_on), "needs": list(rule.needs)}
-
-
 def _information(env: Environment, name: str) -> dict:
     item = env.information[name]
     return {"name": name, "description": item.description, "kind": item.kind, "query": item.query,
@@ -111,7 +102,7 @@ def rules_for(env: Environment, topic: str) -> dict:
             visit(name)
     needed = list(dict.fromkeys(item for name in ordered for item in env.decisions[name].rule.needs))
     information = [_information(env, item) for item in needed]
-    return {"topic": topic, "rules": [rule_info(env, name) for name in ordered], "information": information,
+    return {"topic": topic, "rules": [engine.rule_info(env, name) for name in ordered], "information": information,
             "to_ask": [item for item in information if item["kind"] == "supplied"]}
 
 
@@ -121,7 +112,7 @@ def explain_rule(env: Environment, name: str) -> dict:
         known = ", ".join(sorted(n for n, d in env.decisions.items() if d.rule))
         raise engine.StepError(f"no rule '{name}'; the rules are: {known}")
     decision = env.decisions[name]
-    result = {**rule_info(env, name), "params": decision.params}
+    result = {**engine.rule_info(env, name), "params": decision.params}
     if decision.table is not None:
         table = decision.table
         result["rows"] = [{"id": row.id, "when": dict(zip(table.inputs, row.entries)),
