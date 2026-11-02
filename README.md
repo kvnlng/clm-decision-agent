@@ -64,30 +64,12 @@ Small tests, said plainly ([docs/findings.md](docs/findings.md)):
 
 ## Layout
 
-The framework is the package `clm_decision`, in `src/clm_decision/`:
-
-| Module | Purpose |
+| Folder | Holds |
 |---|---|
-| `server.py` | `clm-server`: MCP over stdio or HTTP, for a scenario or an environment |
-| `scenario.py`, `decision.py`, `tools.py` | Reads a scenario; one decision; loads its tools |
-| `environment.py`, `environment_server.py`, `engine.py` | Reads an environment; its parts as MCP tools; queries, decisions, scenarios and judges run with every step recorded |
-| `graph.py`, `graph_neo4j.py`, `load_graph.py`, `dmn.py` | The built-in graph; named queries on Neo4j; `clm-load-graph`; DMN decision tables |
-| `decision_agent.py`, `number_check.py`, `decision_record.py` | `clm-agent`, Claude or a local model; the check that every figure came from a tool; the decision record |
-| `call.py` | `clm-call`: a server's tools, listed or called by hand, over stdio or HTTP |
-| `oauth.py`, `registry.py` | OAuth tokens from any OIDC issuer; `clm-registry`, the `server.json` for an MCP registry |
-| `tracing.py`, `trace_report.py` | `--trace`, and `clm-trace-report` |
-| `chat.py` | `clm-chat`, the test chat for scenarios |
-| `clm_router.py`, `clm_torch.py`, `clm_schema.py`, `clm_common.py` | CLM with MLX or PyTorch; routing and the reuse of corrections; the authors' question format, unchanged |
-| `record.py`, `evaluate.py`, `new_scenario.py`, `new_environment.py` | Corrections (`clm-record`) and their scoring (`clm-evaluate`); `clm-new-scenario`, `clm-new-environment` |
-| `dataset.py`, `synthesize.py`, `train.py`, `generator.py` | `clm-train`; `clm-synthesize` and the language model that writes examples |
-
-Outside the package:
-
-| Folder | Purpose |
-|---|---|
-| `examples/` | The worked examples: `service_desk/`, `crowdstrike/`, `tariff/` and `new_site/` |
-| `docs/` | Guides: getting started, scenario, walkthrough, environment, serving, registry, fine-tuning, models, findings, data handling |
-| `tests/` | `uv run pytest` (no models needed); `uv run pytest -m slow` (loads CLM; `CLM_TEST_BACKEND=torch` for torch) |
+| `src/clm_decision/` | The framework, and the `clm-*` commands |
+| `examples/` | Four worked examples ([the list](examples/README.md)) |
+| `docs/` | The guides, starting with [getting started](docs/getting-started.md) |
+| `tests/` | `uv run pytest`; `uv run pytest -m slow` also loads CLM (`CLM_TEST_BACKEND=torch` for torch) |
 
 ## Licence
 
