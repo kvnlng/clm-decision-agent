@@ -127,8 +127,8 @@ def read_jsonl(path: str | Path, collection: Collection) -> list[dict]:
     return documents
 
 
-def load(store, embedder: Embedder, collection: Collection, documents: list[dict], source: str,
-         now: str | None = None) -> dict:
+def load(store, embedder: Embedder, collection: Collection, documents: list[dict], *,  # pylint: disable=too-many-locals
+         source: str, now: str | None = None) -> dict:
     """Embed every passage and replace the collection -> the counts and when it was built."""
     texts = [passage["text"] for document in documents for passage in document["passages"]]
     flat = []
@@ -169,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         from .documents import OllamaEmbedder  # pylint: disable=import-outside-toplevel
         store = connect(settings)
         counts = load(store, OllamaEmbedder(settings.ollama_url), collection, documents,
-                      args.source or Path(args.file).name)
+                      source=args.source or Path(args.file).name)
     except (ScenarioError, StepError, ValueError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
