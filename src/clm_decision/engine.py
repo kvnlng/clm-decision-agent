@@ -89,6 +89,16 @@ def _filters(env: Environment, name: str, filters: dict | None) -> dict:
     return filters
 
 
+def _resolved(env: Environment, collection: str, cell: str) -> list[dict]:
+    """A citation cell's ids (separated by ;) with each document's citation and title, as the collection holds."""
+    found = []
+    for ident in (part.strip() for part in cell.split(";")):
+        document = env.store.document(collection, ident, None) if ident else {}
+        if document:
+            found.append({"id": ident, "citation": document["citation"], "title": document["title"]})
+    return found
+
+
 def _built(env: Environment, name: str) -> dict:
     """The collection's build record, after checking it holds something, loaded with the model the file names."""
     collection = _part(env.collections, "collection", name)
@@ -175,7 +185,10 @@ class Steps:
             self.steps.append({"kind": "decision", "name": name, "inputs": inputs, "result": None, "fired": [],
                                "error": _message(error)})
             raise
-        self.steps.append({"kind": "decision", "name": name, "inputs": inputs, "result": outputs, "fired": fired})
+        step = {"kind": "decision", "name": name, "inputs": inputs, "result": outputs, "fired": fired}
+        if decision.collection and isinstance(outputs.get("citation"), str):
+            step["citations"] = _resolved(self.env, decision.collection, outputs["citation"])
+        self.steps.append(step)
         return outputs
 
     def judge(self, name: str, text: str) -> dict:

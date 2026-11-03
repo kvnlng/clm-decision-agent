@@ -469,6 +469,18 @@ number, in the answer's unit and rounded to its decimals, is the figure: "$1.2 m
 matches 0.1843 or 18.43. Halves round up and signs are ignored, so "fell by 12%" matches -0.12. It skips digits inside
 a word (Q3), dates and times, years, and whole numbers from 0 to 10. A flagged figure is reported, not blocked.
 
+The citation check does the same for citations, so an answer cannot cite a case or section no tool returned:
+
+- **A statute** matches by its section: "§15.50", "§ 15.50" and "Tex. Bus. & Com. Code Ann. § 15.50" all match a
+  stored "Tex. Bus. & Com. Code § 15.50". A subsection, "§15.51(c)", matches when the tools returned that section's
+  passage labelled "(c)", or a citation naming it. "Section 15.50", "§§ 15.50 and 15.51", "820 ILCS 90/10" and
+  "RCW 49.62.020" are read too. Sections are compared without their code.
+- **A reporter citation**, "100 S.W.3d 1", matches by volume, reporter and page.
+- **A case name with no citation after it**, "Smith v. Jones", cannot be checked: it is listed, never passed.
+
+The decision record lists each citation found with the stored passage it matches, then those no tool returned and
+those not checked. A decision table's `citation` ids are given with each document's citation and title in its step.
+
 ## What comes later
 
 - **Other graph databases,** such as Memgraph, which also speaks Cypher, through `environment.Connector`.

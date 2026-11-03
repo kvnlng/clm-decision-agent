@@ -107,6 +107,13 @@ async def test_an_invented_figure_is_flagged(mcp_server):
 
 
 @pytest.mark.anyio
+async def test_an_invented_citation_is_flagged(mcp_server):
+    claude = FakeClaude(message(text("Under Varghese v. China Southern Airlines, 925 F.3d 1339, it fails.")))
+    assert (await ask(mcp_server, claude))["citations"] == {"found": [], "not_found": ["925 F.3d 1339"],
+                                                           "unchecked": []}
+
+
+@pytest.mark.anyio
 async def test_a_tool_error_goes_back_to_the_model(mcp_server):
     claude = FakeClaude(message(tool_use("query_suppliers_of", {}), stop="tool_use"),
                         message(text("I could not look that up.")))

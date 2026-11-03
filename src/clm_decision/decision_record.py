@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from . import number_check
+from . import citation_check, number_check
 
 _RANGE_KEYS = ("low", "central", "high", "source", "as_of")
 
@@ -29,6 +29,23 @@ def _information(record: dict, steps: list[dict], descriptions: dict) -> None:
         if not any(seen["query"] == item["query"] and seen["inputs"] == item["inputs"]
                    for seen in record["information"]):
             record["information"].append(item)
+
+
+def _documents(record: dict, steps: list[dict]) -> None:
+    """Every passage a search or document step returned, once, with its collection and when it was built."""
+    for step in steps:
+        if step["kind"] == "search":
+            passages = [(row["document"], row["citation"], row["passage"], row["text"]) for row in step["result"]]
+        elif step["kind"] == "document":
+            found = step["result"]
+            passages = [(found["id"], found["citation"], p["label"], p["text"]) for p in found["passages"]]
+        else:
+            continue
+        for document, citation, passage, text in passages:
+            item = {"collection": step["name"], "built_at": step["built_at"], "document": document,
+                    "citation": citation, "passage": passage, "text": text}
+            if item not in record["documents"]:
+                record["documents"].append(item)
 
 
 def _in_question(value, question: str) -> bool:
@@ -51,7 +68,7 @@ def _scenario(result: dict) -> dict:
 def build(question: str, calls: list[dict]) -> dict:
     """The record of one answer, from the calls clm-agent made: each {"tool", "arguments", "result", "error"}."""
     record: dict = {"question": question, "supplied": {}, "chosen_by_agent": {}, "rules": {}, "rules_consulted": {},
-                    "information": [], "scenarios": [], "to_ask": [], "failed_calls": []}
+                    "information": [], "documents": [], "scenarios": [], "to_ask": [], "failed_calls": []}
     asked: list[dict] = []
     for call in calls:
         tool, result = call["tool"], call["result"]
@@ -68,6 +85,7 @@ def build(question: str, calls: list[dict]) -> dict:
             descriptions = {name: item["description"] for name, item in result.get("information", {}).items()}
             for branch in result["branches"]:
                 _information(record, branch["steps"], descriptions)
+                _documents(record, branch["steps"])
             record["scenarios"].append(_scenario(result))
         elif tool == "rules":
             record["rules_consulted"].update({rule["name"]: rule for rule in result["rules"]})
@@ -76,6 +94,7 @@ def build(question: str, calls: list[dict]) -> dict:
             record["rules_consulted"][result["name"]] = {key: value for key, value in result.items() if key != "rows"}
         elif "steps" in result:
             _information(record, result["steps"], {})
+            _documents(record, result["steps"])
     # Supplied information is named after the scenario parameter that carries it
     record["to_ask"] = [item for item in asked if item["name"] not in record["supplied"]]
     record["rules_consulted"] = {name: rule for name, rule in record["rules_consulted"].items()
@@ -111,8 +130,30 @@ def _rule(rule: dict) -> str:
             f"Why: {rule['reason']}")
 
 
-def markdown(record: dict, answer: str, unsupported: list[str]) -> str:
-    """The record as a page to read: the checked record first, then the agent's explanation, marked as such."""
+def _citations(record: dict, citations: dict) -> list[str]:
+    """The answer's citations with the stored passages they match, those no tool returned and those not checked."""
+    out = []
+    if citations["found"]:
+        out += ["## Citations", ""]
+        for written in citations["found"]:
+            stored = [item for item in record["documents"]
+                      if citation_check.matches(written, item["citation"], item["passage"])]
+            out += [f"- {written}: {item['citation']} {item['passage']}, {item['collection']} built "
+                    f"{item['built_at']}: \"{item['text']}\"" for item in stored] or [
+                f"- {written}: returned by a rule or decision; no passage was read"]
+        out.append("")
+    if citations["not_found"]:
+        out += ["## Citations no tool returned", "", ", ".join(citations["not_found"]), ""]
+    if citations["unchecked"]:
+        out += ["## Citations not checked (a case name without its citation)", "",
+                ", ".join(citations["unchecked"]), ""]
+    return out
+
+
+def markdown(record: dict, answer: str, unsupported: list[str],  # pylint: disable=too-many-branches
+             citations: dict | None = None) -> str:
+    """The record as a page to read: the checked record first, then the agent's explanation, marked as such, and
+    what the checks of its figures and citations found."""
     out = ["# Decision record", "", "## Question", "", record["question"], "", "## Supplied by the asker", ""]
     out += [f"- {name}: {', '.join(map(str, values))}" for name, values in record["supplied"].items()] or ["Nothing."]
     if record["chosen_by_agent"]:
@@ -151,4 +192,6 @@ def markdown(record: dict, answer: str, unsupported: list[str]) -> str:
     out += ["## The agent's explanation (not checked)", "", answer or "(no answer)", ""]
     if unsupported:
         out += ["## Figures no tool returned", "", ", ".join(unsupported), ""]
+    if citations:
+        out += _citations(record, citations)
     return "\n".join(out)

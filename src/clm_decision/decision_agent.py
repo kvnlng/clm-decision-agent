@@ -28,7 +28,7 @@ import httpx
 from mcp import Client, MCPError
 
 from .call import connect, is_url, refusal, server_params  # pylint: disable=unused-import
-from . import decision_record
+from . import citation_check, decision_record
 from .number_check import unsupported
 
 MODEL = "claude-opus-5-5"
@@ -225,7 +225,7 @@ async def answer(session: Client, question: str, chat: Chat) -> dict:
     # What the person asking supplied, in the question's own words, counts as given
     returned.append(question)
     return {"question": question, "answer": text, "calls": calls, "unsupported": unsupported(text, returned),
-            "stopped": stopped, "model": chat.model}
+            "citations": citation_check.check(text, returned), "stopped": stopped, "model": chat.model}
 
 
 async def _main(args, refused: list[int]) -> int:
@@ -254,6 +254,10 @@ async def _main(args, refused: list[int]) -> int:
         print(f"\nStopped early: {result['stopped']}.")
     if result["unsupported"]:
         print(f"\nFigures no tool returned: {', '.join(result['unsupported'])}")
+    if result["citations"]["not_found"]:
+        print(f"\nCitations no tool returned: {', '.join(result['citations']['not_found'])}")
+    if result["citations"]["unchecked"]:
+        print(f"\nCase names without a citation, not checked: {', '.join(result['citations']['unchecked'])}")
     runs = Path("runs") if is_url(args.environment) else Path(args.environment).resolve().parent / "runs"
     out = Path(args.out) if args.out else runs / f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.answer.json"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -262,7 +266,8 @@ async def _main(args, refused: list[int]) -> int:
     stem = out.name.removesuffix(".json").removesuffix(".answer")
     (out.parent / f"{stem}.record.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
     (out.parent / f"{stem}.record.md").write_text(
-        decision_record.markdown(record, result["answer"], result["unsupported"]), encoding="utf-8")
+        decision_record.markdown(record, result["answer"], result["unsupported"], result["citations"]),
+        encoding="utf-8")
     print(f"\n{len(result['calls'])} tool calls in {result['seconds']} s; written to {out}, with the decision "
           f"record in {out.parent / (stem + '.record.md')}", file=sys.stderr)
     return 0
