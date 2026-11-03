@@ -61,6 +61,12 @@ def test_court_levels():
     assert fetch_cases.court_level(case()) == "appeals"
 
 
+def test_new_yorks_supreme_court_is_not_its_highest():
+    division = "New York Supreme Court, Appellate Division"
+    assert fetch_cases.court_level(case(court=division)) == "appeals"
+    assert fetch_cases.court_level(case(court="New York Court of Appeals")) == "supreme"
+
+
 def test_a_document_has_passages_metadata_and_citing_passages():
     document = fetch_cases.document(NON_COMPETE, {"role": {"value": "sales manager", "passage": "1",
                                                            "quote": "The sales manager"}})
