@@ -16,6 +16,7 @@ about patient care out of scope.
 | [registry](registry.md) | Listing a deployment in an MCP registry |
 | [data handling](data-handling.md) | Where text goes; read before using real text |
 | [findings](findings.md) | What the benchmark traces showed |
+| [test client](../client/README.md) | Chatting with a running server from the command line, for testing |
 
 ## Your environment, and the decisions over it
 
@@ -112,6 +113,24 @@ you> I need access to the oncology registry for an audit, needed this week
 
 A mistake in either file stops start-up with one line naming the setting.
 
+## Testing it with the test client
+
+With no MCP client of your own, or none you want to use, the [test client](../client/README.md) lets you chat with a
+running server from the command line. A model answers from your tools and every call and result is printed, so you
+can see where each answer came from and judge it. It is for testing only and is not part of the package.
+
+```bash
+ollama pull granite4:micro                                            # the small starter model, about 2.1 GB
+export DECISION_SERVER_KEY=<a long random key>
+uv run clm-server examples/tariff/environment.toml --http             # terminal 1
+uv run --project client clm-test-client http://127.0.0.1:8000/mcp     # terminal 2
+```
+
+- **Any model:** anything that speaks the OpenAI chat API, or Claude with `--backend claude`. A weak answer may be
+  the small model, not your server; try a larger one before changing your tools.
+- **Tools run for real** by default, acting ones included. `--dry-run` shows calls without sending them;
+  `--dry-run TOOL` holds back only that tool.
+
 ## Connecting agents
 
 ```bash
@@ -125,7 +144,6 @@ uv run clm-server examples/tariff/environment.toml --http --auth oauth \
 - **An MCP registry**, so agents can find a deployment: `clm-registry` ([registry](registry.md)).
 - **Tracing:** `--trace FILE` records each call's time and caller; `clm-trace-report` summarises it.
 - **`clm-agent`** takes a server's URL as well as a file, with the key in `DECISION_SERVER_KEY`.
-- **No MCP client of your own?** The [test client](../client/README.md) chats with a running server through any model, printing every tool call. For testing only.
 - **Databricks:** not tried yet; [what it needs](serving.md#databricks).
 
 **A scenario's server acts without asking.** An acting tool runs at once unless the route is uncertain, and calling
