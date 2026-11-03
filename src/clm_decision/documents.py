@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import os
 import re
+import tomllib
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 import httpx
@@ -123,6 +125,23 @@ def collections(data: dict, settings: DocumentSettings | None) -> dict[str, Coll
         found[name] = Collection(name, _text(table, "description", where), dict(filters),
                                  _text(table, "embedding_model", where))
     return found
+
+
+def read_settings(path: str | Path) -> tuple[DocumentSettings, dict[str, Collection]]:
+    """An environment file's [documents] settings and collections, without loading the rest of it, for the
+    loader; raises ScenarioError naming the setting."""
+    path = Path(path)
+    try:
+        with open(path, "rb") as file:
+            data = tomllib.load(file)
+    except OSError as error:
+        raise ScenarioError(f"{path}: cannot read: {error.strerror}") from error
+    except tomllib.TOMLDecodeError as error:
+        raise ScenarioError(f"{path.name}: not valid TOML: {error}") from error
+    settings = document_settings(data)
+    if settings is None:
+        raise ScenarioError(f"{path.name}: has no [documents] table")
+    return settings, collections(data, settings)
 
 
 def documents_password(settings: DocumentSettings) -> str:
