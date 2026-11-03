@@ -7,10 +7,11 @@ from pathlib import Path
 
 import pytest
 import judge_labels
+import measure
 from fake_documents import FakeEmbedder, FakeStore
 from mcp import Client
 
-from clm_decision.engine import run_decision, run_scenario
+from clm_decision.engine import run_decision, run_query, run_scenario
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
 
@@ -71,6 +72,12 @@ def test_a_colorado_worker_is_governed_by_colorado_law(env):
     assert run_decision(env, "choice_of_law", {"resides": "TX", "works": "TX"})["outputs"]["governing"] == "contract"
 
 
+def test_the_employee_query_takes_the_parameter_it_declares(env):
+    [params] = [q.params for name, q in env.queries.items() if name == "employee"]
+    result = run_query(env, "employee", {name: "e_1042" for name in params})
+    assert result["rows"][0]["resides"] == "CO"
+
+
 def test_narrowing_keeps_the_broadest_terms_that_pass(env):
     result = run_scenario(env, "narrow_to_enforce", TEXAS)
     assert branch(result, length_months=24, area="nationwide")["status"] == "rejected"
@@ -128,3 +135,12 @@ def test_judge_labels_measures_each_judge_and_checks_the_courts_words(env):
     assert judge_labels.separation(judged) == (0.9, 0.1, 0.5)
     assert judge_labels.separation([(0.4, labels[0]), (0.6, labels[1])])[2] is None
     assert judge_labels.unquoted(env, labels) == [labels[1]]
+
+
+def test_measure_counts_the_keys_citations_by_section_and_reporter():
+    cited = ["Tex. Bus. & Com. Code § 15.51(c)", "793 S.W.2d 302", "Tex. Bus. & Com. Code § 15.50(a)"]
+    answer = "Under § 15.51 a court reforms it (Webb v. Hartman, 793 S.W. 2d 302)."
+    assert measure.key_cited(answer, cited) == 2
+    key = measure._key()  # pylint: disable=protected-access
+    assert measure.expected(key, "q3") == {"governing": "CO", "holds": "only above threshold"}
+    assert measure.right({"TX": "likely, if reasonable", "CA": "likely"}, measure.expected(key, "q1")) == 1

@@ -67,3 +67,12 @@ The H100 decided the whole day at 50.1 a second.
 - **`check_call` is weak as a yes or no.** Asked about both a rebooking and a refund for the same passenger, it approved
   the right one and refused the wrong one for 114 of 200; compared with each other the two were told apart in 169.
   `decide` itself was right for 162, and marks most of its mistakes uncertain.
+- **Local documents made answers better sourced, not different.** In the non-compete example the rules carry the
+  statutes, so with or without the document tools both Claude and gemma4 gave every state's verdict rightly. On the
+  Texas question Claude reached the same verdict either way, citing 16 opinions it had read against 4.
+  ([examples/noncompete](../examples/noncompete/README.md))
+- **A large tool result silently loses a local model its question.** `scenario_narrow_to_enforce` returns about
+  1 MB; Ollama cuts the conversation to its context window from the front, and gemma4 answered "please provide the
+  question". Claude, with a larger window, answered. Neither the scenario nor the agent warns yet.
+- **The CLM's two document judgements do not separate their labels.** "Broader than needed" ordered 6 of 28
+  labelled pairs rightly, worse than chance; "departs" 28 of 40. No rule reads either.

@@ -1,6 +1,6 @@
 # Examples
 
-Four examples, two of each kind of decision ([getting started](../docs/getting-started.md#your-environment-and-the-decisions-over-it) explains the two
+Five examples: two scenarios and three environments of decision ([getting started](../docs/getting-started.md#your-environment-and-the-decisions-over-it) explains the two
 kinds). Each folder has its own README with the full story, how to run it and what happened when models were asked.
 
 | Example | Kind | The question | What it shows | Data |
@@ -9,6 +9,7 @@ kinds). Each folder has its own README with the full story, how to run it and wh
 | [crowdstrike](crowdstrike/README.md) | Scenario | How should we help each passenger after the 19 July 2024 outage? | The benchmark: thousands of decisions at once, CLM against language models on speed and accuracy, an agent's proposals checked, the day replayed on a GPU | Real US flights (BTS); passengers, fares, messages and policy made up |
 | [tariff](tariff/README.md) | Environment | Should Product Line X move its sourcing to Region B, and what would it do to the Q3 margin and SLA times? | A graph, DMN rules, levers ranked by an objective with every limit checked; a CLM judge of supplier news | Made up |
 | [new_site](new_site/README.md) | Environment | Are we in a position to open a new site in an expensive area? | Rules an agent can explore, facts and estimates told apart, warnings and headroom at an estimate's range, approvals, and a decision record for a financial officer | Real census income (ACS 2023); the company made up |
+| [noncompete](noncompete/README.md) | Environment | Does our standard non-compete hold in each state where we employ people, and how should it be narrowed? | Local documents: statutes and 4,800 court opinions in PostgreSQL, searched, read and followed by citation with built-in tools; citations in an answer checked against what the tools returned. Not legal advice | Real statutes and opinions (Caselaw Access Project); the company made up |
 
 ## Where to start
 
