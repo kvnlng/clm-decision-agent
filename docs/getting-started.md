@@ -3,6 +3,20 @@
 A prototype, not used in production and **not for clinical decisions**: the service desk example routes questions
 about patient care out of scope.
 
+## All the guides
+
+| Guide | What it covers |
+|---|---|
+| [environment](environment.md) | Writing an environment for weighing options |
+| [scenario](scenario.md) | Writing a scenario for routing |
+| [walkthrough](walkthrough.md) | Building a scenario step by step |
+| [fine-tuning](fine-tuning.md) | Training CLM on your routes |
+| [models](models.md) | Choosing CLM and language models, and where they run |
+| [serving](serving.md) | Serving decisions to agents |
+| [registry](registry.md) | Listing a deployment in an MCP registry |
+| [data handling](data-handling.md) | Where text goes; read before using real text |
+| [findings](findings.md) | What the benchmark traces showed |
+
 ## Your environment, and the decisions over it
 
 **Your environment is the tools you define:** queries that reach your data, actions such as opening a ticket, and your
