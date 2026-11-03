@@ -29,7 +29,7 @@ description = "Whether a piece of news about a supplier is a risk to its deliver
 instructions = "Does this news mean the supplier may fail to deliver its parts on time in the coming months?"
 
 [queries.product_facts]
-description = "A product's name, Q3 unit volume and unit price."
+description = "A product's name, Q3 unit volume and unit price. Give the product's id, such as PX."
 params = { product = "string" }
 function = "product_facts"
 cypher = """
@@ -37,7 +37,8 @@ MATCH (p:Node {id: $product})
 RETURN p.id AS id, p.name AS name, p.q3_units AS q3_units, p.unit_price AS unit_price"""
 
 [queries.components_of]
-description = "The components a product is built from, with their category and units per product."
+description = """The components a product is built from, with their id, category and units per product. Give the \
+product's id, such as PX."""
 params = { product = "string" }
 function = "components_of"
 cypher = """
@@ -46,7 +47,8 @@ RETURN c.id AS id, c.name AS name, c.category AS category, r.units_per_product A
 ORDER BY c.id"""
 
 [queries.suppliers_of]
-description = "Who supplies a component: region, unit price, lead time in days, defect rate and freight per unit."
+description = """Who supplies a component: region, unit price, lead time in days, defect rate and freight per unit. \
+Give the component's id from components_of, such as C1, not its name."""
 params = { component = "string" }
 function = "suppliers_of"
 cypher = """
@@ -57,7 +59,8 @@ RETURN s.id AS id, s.name AS name, g.name AS region, r.unit_price AS unit_price,
 ORDER BY s.id"""
 
 [queries.key_clients_of]
-description = "The key clients who buy a product, with the tier their delivery terms depend on."
+description = """The key clients who buy a product, with the tier their delivery terms depend on. Give the product's \
+id, such as PX."""
 params = { product = "string" }
 function = "key_clients_of"
 cypher = """
@@ -67,7 +70,8 @@ RETURN k.id AS id, k.name AS name, k.tier AS tier
 ORDER BY k.id"""
 
 [queries.supply_dependencies]
-description = "The raw-material providers that suppliers depend on, up to three steps away, with the path to each."
+description = """The raw-material providers that suppliers depend on, up to three steps away, with the path to each. \
+Give the suppliers' ids from suppliers_of."""
 params = { suppliers = "list" }
 function = "supply_dependencies"
 cypher = """
@@ -79,7 +83,7 @@ RETURN supplier, p.id AS provider, p.name AS provider_name, [n IN nodes(path) | 
 ORDER BY supplier, provider"""
 
 [queries.supplier_news]
-description = "The latest news about each of the suppliers that has any."
+description = "The latest news about each of the suppliers that has any. Give the suppliers' ids from suppliers_of."
 params = { suppliers = "list" }
 function = "supplier_news"
 cypher = """
@@ -90,7 +94,8 @@ RETURN supplier, s.name AS name, s.news AS news
 ORDER BY supplier"""
 
 [queries.single_points_of_failure]
-description = "Providers that every one of the given suppliers depends on: losing one would cut all of them off."
+description = """Providers that every one of the given suppliers depends on: losing one would cut all of them off. \
+Give the suppliers' ids from suppliers_of."""
 params = { suppliers = "list" }
 function = "single_points_of_failure"
 cypher = """
@@ -138,7 +143,8 @@ function = "concentration"
 
 [scenarios.sourcing]
 description = """Where to source a product's components: the share bought from Region B. Every branch checks each \
-key client's delivery terms, the quality limit and how much supply depends on one raw-material provider."""
+key client's delivery terms, the quality limit and how much supply depends on one raw-material provider. Give the \
+product's id, such as PX."""
 params = { product = "string" }
 levers = { region_b_share = [0, 0.5, 1.0] }
 branch = "sourcing_branch"
@@ -148,7 +154,8 @@ limits = ["sla_threshold", "quality_threshold", "supply_concentration"]
 
 [scenarios.sourcing_with_news]
 description = """The sourcing scenario, with each supplier's news judged by CLM: a branch is also rejected when news \
-suggests a supplier it buys from may not deliver. CLM loads on the first judgement."""
+suggests a supplier it buys from may not deliver. CLM loads on the first judgement. Give the product's id, such as \
+PX."""
 params = { product = "string" }
 levers = { region_b_share = [0, 0.5, 1.0] }
 branch = "sourcing_with_news_branch"
