@@ -188,6 +188,7 @@ class Environment:  # pylint: disable=too-many-instance-attributes
     collections: dict[str, docs.Collection] = field(default_factory=dict)
     store: docs.DocumentStore | None = None
     embedder: docs.Embedder | None = None
+    document_tools: bool = True
 
     def topics(self) -> list[str]:
         """The kinds of decision the rules govern."""
@@ -536,4 +537,5 @@ def load_environment(path: str | Path, backend: str | None = None,  # pylint: di
     # Connected last, once everything else is known to be right
     return Environment(path, _text(head, "name", "environment"), _text(head, "description", "environment"), graph,
                        functions, _connector(settings, graph, functions), queries, decisions, calculations, scenarios,
-                       judges, clm, information, collections, store, embedder)
+                       judges, clm, information, collections, store, embedder,
+                       document_settings.tools if document_settings else True)

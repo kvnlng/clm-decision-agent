@@ -123,3 +123,16 @@ async def test_each_collection_gets_four_tools(env):
 def test_run_search_gives_rows_and_steps(env):
     result = engine.run_search(env, "cases", {"text": "covenant", "filters": None, "limit": 10})
     assert set(result) == {"rows", "built_at", "steps"}
+
+
+@pytest.mark.anyio
+async def test_tools_false_offers_no_document_tools(write_environment):
+    store = FakeStore()
+    store.replace("cases", CASES, [], BUILT)
+    toml = ENV_TOML + DOCUMENTS.replace('password_env = "TOY_DOCUMENTS_PASSWORD"',
+                                        'password_env = "TOY_DOCUMENTS_PASSWORD"\ntools = false')
+    env = load_environment(write_environment(toml), store=store, embedder=FakeEmbedder())
+    async with Client(build_environment_server(env)) as client:
+        names = {tool.name for tool in (await client.list_tools()).tools}
+    assert not {name for name in names if name.endswith("_cases")}
+    assert Steps(env).search("cases", "covenant")       # the owner's functions still search

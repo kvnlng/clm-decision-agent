@@ -177,7 +177,7 @@ def build_environment_server(env: Environment, trace: tracing.TraceWriter | None
         add(f"judge_{name}", f"{judge.description} CLM's probability, 0 to 1, that the answer to "
             f"\"{judge.instructions}\" is yes for the text.",
             lambda args, name=name: engine.run_judgement(env, name, args), _signature({"text": "string"}))
-    for name, collection in env.collections.items():
+    for name, collection in env.collections.items() if env.document_tools else ():
         _add_document_tools(add, env, name, collection)
     branches = inspect.Parameter("branches", inspect.Parameter.KEYWORD_ONLY, default=None,
                                  annotation=list[dict[str, Any]] | None)

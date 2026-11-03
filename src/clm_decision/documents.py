@@ -41,6 +41,7 @@ class DocumentSettings:  # pylint: disable=too-many-instance-attributes
     user: str
     password_env: str
     ollama_url: str
+    tools: bool = True          # whether the agent gets search_, document_, cites_ and cited_by_ tools
 
 
 class DocumentStore(Protocol):
@@ -97,11 +98,14 @@ def document_settings(data: dict) -> DocumentSettings | None:
     port = table.get("port", 5432)
     if not isinstance(port, int) or isinstance(port, bool):
         raise ScenarioError("documents.port: must be a whole number")
+    tools = table.get("tools", True)
+    if not isinstance(tools, bool):
+        raise ScenarioError("documents.tools: must be true or false")
     return DocumentSettings(_text(table, "host", "documents", "127.0.0.1"), port,
                             _text(table, "database", "documents", "clm_documents"),
                             _text(table, "user", "documents", "clm"),
                             _text(table, "password_env", "documents", "CLM_DOCUMENTS_PASSWORD"),
-                            _text(table, "ollama_url", "documents", "http://127.0.0.1:11434"))
+                            _text(table, "ollama_url", "documents", "http://127.0.0.1:11434"), tools)
 
 
 def collections(data: dict, settings: DocumentSettings | None) -> dict[str, Collection]:
