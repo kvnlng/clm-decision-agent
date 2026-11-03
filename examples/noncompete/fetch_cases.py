@@ -36,9 +36,12 @@ OLLAMA = "http://127.0.0.1:11434"
 MODEL = "gemma4:26b"
 CONTEXT = 8192    # tokens: room for the passages and the answer; the model's default is far larger and slower
 
-# Reporter and first volume: published opinions from about 1990
+# Reporter and first volume: published opinions from about 1990. The Caselaw Access Project files a case under its
+# official reporter, so Illinois, Massachusetts, Washington and New York need their own.
 REPORTERS = {"sw2d": 770, "sw3d": 1, "f3d": 1, "p3d": 1, "nw2d": 450, "ne2d": 550, "ne3d": 1, "so2d": 550,
-             "so3d": 1, "ny3d": 1, "ad3d": 1, "cal-app-4th": 1, "cal-app-5th": 1, "cal-4th": 1, "cal-5th": 1}
+             "so3d": 1, "ny3d": 1, "ad3d": 1, "cal-app-4th": 1, "cal-app-5th": 1, "cal-4th": 1, "cal-5th": 1,
+             "ill-2d": 133, "ill-app-3d": 190, "mass": 406, "mass-app-ct": 28, "wash-2d": 113, "wash-app": 56,
+             "ny-2d": 75, "ad2d": 157}
 STATES = {"Tex.": "TX", "Cal.": "CA", "Colo.": "CO", "Wash.": "WA", "Ill.": "IL", "Mass.": "MA", "Minn.": "MN",
           "Okla.": "OK", "Fla.": "FL", "N.Y.": "NY", "N.D.": "ND"}
 FIFTH_CIRCUIT = "United States Court of Appeals for the Fifth Circuit"
