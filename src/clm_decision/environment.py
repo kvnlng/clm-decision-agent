@@ -18,6 +18,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Protocol
 
+from . import documents as docs
 from .dmn import DmnError, Table, load_table
 from .graph import Graph
 from .scenario import CLM_BACKENDS, DEFAULT_CLM, ScenarioError, StepError
@@ -181,6 +182,9 @@ class Environment:  # pylint: disable=too-many-instance-attributes
     judges: dict[str, Judge]
     clm: Clm | None
     information: dict[str, Information] = field(default_factory=dict)
+    collections: dict[str, docs.Collection] = field(default_factory=dict)
+    store: docs.DocumentStore | None = None
+    embedder: docs.Embedder | None = None
 
     def topics(self) -> list[str]:
         """The kinds of decision the rules govern."""
@@ -471,9 +475,12 @@ def _scenario(name: str, table: dict, functions: ModuleType, decisions: dict, qu
                        branch, _text(table, "objective", where), maximise, tuple(limits), uncertain, approvals)
 
 
-def load_environment(path: str | Path, backend: str | None = None) -> Environment:  # pylint: disable=too-many-locals
+def load_environment(path: str | Path, backend: str | None = None,  # pylint: disable=too-many-locals
+                     store: docs.DocumentStore | None = None,
+                     embedder: docs.Embedder | None = None) -> Environment:
     """Read and check an environment file; raises ScenarioError naming the setting. `backend` overrides the file's
-    [graph] backend, to run the same environment on the other graph."""
+    [graph] backend, to run the same environment on the other graph. `store` and `embedder` replace the document
+    store and embedder the file names, as tests do."""
     path = Path(path)
     data = _read(path)
     folder = path.resolve().parent
@@ -494,7 +501,14 @@ def load_environment(path: str | Path, backend: str | None = None) -> Environmen
                  for name, table in _parts(data, "scenarios").items()}
     clm = _clm(data)
     judges = {name: _judge(name, table, clm) for name, table in _parts(data, "judges").items()}
+    document_settings = docs.document_settings(data)
+    collections = docs.collections(data, document_settings)
+    if document_settings is not None:
+        store = store or docs.connect(document_settings)
+        embedder = embedder or docs.OllamaEmbedder(document_settings.ollama_url)
+    else:
+        store = embedder = None
     # Connected last, once everything else is known to be right
     return Environment(path, _text(head, "name", "environment"), _text(head, "description", "environment"), graph,
                        functions, _connector(settings, graph, functions), queries, decisions, calculations, scenarios,
-                       judges, clm, information)
+                       judges, clm, information, collections, store, embedder)
