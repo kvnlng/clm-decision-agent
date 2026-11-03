@@ -3,20 +3,17 @@ read by a model are checked against the opinion's own words. The opinions here a
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import json
-import sys
-from pathlib import Path
 
+import fetch_cases
 from clm_decision.documents import Collection
 from clm_decision.load_documents import read_jsonl
-
-sys.path.append(str(Path(__file__).parent.parent / "examples" / "noncompete"))
-import fetch_cases  # noqa: E402  pylint: disable=wrong-import-position,import-error
 
 FILTERS = {"state": "string", "court": "string", "court_level": "string", "year": "integer", "decided": "date",
            "role": "string", "length_months": "number", "area": "string", "outcome": "string",
            "reformed_to": "string"}
 
 
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def case(ident=1, text="", court="Texas Courts of Appeals", court_abbreviation="Tex. App.", jurisdiction="Tex.",
          cites=()):
     return {"id": ident, "name_abbreviation": f"Made-up Co. v. Person {ident}", "decision_date": "2015-03-02",
@@ -83,11 +80,31 @@ def test_a_fact_of_the_wrong_kind_is_left_empty():
     facts = fetch_cases.checked_facts({"outcome": {"value": "maybe", "passage": "1", "quote": "reformed"},
                                        "length_months": {"value": "two", "passage": "1", "quote": "two years"}},
                                       passages)
-    assert facts == {}
+    assert not facts
+
+
+def test_a_passage_label_in_brackets_is_read_as_the_label():
+    passages = [{"label": "5", "text": "The sales manager signed a covenant not to compete."}]
+    facts = fetch_cases.checked_facts({"role": {"value": "sales manager", "passage": "[5]",
+                                                "quote": "The sales manager"}}, passages)
+    assert facts == {"role": {"value": "sales manager", "passage": "5", "quote": "The sales manager"}}
+
+
+def test_facts_are_read_with_a_small_context_and_no_thinking():
+    class Http:  # pylint: disable=too-few-public-methods
+        """Records the request and answers with no facts."""
+        sent = {}
+
+        def post(self, _url, json):  # pylint: disable=redefined-outer-name
+            Http.sent.update(json)
+            return type("Response", (), {"json": lambda self: {"response": "{}"}})()
+
+    assert fetch_cases.read_facts(Http(), NON_COMPETE, "a-model") == {}
+    assert Http.sent["think"] is False and Http.sent["options"]["num_ctx"] == 8192
 
 
 def test_the_output_loads(tmp_path):
     path = tmp_path / "cases.jsonl"
     path.write_text(json.dumps(fetch_cases.document(NON_COMPETE, {})) + "\n")
-    [loaded] = read_jsonl(path, Collection("cases", "x", FILTERS, "m"))
+    [loaded] = read_jsonl(path, Collection("cases", "x", FILTERS, "m"))  # pylint: disable=unbalanced-tuple-unpacking
     assert loaded["metadata"]["state"] == "TX"

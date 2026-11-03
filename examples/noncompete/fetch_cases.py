@@ -34,6 +34,7 @@ OUT = DATA / "cases.jsonl"
 SITE = "https://static.case.law"
 OLLAMA = "http://127.0.0.1:11434"
 MODEL = "gemma4:26b"
+CONTEXT = 8192    # tokens: room for the passages and the answer; the model's default is far larger and slower
 
 # Reporter and first volume: published opinions from about 1990
 REPORTERS = {"sw2d": 770, "sw3d": 1, "f3d": 1, "p3d": 1, "nw2d": 450, "ne2d": 550, "ne3d": 1, "so2d": 550,
@@ -96,7 +97,7 @@ def checked_facts(facts: dict, passages: list[dict]) -> dict:
         kind = FACTS.get(name)
         if kind is None or not isinstance(fact, dict):
             continue
-        value, label, quote = fact.get("value"), str(fact.get("passage")), fact.get("quote")
+        value, label, quote = fact.get("value"), str(fact.get("passage")).strip("[] "), fact.get("quote")
         if isinstance(kind, tuple) and all(isinstance(item, str) for item in kind):
             right = value in kind
         else:
@@ -182,8 +183,8 @@ def read_facts(http: httpx.Client, case: dict, model: str) -> dict:
     """The facts a local model reads in the opinion; {} when it gives no usable answer."""
     passages = split(opinion_text(case))
     response = http.post(f"{OLLAMA}/api/generate", json={"model": model, "prompt": PROMPT + _relevant(passages),
-                                                         "format": "json", "stream": False,
-                                                         "options": {"temperature": 0}})
+                                                         "format": "json", "stream": False, "think": False,
+                                                         "options": {"temperature": 0, "num_ctx": CONTEXT}})
     try:
         facts = json.loads(response.json()["response"])
     except (KeyError, ValueError):
