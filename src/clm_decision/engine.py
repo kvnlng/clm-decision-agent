@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import itertools
 import math
+import re
 
 from . import tracing
 from .dmn import DmnError, evaluate
@@ -45,6 +46,60 @@ def _part(parts: dict, kind: str, name: str):
         known = ", ".join(sorted(parts)) or "none"
         raise StepError(f"no {kind} '{name}' (the environment has: {known})")
     return parts[name]
+
+
+
+_FILTER_WORDS = {"string": "text", "boolean": "true or false", "integer": "a whole number", "number": "a number",
+                 "date": "an ISO date"}
+_RANGED = ("integer", "number", "date")
+MAX_SEARCH = 50
+MAX_DEPTH = 5
+
+
+def _filter_value_ok(kind: str, value) -> bool:
+    if kind == "date":
+        return isinstance(value, str) and bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", value))
+    return _CHECKS[kind](value)
+
+
+def _filters(env: Environment, name: str, filters: dict | None) -> dict:
+    """The search's filters, checked against the collection's declared fields and types."""
+    declared = env.collections[name].filters
+    if filters is None:
+        return {}
+    if not isinstance(filters, dict):
+        raise StepError(f"search {name}: filters must be an object of field: value")
+    for field, wanted in filters.items():
+        if field not in declared:
+            raise StepError(f"search {name}: {field} is not a filter ({', '.join(sorted(declared)) or 'none'})")
+        kind = declared[field]
+        if isinstance(wanted, dict):
+            if kind not in _RANGED:
+                raise StepError(f"search {name}: {field} is {_FILTER_WORDS[kind]}: give a value or a list, "
+                                "not a range")
+            if not wanted or set(wanted) - {"from", "to"} or not all(_filter_value_ok(kind, v)
+                                                                      for v in wanted.values()):
+                raise StepError(f"search {name}: {field}'s range is {{\"from\", \"to\"}}, each "
+                                f"{_FILTER_WORDS[kind]}")
+        elif not all(_filter_value_ok(kind, v) for v in (wanted if isinstance(wanted, list) else [wanted])) \
+                or wanted == []:
+            ranged = ', or {"from", "to"}' if kind in _RANGED else ""
+            raise StepError(f"search {name}: {field} must be {_FILTER_WORDS[kind]}, a list of them{ranged}, "
+                            f"not {wanted!r}")
+    return filters
+
+
+def _built(env: Environment, name: str) -> dict:
+    """The collection's build record, after checking it holds something, loaded with the model the file names."""
+    collection = _part(env.collections, "collection", name)
+    built = env.store.built(name)
+    if built is None:
+        raise StepError(f"collection {name} holds nothing: load it with clm-load-documents {env.path.name} {name} "
+                        "FILE.jsonl")
+    if built["model"] != collection.embedding_model:
+        raise StepError(f"collection {name} was loaded with {built['model']}, but the environment names "
+                        f"{collection.embedding_model}: load it again, or name {built['model']}")
+    return built
 
 
 _RANGE = ("low", "central", "high")
@@ -150,6 +205,63 @@ class Steps:
         self.steps.append({"kind": "calculation", "name": name, "inputs": inputs, "result": result})
         return result
 
+    def search(self, collection: str, text: str, filters: dict | None = None, limit: int = 10) -> list[dict]:
+        """The passages closest to the text, by meaning and words, that the filters allow: evidence to read, which
+        decides nothing by itself."""
+        built = _built(self.env, collection)
+        if not isinstance(text, str) or not text.strip():
+            raise StepError(f"search {collection}: there is no text to search for")
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= MAX_SEARCH:
+            raise StepError(f"search {collection}: limit must be from 1 to {MAX_SEARCH}, not {limit!r}")
+        checked = _filters(self.env, collection, filters)
+        model = self.env.collections[collection].embedding_model
+        tracing.add("search")
+        with tracing.timed("search_ms"):
+            [vector] = self.env.embedder.embed(model, [text])
+            if len(vector) != built["dimensions"]:
+                raise StepError(f"collection {collection} holds vectors of {built['dimensions']} numbers, but "
+                                f"{model} gave {len(vector)}: load it again")
+            rows = self.env.store.search(collection, vector, text, checked, limit)
+        self.steps.append({"kind": "search", "name": collection,
+                           "inputs": {"text": text, "filters": filters, "limit": limit}, "result": rows,
+                           "built_at": built["built_at"]})
+        return rows
+
+    def document(self, collection: str, id: str, passage: str | None = None) -> dict:  # pylint: disable=redefined-builtin
+        """A document with its passages, or one passage, as stored: for checking what a citation says."""
+        built = _built(self.env, collection)
+        tracing.add("document")
+        found = self.env.store.document(collection, id, passage)
+        if not found:
+            raise StepError(f"collection {collection}: no document {id}")
+        if passage is not None and not found["passages"]:
+            raise StepError(f"collection {collection}: {id} has no passage {passage}")
+        self.steps.append({"kind": "document", "name": collection, "inputs": {"id": id, "passage": passage},
+                           "result": found, "built_at": built["built_at"]})
+        return found
+
+    def _citations(self, collection: str, id: str, depth: int, direction: str) -> list[dict]:  # pylint: disable=redefined-builtin
+        built = _built(self.env, collection)
+        if not isinstance(depth, int) or isinstance(depth, bool) or not 1 <= depth <= MAX_DEPTH:
+            raise StepError(f"{direction} {collection}: depth must be from 1 to {MAX_DEPTH}, not {depth!r}")
+        if not self.env.store.exists(collection, id):
+            raise StepError(f"collection {collection}: no document {id}")
+        tracing.add("citations")
+        rows = getattr(self.env.store, direction)(collection, id, depth)
+        self.steps.append({"kind": "citations", "name": collection,
+                           "inputs": {"id": id, "depth": depth, "direction": direction}, "result": rows,
+                           "built_at": built["built_at"]})
+        return rows
+
+    def cites(self, collection: str, id: str, depth: int = 1) -> list[dict]:  # pylint: disable=redefined-builtin
+        """The documents this one cites, and those they cite, to the depth."""
+        return self._citations(collection, id, depth, "cites")
+
+    def cited_by(self, collection: str, id: str, depth: int = 1) -> list[dict]:  # pylint: disable=redefined-builtin
+        """The documents citing this one, with the citing passage, and those citing them, to the depth."""
+        return self._citations(collection, id, depth, "cited_by")
+
+
 
 def run_query(env: Environment, name: str, params: dict) -> dict:
     """-> {"rows", "steps"}."""
@@ -175,6 +287,27 @@ def run_calculation(env: Environment, name: str, inputs: dict) -> dict:
     """-> {"result", "steps"}."""
     steps = Steps(env)
     return {"result": steps.calculate(name, **inputs), "steps": steps.steps}
+
+
+def run_search(env: Environment, name: str, args: dict) -> dict:
+    """-> {"rows", "built_at", "steps"}."""
+    steps = Steps(env)
+    rows = steps.search(name, args["text"], args.get("filters"), args.get("limit", 10))
+    return {"rows": rows, "built_at": steps.steps[-1]["built_at"], "steps": steps.steps}
+
+
+def run_document(env: Environment, name: str, args: dict) -> dict:
+    """-> {"document", "built_at", "steps"}."""
+    steps = Steps(env)
+    found = steps.document(name, args["id"], args.get("passage"))
+    return {"document": found, "built_at": steps.steps[-1]["built_at"], "steps": steps.steps}
+
+
+def run_citations(env: Environment, name: str, args: dict, direction: str) -> dict:
+    """-> {"rows", "built_at", "steps"}; `direction` is "cites" or "cited_by"."""
+    steps = Steps(env)
+    rows = getattr(steps, direction)(name, args["id"], args.get("depth", 1))
+    return {"rows": rows, "built_at": steps.steps[-1]["built_at"], "steps": steps.steps}
 
 
 def _branches(scenario, branches: list[dict] | None) -> list[dict]:

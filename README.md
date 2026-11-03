@@ -50,6 +50,7 @@ One tool for each part you write, named after it, so the agent can explore the p
 | `query_<name>`, `decision_<name>`, `calculation_<name>` | One named part, with typed arguments |
 | `scenario_<name>` | Every branch, or those asked for: figures, kept or rejected, the limits that rejected it, and every step |
 | `judge_<name>` | CLM's probability that the judge's question is answered yes for a text |
+| `search_<name>`, `document_<name>`, `cites_<name>`, `cited_by_<name>` | A collection of documents: the passages closest to a text, one document as stored, and the citations between them |
 | `rules`, `rule` | When the rules carry metadata: those governing a topic, with why each exists and what to ask for; one rule's rows |
 
 ## What to expect

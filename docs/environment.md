@@ -139,6 +139,68 @@ Keep the password in a git-ignored file such as `.neo4j-local.env` (`NEO4J_PASSW
 `set -a; . ./.neo4j-local.env; set +a`. `uv run pytest -m slow tests/test_graph_neo4j.py` then loads the tariff example
 and checks that every query and branch match on both graphs. Point it only at a database you can wipe.
 
+## Documents
+
+Some decisions rest on large documents: statutes and court opinions, policies, manuals, contracts. The framework keeps
+them in a local **collection** and gives the agent tools to search and read it, so you write no tool code: you load
+the documents and say what they can be filtered on. Searching selects evidence to read; **only your rules decide**,
+so no rule should take a search score as an input.
+
+```toml
+[documents]
+backend = "postgres"                      # the defaults
+host = "127.0.0.1"
+port = 5432
+database = "clm_documents"
+user = "clm"
+password_env = "CLM_DOCUMENTS_PASSWORD"   # the variable that holds the password; never the password itself
+ollama_url = "http://127.0.0.1:11434"     # embeds passages and searches, so no text leaves the machine
+
+[collections.cases]
+description = "Court opinions on non-competes: what the agent reads about the collection."
+embedding_model = "embeddinggemma"        # an Ollama embedding model
+filters = { state = "string", court_level = "string", year = "integer", decided = "date" }
+```
+
+- **Filter types** are `string`, `integer`, `number`, `boolean` and `date` (ISO, `2024-05-01`). A search filters on a
+  value, a list of values (any of them), or `{"from", "to"}` for numbers and dates. An undeclared field or a value of
+  the wrong type is refused in one line.
+- **Passages** are found by meaning (pgvector) and by words (PostgreSQL full-text search), the two rankings combined.
+  Each comes with its document id, citation, title, metadata, passage label and score.
+- **The server connects at start-up.** An unreachable database, or one without the `vector` extension, stops it with
+  one line. The driver is the `documents` extra: `pip install 'clm-decision-agent[documents]'`.
+
+`clm-load-documents` loads a collection from JSON lines, **replacing what it holds**:
+
+```json
+{"id": "tx-bcc-15.50", "citation": "Tex. Bus. & Com. Code § 15.50", "title": "Criteria for enforceability",
+ "metadata": {"state": "TX"}, "passages": [{"label": "(a)", "text": "..."}, {"label": "(b)", "text": "..."}]}
+{"id": "cl-4321", "citation": "100 S.W.3d 1", "title": "...", "metadata": {"state": "TX", "year": 2019},
+ "text": "The opinion's text ...", "cites": [{"id": "tx-bcc-15.50", "passage": "3"}]}
+```
+
+- `passages` keeps your own split, such as a statute's subsections; `text` is split into passages for you.
+- `metadata` holds only the declared filters, plus `sources`: which passage each value came from.
+- `cites` lists the ids a document cites, as text or with the citing passage. An id outside the file is kept and
+  counted, since documents cite others you may not hold.
+- The collection records when it was built, from what and with which model. Every search reports that date, and
+  searching with a different model is refused.
+
+```bash
+brew install postgresql@18 pgvector       # natively
+createdb clm_documents
+psql -d clm_documents -c "CREATE ROLE clm LOGIN PASSWORD '...'; ALTER DATABASE clm_documents OWNER TO clm"
+ollama pull embeddinggemma
+set -a; . ./.postgres-local.env; set +a   # CLM_DOCUMENTS_PASSWORD=...
+uv run clm-load-documents my_environment/environment.toml cases cases.jsonl --source "CourtListener, 2026-11"
+```
+
+In a branch or decision function, `steps.search(collection, text, filters, limit)`, `steps.document(collection, id,
+passage)`, `steps.cites(collection, id, depth)` and `steps.cited_by(collection, id, depth)` give the same rows, each
+a traced step. A collection that holds nothing fails the step, naming the command that loads it, rather than giving
+no rows that look like an answer. `uv run pytest -m postgres` checks the store against a local database
+`clm_documents_test`, with its password in `CLM_TEST_POSTGRES_PASSWORD`; point it only at a database you can wipe.
+
 ## Decisions
 
 A decision is a DMN decision table, or a function for a rule DMN cannot express:
@@ -339,6 +401,8 @@ needs it, not run a scenario or fill it in.
 |---|---|
 | `query_<name>`, `decision_<name>`, `calculation_<name>` | One named part, its declared parameters as typed arguments |
 | `judge_<name>` | CLM's probability that the judge's question is answered yes for a `text` |
+| `search_<name>`, `document_<name>` | A collection's closest passages to a `text`, with `filters` and `limit`; one document or passage as stored |
+| `cites_<name>`, `cited_by_<name>` | The documents one cites, or that cite it with the citing passage, to a `depth` |
 | `scenario_<name>` | Every branch, or the `branches` given: figures, status, rejecting limits and every step |
 | `describe` | Name, description, and every part with its parameters, levers, objective and limits |
 | `rules`, `rule` | With rule metadata: the rules governing a topic, and one rule with its rows (above) |

@@ -127,7 +127,7 @@ def read_jsonl(path: str | Path, collection: Collection) -> list[dict]:
     return documents
 
 
-def load(store, embedder: Embedder, collection: Collection, documents: list[dict], *,  # pylint: disable=too-many-locals
+def load(store, embedder: Embedder, collection: Collection, documents: list[dict], *,  # pylint: disable=too-many-locals,too-many-arguments
          source: str, now: str | None = None) -> dict:
     """Embed every passage and replace the collection -> the counts and when it was built."""
     texts = [passage["text"] for document in documents for passage in document["passages"]]

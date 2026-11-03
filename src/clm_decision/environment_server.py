@@ -75,6 +75,9 @@ def describe(env: Environment) -> dict:
                                  "limits": list(scenario.limits), "uncertain": list(scenario.uncertain),
                                  "approvals": list(scenario.approvals)}
                           for name, scenario in env.scenarios.items()},
+            **({"collections": {name: {"description": collection.description, "filters": collection.filters,
+                                       "built": env.store.built(name)}
+                                for name, collection in env.collections.items()}} if env.collections else {}),
             **({"topics": env.topics()} if env.topics() else {})}
 
 
@@ -121,6 +124,33 @@ def explain_rule(env: Environment, name: str) -> dict:
     return result
 
 
+def _optional(name: str, annotation, default) -> inspect.Parameter:
+    return inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, default=default, annotation=annotation)
+
+
+def _add_document_tools(add: Callable, env: Environment, name: str, collection) -> None:
+    """search_, document_, cites_ and cited_by_ the collection: they read, and decide nothing."""
+    fields = ", ".join(f"{field} ({kind})" for field, kind in collection.filters.items()) or "none"
+    text = inspect.Parameter("text", inspect.Parameter.KEYWORD_ONLY, annotation=str)
+    ident = inspect.Parameter("id", inspect.Parameter.KEYWORD_ONLY, annotation=str)
+    add(f"search_{name}", f"{collection.description} The passages closest to the text, by meaning and by words, "
+        f"each with its document id, citation, title, metadata and passage label. Filters, as field: value, a list "
+        f"of values, or {{\"from\", \"to\"}} for numbers and dates: {fields}. Passages are evidence to read and "
+        "cite by their citation; they decide nothing.",
+        lambda args: engine.run_search(env, name, args),
+        inspect.Signature([text, _optional("filters", dict[str, Any] | None, None), _optional("limit", int, 10)],
+                          return_annotation=_RESULT))
+    add(f"document_{name}", f"One document of {name} as stored, with its passages, or only the passage labelled "
+        "`passage`: to check what a citation says before relying on it.",
+        lambda args: engine.run_document(env, name, args),
+        inspect.Signature([ident, _optional("passage", str | None, None)], return_annotation=_RESULT))
+    for direction, what in (("cites", "The documents this one cites"),
+                            ("cited_by", "The documents that cite this one, with the citing passage")):
+        add(f"{direction}_{name}", f"{what}, and theirs to `depth` steps (1 to {engine.MAX_DEPTH}), nearest first.",
+            lambda args, direction=direction: engine.run_citations(env, name, args, direction),
+            inspect.Signature([ident, _optional("depth", int, 1)], return_annotation=_RESULT))
+
+
 def build_environment_server(env: Environment, trace: tracing.TraceWriter | None = None,
                              auth: oauth.OAuth | None = None) -> MCPServer:
     """The MCP server for one environment. With `trace`, each call is written to the trace; with `auth`, HTTP
@@ -147,6 +177,8 @@ def build_environment_server(env: Environment, trace: tracing.TraceWriter | None
         add(f"judge_{name}", f"{judge.description} CLM's probability, 0 to 1, that the answer to "
             f"\"{judge.instructions}\" is yes for the text.",
             lambda args, name=name: engine.run_judgement(env, name, args), _signature({"text": "string"}))
+    for name, collection in env.collections.items():
+        _add_document_tools(add, env, name, collection)
     branches = inspect.Parameter("branches", inspect.Parameter.KEYWORD_ONLY, default=None,
                                  annotation=list[dict[str, Any]] | None)
     for name, scenario in env.scenarios.items():
