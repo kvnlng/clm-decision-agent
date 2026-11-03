@@ -16,3 +16,4 @@ examples/tariff/runs/
 .postgres-local.env
 examples/*/runs/
 /runs/
+examples/noncompete/data/
