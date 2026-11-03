@@ -45,11 +45,11 @@ def pay_threshold(graph, state):
     return rows or [{"state": state, "amount": 0, "year": None, "source": "no pay threshold in this example's law"}]
 
 
-def employee(graph, ident):
+def employee(graph, employee):  # pylint: disable=redefined-outer-name  # the query names its parameter
     """Where an employee resides and works, and the agreement they signed."""
-    node = _node(graph, ident, "employee")
-    bound = [n["id"] for n in graph.neighbours(ident, "bound_by", "out")]
-    return [{"employee": ident, "resides": node["resides"], "works": node["works"], "agreement": bound[0]}]
+    node = _node(graph, employee, "employee")
+    bound = [n["id"] for n in graph.neighbours(employee, "bound_by", "out")]
+    return [{"employee": employee, "resides": node["resides"], "works": node["works"], "agreement": bound[0]}]
 
 
 def pay_test(lowest_pay, threshold):

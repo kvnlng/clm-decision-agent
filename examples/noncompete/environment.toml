@@ -58,7 +58,7 @@ function = "pay_threshold"
 
 [queries.employee]
 description = "Where an employee resides and works, and the agreement they signed. Give the id, such as e_1042."
-params = { id = "string" }
+params = { employee = "string" }
 function = "employee"
 
 [calculations.pay_test]
