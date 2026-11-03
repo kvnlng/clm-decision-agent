@@ -40,6 +40,14 @@ def test_an_unrelated_opinion_is_dropped():
     assert fetch_cases.state_of(case(jurisdiction="Ohio")) is None
 
 
+def test_an_employee_restrictive_covenant_is_kept_but_a_deeds_is_not():
+    for text in ("Reported cases adjudicating the validity of post-employment restrictive covenants go back far.",
+                 "The agreement is a form of ancillary employee anti-competitive agreement.",
+                 "The restrictive covenant in the employment agreement bars him for a year."):
+        assert fetch_cases.is_non_compete(text), text
+    assert not fetch_cases.is_non_compete("The restrictive covenant in the deed bars a second house on the lot.")
+
+
 def test_a_federal_opinion_takes_the_state_whose_law_it_applies():
     fifth = case(court="United States Court of Appeals for the Fifth Circuit", court_abbreviation="5th Cir.",
                  jurisdiction="U.S.", text="Applying Texas law, we consider the covenant not to compete.")

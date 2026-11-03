@@ -48,7 +48,9 @@ FIFTH_CIRCUIT = "United States Court of Appeals for the Fifth Circuit"
 # Loose, to keep every opinion that might cite a non-compete case; then strict, for the non-compete cases
 _CANDIDATE = re.compile(r"compet|covenant|restrictive", re.IGNORECASE)
 _NON_COMPETE = re.compile(r"covenants? not to compete|non-?competition (?:agreement|covenant|clause|provision)"
-                          r"|non-?compete (?:agreement|covenant|clause|provision)s?", re.IGNORECASE)
+                          r"|non-?compete (?:agreement|covenant|clause|provision)s?"
+                          r"|(?:post-?employment|employee) (?:restrictive covenant|anti-?competitive agreement)"
+                          r"|restrictive covenants? (?:in|of) (?:an|the|his|her|their) employment", re.IGNORECASE)
 FACTS = {"role": str, "length_months": (int, float), "area": str, "outcome": ("enforced", "reformed", "void"),
          "reformed_to": str}
 PROMPT = """Read these passages of a court opinion about a covenant not to compete. For each fact below that the
