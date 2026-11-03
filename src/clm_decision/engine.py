@@ -111,7 +111,8 @@ def rule_info(env: Environment, name: str) -> dict:
     rule = decision.rule
     return {"name": name, "description": decision.description, "statement": rule.statement, "reason": rule.reason,
             "owner": rule.owner, "version": rule.version, "governs": list(rule.governs),
-            "depends_on": list(rule.depends_on), "needs": list(rule.needs)}
+            "depends_on": list(rule.depends_on), "needs": list(rule.needs),
+            **({"cites": list(rule.cites), "collection": decision.collection} if rule.cites else {})}
 
 
 def _estimate(name: str, rows: list[dict], setting) -> list[dict]:

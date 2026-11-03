@@ -67,6 +67,7 @@ class RuleInfo:  # pylint: disable=too-many-instance-attributes
     governs: tuple[str, ...]
     depends_on: tuple[str, ...]
     needs: tuple[str, ...]
+    cites: tuple[str, ...] = ()         # ids of documents in the decision's collection: where the rule comes from
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,7 @@ class Decision:
     table: Table | None
     function: str | None
     rule: RuleInfo | None = None
+    collection: str | None = None       # the collection its citations are in
 
 
 @dataclass(frozen=True)
@@ -361,7 +363,7 @@ def _rule(table: dict, where: str) -> RuleInfo | None:
     rule = _table(table, "rule", where)
     where = f"{where}.rule"
     return RuleInfo(*(_text(rule, key, where) for key in ("statement", "reason", "owner", "version")),
-                    *(_names(rule, key, where) for key in ("governs", "depends_on", "needs")))
+                    *(_names(rule, key, where) for key in ("governs", "depends_on", "needs", "cites")))
 
 
 def _information(name: str, table: dict, queries: dict[str, Query]) -> Information:
@@ -413,8 +415,10 @@ def _decision(name: str, table: dict, folder: Path, functions: ModuleType) -> De
     if ("dmn" in table) == ("function" in table):
         raise ScenarioError(f"{where}: needs either dmn or function")
     rule = _rule(table, where)
+    collection = _text(table, "collection", where) if "collection" in table else None
     if "function" in table:
-        return Decision(name, description, _params(table, where), None, _function(table, where, functions), rule)
+        return Decision(name, description, _params(table, where), None, _function(table, where, functions), rule,
+                        collection)
     path = folder / _text(table, "dmn", where)
     if not path.is_file():
         raise ScenarioError(f"{where}.dmn: no file {path.name}")
@@ -426,7 +430,40 @@ def _decision(name: str, table: dict, folder: Path, functions: ModuleType) -> De
         if _bad_name(item):
             raise ScenarioError(f"{where}.dmn: input '{item}' cannot be a parameter: {_bad_name(item)}")
     params = {item: _DMN_TYPES.get(kind.rsplit(":", 1)[-1], "any") for item, kind in zip(dmn.inputs, dmn.types)}
-    return Decision(name, description, params, dmn, None, rule)
+    return Decision(name, description, params, dmn, None, rule, collection)
+
+
+def _citations(decision: Decision) -> list[tuple[str, str]]:
+    """Each id a decision cites, with where: its rule's cites, then its table's citation cells (ids split by ;)."""
+    where = f"decisions.{decision.name}"
+    found = [(f"{where}.rule.cites", cited) for cited in (decision.rule.cites if decision.rule else ())]
+    table = decision.table
+    if table is not None and "citation" in table.outputs:
+        column = table.outputs.index("citation")
+        for row in table.rules:
+            cell = row.values[column]
+            found += [(f"{where}.dmn: row {row.id}", cited.strip())
+                      for cited in (cell.split(";") if isinstance(cell, str) else []) if cited.strip()]
+    return found
+
+
+def _check_citations(decisions: dict[str, Decision], collections: dict, store) -> None:
+    """Every id a rule cites must be in its decision's collection, so no rule cites what cannot be read."""
+    for name, decision in decisions.items():
+        where = f"decisions.{name}"
+        cited = _citations(decision)
+        if decision.collection is None:
+            if cited:
+                raise ScenarioError(f"{where}.collection: name the collection its citations are in")
+            continue
+        if decision.collection not in collections:
+            raise ScenarioError(f"{where}.collection: no collection {decision.collection} "
+                                f"({', '.join(sorted(collections)) or 'none declared'})")
+        for place, ident in cited:
+            if not store.exists(decision.collection, ident):
+                if place.endswith(".rule.cites"):
+                    raise ScenarioError(f"{place}: {decision.collection} holds no document {ident}")
+                raise ScenarioError(f"{place} cites {ident}, which {decision.collection} does not hold")
 
 
 def _scenario(name: str, table: dict, functions: ModuleType, decisions: dict, queries: dict) -> ScenarioDef:
@@ -495,6 +532,7 @@ def load_environment(path: str | Path, backend: str | None = None,  # pylint: di
         embedder = embedder or docs.OllamaEmbedder(document_settings.ollama_url)
     else:
         store = embedder = None
+    _check_citations(decisions, collections, store)
     # Connected last, once everything else is known to be right
     return Environment(path, _text(head, "name", "environment"), _text(head, "description", "environment"), graph,
                        functions, _connector(settings, graph, functions), queries, decisions, calculations, scenarios,

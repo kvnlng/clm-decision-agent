@@ -351,6 +351,10 @@ query = "household_income"
 - **`rule(name)`** gives one rule, with its parameters and, for a DMN table, its rows as written.
 - **Name a supplied item after the scenario parameter that carries it,** so the decision record can tell what was given
   from what is still to ask.
+- **A rule can cite its source** in a collection (see Documents): `cites = ["tx-bcc-15.50"]` in its rule table, and
+  `collection = "laws"` on the decision. A decision table can carry a `citation` output, ids separated by `;`, so each
+  row says where it comes from. `rule` and `rules` show them. An id the collection does not hold stops loading, so no
+  rule cites what cannot be read.
 - **These stop loading, naming the mistake:** `needs` that are not `[information.*]` items, `depends_on` that are not
   rules, a rule depending on itself through others, and an information item whose kind differs from its query's.
 
