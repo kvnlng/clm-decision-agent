@@ -19,6 +19,7 @@ from types import ModuleType
 from typing import Protocol
 
 from . import documents as docs
+from .documents import _table, _text  # shared with the [documents] settings
 from .dmn import DmnError, Table, load_table
 from .graph import Graph
 from .scenario import CLM_BACKENDS, DEFAULT_CLM, ScenarioError, StepError
@@ -205,20 +206,6 @@ def _read(path: Path) -> dict:
 def is_environment(path: str | Path) -> bool:
     """Whether the file is an environment (it has an [environment] table) rather than a CLM scenario."""
     return isinstance(_read(Path(path)).get("environment"), dict)
-
-
-def _table(data: dict, key: str, where: str) -> dict:
-    value = data.get(key, {})
-    if not isinstance(value, dict):
-        raise ScenarioError(f"{where}: must be a table")
-    return value
-
-
-def _text(table: dict, key: str, where: str, default: str | None = None) -> str:
-    value = table.get(key, default)
-    if not isinstance(value, str) or not value.strip():
-        raise ScenarioError(f"{where}.{key}: must be text")
-    return value.strip()
 
 
 def _params(table: dict, where: str) -> dict[str, str]:

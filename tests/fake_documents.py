@@ -56,19 +56,21 @@ class FakeStore:
 
     def _walk(self, collection: str, id: str, depth: int, forward: bool) -> list[dict]:  # pylint: disable=redefined-builtin
         documents = self._documents(collection)
-        links = [(source["id"], target) for source in documents.values() for target in source.get("cites", [])]
+        links = [(source["id"], cite["id"] if isinstance(cite, dict) else cite,
+                  cite.get("passage") if isinstance(cite, dict) else None)
+                 for source in documents.values() for cite in source.get("cites", [])]
         found, frontier = [], [id]
         seen = {id}
         for step in range(1, depth + 1):
             following = []
             for current in frontier:
-                for source, target in links:
+                for source, target, passage in links:
                     near, far = (source, target) if forward else (target, source)
                     if near == current and far not in seen:
                         seen.add(far)
                         following.append(far)
                         citation = documents.get(far, {}).get("citation")
-                        found.append({"document": far, "citation": citation, "depth": step, "passage": None})
+                        found.append({"document": far, "citation": citation, "depth": step, "passage": passage})
             frontier = following
         return found
 

@@ -30,6 +30,8 @@ clm = [
     "langchain-openai>=1.6.7",
 ]
 neo4j = ["neo4j>=6,<7"]
+# Collections of documents in PostgreSQL with pgvector
+documents = ["psycopg[binary]>=3.2,<4", "pgvector>=0.3,<1"]
 # The reference agent with Claude; with Ollama it needs nothing more
 agent = ["anthropic>=2.1.0,<3"]
 
@@ -45,13 +47,14 @@ clm-evaluate = "clm_decision.evaluate:main"
 clm-synthesize = "clm_decision.synthesize:main"
 clm-record = "clm_decision.record:main"
 clm-load-graph = "clm_decision.load_graph:main"
+clm-load-documents = "clm_decision.load_documents:main"
 clm-registry = "clm_decision.registry:main"
 clm-trace-report = "clm_decision.trace_report:main"
 
 [dependency-groups]
 # A checkout gets every extra, so `uv sync` and the tests have everything
 dev = [
-    "clm-decision-agent[clm,neo4j,agent]",
+    "clm-decision-agent[clm,neo4j,documents,agent]",
     "pylint>=4.1.2",
     "pytest>=8",
 ]
@@ -65,8 +68,9 @@ module-name = "clm_decision"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["slow: loads real models"]
-addopts = "-m 'not slow'"
+markers = ["slow: loads real models",
+           "postgres: needs a local PostgreSQL with pgvector (CLM_TEST_POSTGRES_PASSWORD set)"]
+addopts = "-m 'not slow and not postgres'"
 
 [tool.pylint.main]
 # Vendored unchanged from the CLM authors, so it keeps their style

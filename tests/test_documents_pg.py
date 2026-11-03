@@ -1,0 +1,153 @@
+"""Tests for documents_pg.py and the Ollama embedder: collections in PostgreSQL with pgvector.
+
+Those marked postgres need a local PostgreSQL with pgvector, a role `clm` and a database `clm_documents_test` that
+can be wiped, with the password in CLM_TEST_POSTGRES_PASSWORD: `uv run pytest -m postgres tests/test_documents_pg.py`.
+"""
+# Test names say what they check, and pytest fixtures are used by repeating their names.
+# pylint: disable=missing-function-docstring,redefined-outer-name
+import json
+import os
+
+import httpx
+import psycopg
+import pytest
+from fake_documents import FakeEmbedder
+
+from clm_decision import documents_pg
+from clm_decision.documents import DocumentSettings, OllamaEmbedder
+from clm_decision.scenario import ScenarioError, StepError
+
+TEST_DB = DocumentSettings("127.0.0.1", 5432, "clm_documents_test", "clm", "CLM_TEST_POSTGRES_PASSWORD",
+                           "http://127.0.0.1:11434")
+NEVER = DocumentSettings("127.0.0.1", 1, "nowhere", "clm", "X", "http://127.0.0.1:11434")
+
+DOCUMENTS = [
+    {"id": "tx-15.50", "citation": "Tex. Bus. & Com. Code § 15.50", "title": "Criteria for enforceability",
+     "metadata": {"state": "TX", "year": 1989},
+     "passages": [{"label": "(a)", "text": "A covenant not to compete is enforceable if it contains reasonable "
+                                           "limitations as to time, geographical area, and scope of activity."}],
+     "cites": []},
+    {"id": "case-a", "citation": "100 S.W.3d 1", "title": "Case A", "metadata": {"state": "TX", "year": 2019},
+     "passages": [{"label": "1", "text": "The sales manager was barred nationwide for two years."},
+                  {"label": "2", "text": "We reform the covenant to the territory he served."}],
+     "cites": [{"id": "tx-15.50", "passage": "2"}]},
+    {"id": "case-b", "citation": "200 S.W.3d 5", "title": "Case B", "metadata": {"state": "TX", "year": 2022},
+     "passages": [{"label": "1", "text": "Following Case A, the restriction on the account executive is narrowed."}],
+     "cites": [{"id": "case-a", "passage": "1"}]},
+    {"id": "ny-1", "citation": "93 N.Y.2d 382", "title": "New York case", "metadata": {"state": "NY", "year": 1999},
+     "passages": [{"label": "1", "text": "An accountant's restriction is enforced only to protect legitimate "
+                                         "interests."}], "cites": []},
+]
+
+
+def built():
+    return {"built_at": "2026-11-03T12:00:00Z", "source": "test", "model": "toy-embed", "dimensions": 26}
+
+
+def vectors(documents=DOCUMENTS):
+    embedder = FakeEmbedder()
+    return [embedder.embed("toy-embed", [p["text"] for p in document["passages"]]) for document in documents]
+
+
+@pytest.fixture
+def store():
+    if not os.environ.get(TEST_DB.password_env):
+        pytest.skip("CLM_TEST_POSTGRES_PASSWORD is not set")
+    store = documents_pg.connect_postgres(TEST_DB, os.environ[TEST_DB.password_env])
+    store.replace("cases", DOCUMENTS, vectors(), built())
+    yield store
+    store.replace("cases", [], [], built())
+    store.connection.close()
+
+
+def test_ollama_embedder_posts_the_texts():
+    seen = []
+
+    def handle(request):
+        seen.append((request.url.path, json.loads(request.content)))
+        return httpx.Response(200, json={"embeddings": [[0.1, 0.2], [0.3, 0.4]]})
+    embedder = OllamaEmbedder("http://ollama", http=httpx.Client(transport=httpx.MockTransport(handle)))
+    assert embedder.embed("toy-embed", ["one", "two"]) == [[0.1, 0.2], [0.3, 0.4]]
+    assert seen == [("/api/embed", {"model": "toy-embed", "input": ["one", "two"]})]
+
+
+def test_an_embedder_failure_is_one_line():
+    embedder = OllamaEmbedder("http://ollama", http=httpx.Client(transport=httpx.MockTransport(
+        lambda request: httpx.Response(404, json={"error": "model not found"}))))
+    with pytest.raises(StepError, match="^embedding with toy-embed at http://ollama: "):
+        embedder.embed("toy-embed", ["one"])
+
+
+def test_an_unreachable_database_is_one_line():
+    with pytest.raises(ScenarioError, match="^documents: cannot connect to 127.0.0.1:1/nowhere: ") as error:
+        documents_pg.connect_postgres(NEVER, "x")
+    assert "\n" not in str(error.value)
+
+
+def test_no_vector_extension_is_one_line(monkeypatch):
+    class Connection:
+        def execute(self, sql, *args):
+            raise psycopg.errors.UndefinedFile('extension "vector" is not available\nDETAIL: more')
+
+        def close(self):
+            pass
+    monkeypatch.setattr(psycopg, "connect", lambda **options: Connection())
+    with pytest.raises(ScenarioError, match=r"^documents: 127.0.0.1:1/nowhere has no vector extension "
+                                            r"\(brew install pgvector\): extension \"vector\" is not available$"):
+        documents_pg.connect_postgres(NEVER, "x")
+
+
+def test_no_driver_names_the_documents_extra(monkeypatch):
+    monkeypatch.setitem(__import__("sys").modules, "psycopg", None)
+    with pytest.raises(ScenarioError, match=r"install the documents extra"):
+        documents_pg.connect_postgres(NEVER, "x")
+
+
+@pytest.mark.postgres
+def test_replace_then_search_finds_by_meaning_and_by_words(store):
+    found = store.search("cases", FakeEmbedder().embed("toy-embed", ["reform covenant territory"])[0],
+                         "reform covenant territory", {}, 3)
+    assert found[0]["document"] == "case-a" and found[0]["passage"] == "2"
+    assert set(found[0]) == {"document", "citation", "title", "metadata", "passage", "text", "score"}
+    assert found[0]["citation"] == "100 S.W.3d 1" and found[0]["metadata"] == {"state": "TX", "year": 2019}
+    # Words alone: the vector points nowhere near the statute, its wording does
+    words = store.search("cases", FakeEmbedder().embed("toy-embed", ["zzz"])[0], "geographical", {}, 5)
+    assert words[0]["document"] == "tx-15.50"
+
+
+@pytest.mark.postgres
+def test_filters_narrow_the_search(store):
+    vector = FakeEmbedder().embed("toy-embed", ["restriction"])[0]
+    assert {row["document"] for row in store.search("cases", vector, "restriction", {"state": "NY"}, 10)} == {"ny-1"}
+    in_range = store.search("cases", vector, "restriction", {"year": {"from": 2020, "to": 2025}}, 10)
+    assert {row["document"] for row in in_range} == {"case-b"}
+    listed = store.search("cases", vector, "restriction", {"state": ["NY", "CA"]}, 10)
+    assert {row["document"] for row in listed} == {"ny-1"}
+
+
+@pytest.mark.postgres
+def test_cited_by_walks_two_steps(store):
+    assert store.cited_by("cases", "tx-15.50", 1) == [
+        {"document": "case-a", "citation": "100 S.W.3d 1", "depth": 1, "passage": "2"}]
+    assert [(row["document"], row["depth"]) for row in store.cited_by("cases", "tx-15.50", 2)] == [
+        ("case-a", 1), ("case-b", 2)]
+    assert [row["document"] for row in store.cites("cases", "case-b", 2)] == ["case-a", "tx-15.50"]
+
+
+@pytest.mark.postgres
+def test_document_gives_its_passages(store):
+    assert store.document("cases", "case-a", "2")["passages"] == [
+        {"label": "2", "text": "We reform the covenant to the territory he served."}]
+    assert len(store.document("cases", "case-a", None)["passages"]) == 2
+    assert store.document("cases", "nothing", None) == {}
+    assert store.exists("cases", "tx-15.50") and not store.exists("cases", "nothing")
+
+
+@pytest.mark.postgres
+def test_replace_removes_what_was_there(store):
+    assert store.built("cases")["documents"] == 4
+    store.replace("cases", DOCUMENTS[:1], vectors(DOCUMENTS[:1]), built())
+    assert store.built("cases") | {} == {"built_at": "2026-11-03T12:00:00Z", "source": "test", "model": "toy-embed",
+                                         "dimensions": 26, "documents": 1, "passages": 1}
+    assert not store.exists("cases", "case-a")
+    assert store.built("nothing") is None
