@@ -91,8 +91,11 @@ def court_level(case: dict) -> str:
     name = case["court"]["name"]
     if name.startswith("United States"):
         return "federal"
-    if "New York" in name:    # New York's Supreme Court sits below its Court of Appeals
-        return "supreme" if name == "New York Court of Appeals" else "appeals"
+    # New York's Supreme Court sits below its Court of Appeals, as it sat below the Court for the Correction of Errors
+    # before 1847: a name the source also gives some later Court of Appeals opinions.
+    if "New York" in name:
+        return "supreme" if name in ("New York Court of Appeals", "New York Court for the Correction of Errors") \
+            else "appeals"
     return "supreme" if "Supreme" in name else "appeals"
 
 

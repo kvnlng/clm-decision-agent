@@ -65,6 +65,7 @@ def test_new_yorks_supreme_court_is_not_its_highest():
     division = "New York Supreme Court, Appellate Division"
     assert fetch_cases.court_level(case(court=division)) == "appeals"
     assert fetch_cases.court_level(case(court="New York Court of Appeals")) == "supreme"
+    assert fetch_cases.court_level(case(court="New York Court for the Correction of Errors")) == "supreme"
 
 
 def test_a_document_has_passages_metadata_and_citing_passages():
