@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="similar_case_definitions" name="Whether a case counts as similar" namespace="https://example.org/noncompete">
+  <decision id="similar_case" name="similar_case">
+    <decisionTable id="similar_case_table" hitPolicy="FIRST">
+      <input id="similar_case_in1" label="weight"><inputExpression typeRef="string"><text>weight</text></inputExpression></input>
+      <input id="similar_case_in2" label="facts_known"><inputExpression typeRef="boolean"><text>facts_known</text></inputExpression></input>
+      <output id="similar_case_out1" name="similar" typeRef="boolean"/>
+      <rule id="unknown_facts"><inputEntry><text>-</text></inputEntry><inputEntry><text>false</text></inputEntry><outputEntry><text>false</text></outputEntry></rule>
+      <rule id="weighted"><inputEntry><text>-</text></inputEntry><inputEntry><text>true</text></inputEntry><outputEntry><text>true</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

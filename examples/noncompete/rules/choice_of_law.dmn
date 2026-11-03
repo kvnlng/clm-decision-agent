@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="choice_of_law_definitions" name="Which state's law governs the covenant" namespace="https://example.org/noncompete">
+  <decision id="choice_of_law" name="choice_of_law">
+    <decisionTable id="choice_of_law_table" hitPolicy="FIRST">
+      <input id="choice_of_law_in1" label="resides"><inputExpression typeRef="string"><text>resides</text></inputExpression></input>
+      <input id="choice_of_law_in2" label="works"><inputExpression typeRef="string"><text>works</text></inputExpression></input>
+      <output id="choice_of_law_out1" name="governing" typeRef="string"/>
+      <output id="choice_of_law_out2" name="reason" typeRef="string"/>
+      <output id="choice_of_law_out3" name="citation" typeRef="string"/>
+      <rule id="ca"><inputEntry><text>"CA"</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>"CA"</text></outputEntry><outputEntry><text>"California voids the covenant regardless of where it was signed"</text></outputEntry><outputEntry><text>"ca-bpc-16600.5"</text></outputEntry></rule>
+      <rule id="co"><inputEntry><text>"CO"</text></inputEntry><inputEntry><text>"CO"</text></inputEntry><outputEntry><text>"CO"</text></outputEntry><outputEntry><text>"Colorado law governs a worker who primarily resided and worked in Colorado, whatever the contract says"</text></outputEntry><outputEntry><text>"co-crs-8-2-113"</text></outputEntry></rule>
+      <rule id="mn"><inputEntry><text>"MN"</text></inputEntry><inputEntry><text>"MN"</text></inputEntry><outputEntry><text>"MN"</text></outputEntry><outputEntry><text>"An employee who primarily resides and works in Minnesota keeps Minnesota's protection"</text></outputEntry><outputEntry><text>"mn-stat-181.988"</text></outputEntry></rule>
+      <rule id="wa"><inputEntry><text>"WA"</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>"WA"</text></outputEntry><outputEntry><text>"A covenant may not deprive a Washington-based worker of Washington law"</text></outputEntry><outputEntry><text>"wa-rcw-49.62.050"</text></outputEntry></rule>
+      <rule id="ma"><inputEntry><text>"MA"</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>"MA"</text></outputEntry><outputEntry><text>"A choice of other law cannot avoid the Act for a Massachusetts resident or worker"</text></outputEntry><outputEntry><text>"ma-gl-149-24l"</text></outputEntry></rule>
+      <rule id="contract"><inputEntry><text>-</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>"contract"</text></outputEntry><outputEntry><text>"No statute of this state overrides the contract's choice of law"</text></outputEntry><outputEntry><text>""</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

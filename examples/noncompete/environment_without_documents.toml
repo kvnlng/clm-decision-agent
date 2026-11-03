@@ -1,0 +1,133 @@
+# The same environment as environment.toml, but the agent gets no tools to search, read or follow the documents: the
+# rules and scenarios still use them. For measuring what the document tools add (README.md). Not legal advice.
+
+[environment]
+name = "Non-competes"
+description = """NOT LEGAL ADVICE: a starting point for counsel, from the statutes and court opinions cited; check \
+each citation before relying on it. Whether Meridian Logistics' (made up) standard agreement, standard_v3, holds in \
+the states where it employs people: TX, CA, NY, FL, IL, CO, WA, MN, MA, OK and ND. For every state at once, run \
+scenario_agreement_by_state with agreement standard_v3: each branch is a state, and a rejected branch says what must \
+change, with the statute it comes from. For how a state's courts judged similar restrictions, run \
+scenario_narrow_to_enforce (for example state TX, role "sales manager", served "Texas, Oklahoma and Louisiana"): \
+its branches are narrower terms, and the best is the broadest that similar cases suggest \
+courts would enforce. For an employee living in one state under a contract naming another state's law, run \
+decision_choice_of_law, then scenario_agreement_by_state for the governing state. Cite statutes and cases only \
+as the tools return them."""
+functions = "noncompete_functions"
+
+[graph]
+backend = "builtin"
+nodes = "graph/nodes.csv"
+edges = "graph/edges.csv"
+
+[documents]
+backend = "postgres"
+password_env = "CLM_DOCUMENTS_PASSWORD"
+tools = false                             # the comparison run: the agent cannot search or read the documents
+
+[collections.statutes]
+description = """Non-compete statutes of TX, CA, CO, WA, IL, MA, MN, FL, OK and ND, as published by each state, one \
+document per section, its subsections as passages (labelled "(a)", "(2)", "Subd. 3"). New York has no statute. \
+Washington's sections appear twice: as in force until 29 June 2027, and as the 2026 law has them from 30 June 2027."""
+embedding_model = "embeddinggemma"
+filters = { state = "string", kind = "string", effective_from = "date", effective_until = "date" }
+
+[collections.cases]
+description = """Published court opinions on covenants not to compete in those states and New York, and in the \
+Fifth Circuit applying Texas law, to about 2020 (the Caselaw Access Project), with the opinions in those courts that \
+cite them. A local model read each non-compete opinion's facts (role, length_months, area, outcome, reformed_to); a \
+fact is kept only where the passage named in metadata.sources contains the words read, and is otherwise absent."""
+embedding_model = "embeddinggemma"
+filters = { state = "string", court = "string", court_level = "string", year = "integer", decided = "date", role = "string", length_months = "number", area = "string", outcome = "string", reformed_to = "string" }
+
+[queries.agreement]
+description = "An agreement's terms: length in months, area, garden leave, days of notice, separate notice, the state whose law it names, when signed, and its clause."
+params = { agreement = "string" }
+function = "agreement"
+
+[queries.workforce]
+description = "The company's staff bound by the agreement in a state: how many, the lowest yearly pay in dollars, and whether all are exempt from overtime. Give the state's code, such as TX."
+params = { state = "string" }
+function = "workforce"
+
+[queries.pay_threshold]
+description = "A state's yearly pay threshold in dollars below which a non-compete is void, with its year and source; amount 0 where the state has none. Give the state's code."
+params = { state = "string" }
+function = "pay_threshold"
+
+[queries.employee]
+description = "Where an employee resides and works, and the agreement they signed. Give the id, such as e_1042."
+params = { id = "string" }
+function = "employee"
+
+[calculations.pay_test]
+description = "Whether the lowest pay is at or below the threshold, and by how many dollars."
+params = { lowest_pay = "number", threshold = "number" }
+function = "pay_test"
+
+[calculations.court_record]
+description = "Of the similar cases restricting at least this many months (and nationwide, if so), how many courts enforced as written, and the share."
+params = { cases = "list", length_months = "number", nationwide = "boolean" }
+function = "court_record"
+
+[calculations.breadth]
+description = "How broad the terms are: months, doubled when nationwide."
+params = { length_months = "number", nationwide = "boolean" }
+function = "breadth"
+
+[decisions.state_law]
+description = "Whether an agreement holds in a state, what must change, and the statute it comes from."
+dmn = "rules/state_law.dmn"
+collection = "statutes"
+
+[decisions.state_law.rule]
+statement = "An agreement binds staff in a state only as that state's non-compete law allows."
+reason = "Each state sets its own limits: some void non-competes, some set a pay threshold, notice or a maximum length."
+owner = "General counsel (made up)"
+version = "2026-11"
+governs = ["noncompete"]
+cites = ["ca-bpc-16600", "tx-bcc-15.50", "co-crs-8-2-113", "wa-rcw-49.62.020", "il-820-90-10", "ma-gl-149-24l", "mn-stat-181.988", "fl-stat-542.335", "ok-15-219a", "nd-cc-9-08-06"]
+
+[decisions.court_weight]
+description = "How much a ruling counts for the state's law: binding (the state's supreme court), strong (its appeals courts) or persuasive (a federal court predicting it)."
+dmn = "rules/court_weight.dmn"
+
+[decisions.similar_case]
+description = "Whether a case counts as similar: one whose length and outcome were read from the opinion."
+dmn = "rules/similar_case.dmn"
+
+[decisions.likely_enforced]
+description = "Whether similar cases suggest courts would enforce terms this broad: at least 3 cases restricting as much, most enforced as written."
+dmn = "rules/likely_enforced.dmn"
+
+[decisions.choice_of_law]
+description = "Which state's law governs a covenant, from where the employee resides and works: a state's own statute can override the contract's choice; 'contract' means the law the contract names. Give state codes."
+dmn = "rules/choice_of_law.dmn"
+collection = "statutes"
+
+[scenarios.agreement_by_state]
+description = "Whether the agreement holds in each state where the company employs people, and what must change in each, with citations."
+params = { agreement = "string" }
+levers = { state = ["TX", "CA", "NY", "FL", "IL", "CO", "WA", "MN", "MA", "OK", "ND"] }
+branch = "by_state"
+objective = "employees"
+limits = ["state_law"]
+
+[scenarios.narrow_to_enforce]
+description = "How a state's courts judged similar restrictions: each branch is narrower terms (months, served area or nationwide), checked against similar cases; the best is the broadest that most similar cases enforced as written."
+params = { state = "string", role = "string", served = "string" }
+levers = { length_months = [12, 18, 24], area = ["served", "nationwide"] }
+branch = "narrow"
+objective = "breadth"
+limits = ["likely_enforced"]
+
+[clm]
+backend = "mlx"
+
+[judges.broader_than_needed]
+description = "Whether a non-compete clause restricts more than needed to protect the employer's interests."
+instructions = "Is this restriction broader than needed to protect the employer's goodwill, trade secrets or customer relationships?"
+
+[judges.departs]
+description = "Whether a passage citing an earlier case criticises it or declines to follow it: a sign it may no longer be good law."
+instructions = "Does this passage criticise, limit or decline to follow the case it cites?"

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="likely_enforced_definitions" name="Whether courts would likely enforce terms this broad" namespace="https://example.org/noncompete">
+  <decision id="likely_enforced" name="likely_enforced">
+    <decisionTable id="likely_enforced_table" hitPolicy="FIRST">
+      <input id="likely_enforced_in1" label="as_broad"><inputExpression typeRef="number"><text>as_broad</text></inputExpression></input>
+      <input id="likely_enforced_in2" label="share_enforced"><inputExpression typeRef="number"><text>share_enforced</text></inputExpression></input>
+      <output id="likely_enforced_out1" name="allowed" typeRef="boolean"/>
+      <output id="likely_enforced_out2" name="reason" typeRef="string"/>
+      <rule id="too_few"><inputEntry><text>&lt; 3</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"Fewer than 3 similar cases restricted this much: too little to go on"</text></outputEntry></rule>
+      <rule id="mostly_narrowed"><inputEntry><text>-</text></inputEntry><inputEntry><text>&lt; 0.5</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"Most similar cases with restrictions this broad were narrowed or voided"</text></outputEntry></rule>
+      <rule id="likely"><inputEntry><text>-</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>"Most similar cases with restrictions this broad were enforced as written"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

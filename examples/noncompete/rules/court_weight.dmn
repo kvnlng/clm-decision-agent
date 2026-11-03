@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="court_weight_definitions" name="How much a ruling counts for the state's law" namespace="https://example.org/noncompete">
+  <decision id="court_weight" name="court_weight">
+    <decisionTable id="court_weight_table" hitPolicy="FIRST">
+      <input id="court_weight_in1" label="court_level"><inputExpression typeRef="string"><text>court_level</text></inputExpression></input>
+      <output id="court_weight_out1" name="weight" typeRef="string"/>
+      <rule id="supreme"><inputEntry><text>"supreme"</text></inputEntry><outputEntry><text>"binding"</text></outputEntry></rule>
+      <rule id="appeals"><inputEntry><text>"appeals"</text></inputEntry><outputEntry><text>"strong"</text></outputEntry></rule>
+      <rule id="federal"><inputEntry><text>"federal"</text></inputEntry><outputEntry><text>"persuasive"</text></outputEntry></rule>
+      <rule id="other"><inputEntry><text>-</text></inputEntry><outputEntry><text>"persuasive"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

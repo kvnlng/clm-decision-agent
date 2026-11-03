@@ -1,0 +1,17 @@
+source,relation,target
+wf_TX,works_in,TX
+wf_CA,works_in,CA
+wf_NY,works_in,NY
+wf_FL,works_in,FL
+wf_IL,works_in,IL
+wf_CO,works_in,CO
+wf_WA,works_in,WA
+wf_MN,works_in,MN
+wf_MA,works_in,MA
+wf_OK,works_in,OK
+wf_ND,works_in,ND
+th_CO,applies_in,CO
+th_WA,applies_in,WA
+th_IL,applies_in,IL
+e_1042,bound_by,standard_v3
+meridian,uses,standard_v3
