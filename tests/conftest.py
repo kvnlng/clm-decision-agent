@@ -16,6 +16,7 @@ from clm_decision.scenario import load_scenario
 
 sys.path.append(str(Path(__file__).parent.parent / "examples" / "service_desk"))
 sys.path.append(str(Path(__file__).parent.parent / "examples" / "crowdstrike"))
+sys.path.append(str(Path(__file__).parent.parent / "examples" / "noncompete"))
 
 BASE_TOML = '''
 [clm]

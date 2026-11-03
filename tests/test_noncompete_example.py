@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+import judge_labels
 from fake_documents import FakeEmbedder, FakeStore
 from mcp import Client
 
@@ -116,3 +117,14 @@ def test_every_result_says_not_legal_advice_and_what_it_cannot_tell(env):
     assert all("cannot tell" in item["figures"]["cannot_tell"] for item in narrowed["branches"] if item["figures"])
     search = next(s for s in narrowed["branches"][0]["steps"] if s["kind"] == "search")
     assert search["built_at"] == "2026-11-03T12:00:00Z"
+
+
+def test_judge_labels_measures_each_judge_and_checks_the_courts_words(env):
+    labels = [{"text": "We decline to follow Made-up Co. v. Seller 6", "yes": True, "document": "made-9",
+               "passage": "1"},
+              {"text": "The covenant was reasonable.", "yes": False, "document": "made-6", "passage": "1"}]
+    judged = judge_labels.measure(env, "departs", labels)
+    assert [p for p, _ in judged] == [0.9, 0.1]
+    assert judge_labels.separation(judged) == (0.9, 0.1, 0.5)
+    assert judge_labels.separation([(0.4, labels[0]), (0.6, labels[1])])[2] is None
+    assert judge_labels.unquoted(env, labels) == [labels[1]]

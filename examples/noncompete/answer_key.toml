@@ -1,0 +1,79 @@
+# What the statutes say about Meridian Logistics' (made up) agreement standard_v3: 24 months, nationwide, no garden
+# leave, no notice period, no separate notice, Texas law named, signed 1 March 2024. Not legal advice: each answer is
+# read from the cited text, for measuring the example's agents, and is no ruling on any real agreement.
+#
+# holds is the verdict the example should give; must_change lists every requirement the agreement fails, though the
+# example's rule names the first; citations are what a good answer cites, as each document's citation and passage.
+
+[q1.TX]
+holds = "likely, if reasonable"
+must_change = ["Limits on time, area and scope no greater than needed to protect goodwill or another business interest; a court reforms broader limits"]
+citations = ["Tex. Bus. & Com. Code § 15.50(a)", "Tex. Bus. & Com. Code § 15.51(c)"]
+
+[q1.CA]
+holds = "void"
+must_change = ["Stop using it", "Notify current employees, and former employees employed after 1 January 2022, in writing that it is void"]
+citations = ["Cal. Bus. & Prof. Code § 16600(a)", "Cal. Bus. & Prof. Code § 16600.1(b)", "Cal. Bus. & Prof. Code § 16600.5(a)"]
+
+[q1.NY]
+holds = "case by case"
+must_change = ["No statute: a covenant is reasonable only if no greater than needed to protect a legitimate interest, not unduly harsh to the employee, and not injurious to the public; a court may enforce it in part"]
+citations = ["93 N.Y.2d 382"]    # BDO Seidman v. Hirshberg
+
+[q1.FL]
+holds = "likely"
+must_change = ["Prove a legitimate business interest; 2 years is the most not presumed unreasonable against a former employee"]
+citations = ["Fla. Stat. § 542.335(1)"]
+
+[q1.IL]
+holds = "only above threshold"
+must_change = ["Void for employees earning $75,000 a year or less ($80,000 from 1 January 2027): Meridian's lowest Illinois pay is $42,000", "Advise in writing to consult a lawyer, and give at least 14 calendar days"]
+citations = ["820 ILCS 90/10(a)", "820 ILCS 90/20"]
+
+[q1.CO]
+holds = "only above threshold"
+must_change = ["Void below the threshold for highly compensated workers ($130,014 in 2026), and above it only to protect trade secrets", "Notice and terms in a separate document, before the offer is accepted"]
+citations = ["Colo. Rev. Stat. § 8-2-113(2)", "Colo. Rev. Stat. § 8-2-113(4)"]
+
+[q1.WA]
+holds = "only above threshold"
+must_change = ["Void for employees earning at or below the threshold ($126,858.83 in 2026)", "Disclose the terms in writing by acceptance of the offer", "From 30 June 2027 every non-compete is void"]
+citations = ["Wash. Rev. Code § 49.62.020(1)", "Wash. Rev. Code § 49.62.020(1)"]    # the second is the 2027 version
+
+[q1.MN]
+holds = "void"
+must_change = ["Void for an agreement signed on or after 1 July 2023"]
+citations = ["Minn. Stat. § 181.988 Subd. 2"]
+
+[q1.MA]
+holds = "with changes"
+must_change = ["Not enforceable against non-exempt employees", "No more than 12 months", "Garden leave of at least 50% of pay, or other agreed consideration", "Given by the formal offer or 10 business days before employment starts, with the right to consult counsel"]
+citations = ["Mass. Gen. Laws ch. 149, § 24L(b)", "Mass. Gen. Laws ch. 149, § 24L(c)"]
+
+[q1.OK]
+holds = "void"
+must_change = ["Void; a clause against soliciting established customers is allowed"]
+citations = ["Okla. Stat. tit. 15, § 219A"]
+
+[q1.ND]
+holds = "void"
+must_change = ["Void, except on selling a business or leaving a partnership or company"]
+citations = ["N.D. Cent. Code § 9-08-06"]
+
+# Question 2: a Texas sales manager under standard_v3, serving Texas, Oklahoma and Louisiana. The bottom line is
+# counted from the collection's cases, so the key states only what the cited law and cases say.
+[q2]
+state = "TX"
+holds = "narrow it"
+must_change = ["A court reforms a covenant broader than needed to protect goodwill or another interest, rather than voiding it", "Courts have narrowed nationwide or multi-state areas to where the employee worked", "Agreements must also be ancillary to an otherwise enforceable agreement, such as a promise of confidential information"]
+citations = ["Tex. Bus. & Com. Code § 15.51(c)", "793 S.W.2d 302", "322 S.W.3d 780", "51 S.W.3d 787", "354 S.W.3d 764"]
+# Webb v. Hartman Newspapers (reformed), Cobb v. Caye Publishing (reformed), Butler v. Arrow Mirror (reformed),
+# Marsh USA v. Cook (what makes it ancillary). Vaughn v. Intrepid, 288 S.W.3d 931, enforced a four-year, five-state
+# covenant on a salesman as written: a case against narrowing that a good answer may also cite.
+
+[q3]
+employee = "e_1042"
+governing = "CO"
+reason = "Colorado law governs a worker who primarily resided and worked in Colorado when employment ended, whatever the contract says"
+holds = "only above threshold"
+citations = ["Colo. Rev. Stat. § 8-2-113(6)", "Colo. Rev. Stat. § 8-2-113(2)", "Colo. Rev. Stat. § 8-2-113(4)"]
