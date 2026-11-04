@@ -1,6 +1,9 @@
 """Tests for the page: sign-in, the CSRF, Origin and Host checks, the serve command and the Configuration page."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import html
+import json
+
 import pytest
 from mcp.server import MCPServer
 from starlette.testclient import TestClient
@@ -191,6 +194,28 @@ def test_a_collection_whose_tools_serve_leaves_out_says_so(client, server):
         server.server = serving_without_the_handbook(left_out)
         page = client.get("/").text
         assert "not known" in page and "not offered" not in page
+
+
+HOSTILE = "<script>alert(1)</script>"
+
+
+def test_every_name_and_description_from_the_files_is_escaped(client, environment):
+    text = environment.read_text().replace('name = "Tiny handbook"', f'name = "{HOSTILE}"')
+    for old in ('"A made-up handbook, for the portal\'s tests."', '"The made-up handbook."',
+                '"How much of the match is the employee\'s."', '"Full years of service."'):
+        text = text.replace(old, f'"{HOSTILE}"')
+    text += f'\n[information."{HOSTILE}"]\ndescription = "{HOSTILE}"\nkind = "supplied"\n'
+    text += f'\n[collections."{HOSTILE}"]\ndescription = "{HOSTILE}"\n'
+    environment.write_text(text)
+    file = environment.parent / "derived" / "derived.json"
+    found = json.loads(file.read_text())
+    found["facts"][f"{HOSTILE}.cap"] = {**found["facts"]["k401_2026.match_cap"], "node": HOSTILE}
+    found["decisions"]["carryover_limit"]["description"] = HOSTILE
+    file.write_text(json.dumps(found))
+    sign_in(client)
+    for path in ("/", "/review", "/documents"):
+        page = client.get(path).text
+        assert "<script>" not in page and html.escape(HOSTILE) in page, path
 
 
 def test_a_passage_is_read_through_the_portals_server(client):
