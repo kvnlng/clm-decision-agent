@@ -127,6 +127,42 @@ def test_a_hand_written_fixture_layer_answers_q1_to_q4(folder, question):
     assert all(rule["origin"] == "derived" for rule in result["rules"].values())
 
 
+def measure():
+    spec = importlib.util.spec_from_file_location("handbook_measure", EXAMPLE / "measure.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_second_key_finds_a_checked_table_that_is_wrong(folder, tmp_path):
+    hand_written_layer(folder)
+    snapshot = tmp_path / "runs" / "derived-test"
+    shutil.copytree(folder / "derived", snapshot)
+    carryover = snapshot / "rules" / "carryover_limit.dmn"
+    carryover.write_text(carryover.read_text(encoding="utf-8").replace("<text>7</text>", "<text>8</text>"),
+                         encoding="utf-8")
+    layer = json.loads((snapshot / "derived.json").read_text(encoding="utf-8"))
+    layer["facts"]["k401_2026.match_cap"].update(value=6000, check={"passed": False, "failures": ["no 6000"]})
+    (snapshot / "derived.json").write_text(json.dumps(layer), encoding="utf-8")
+    found = measure().compare(tmp_path / "runs")["test"]
+    assert found["summary"]["checked_but_wrong"] == 1 and found["summary"]["right"] == 9
+    assert found["summary"]["failed"] == 1 and found["summary"]["slots"] == 11
+    assert not found["slots"]["carryover_limit"]["right"] and found["slots"]["carryover_limit"]["check_passed"]
+    assert {"inputs": {"years_of_service": 0}, "hand": {"carryover_limit": 7}, "derived": {"carryover_limit": 8}} \
+        in found["slots"]["carryover_limit"]["differences"]
+    assert found["slots"]["k401_2026.first_tier_rate"]["right"]
+
+
+def test_a_derived_setup_needs_the_layer_of_its_model(folder):
+    module = measure()
+    assert module.wrong_layer("derived", folder) and module.wrong_layer("derived_local", folder)
+    hand_written_layer(folder)
+    layer = derived.read(folder)
+    derived.write(folder, {**layer, "model": "claude-opus-5-5"})
+    assert module.wrong_layer("derived", folder) is None and "gemma4" in module.wrong_layer("derived_local", folder)
+    assert module.wrong_layer("rules", folder) is None
+
+
 def test_documents_only_offers_only_the_employee_query_calculations_and_documents(folder):
     env = load(folder, "environment_documents_only.toml")
     assert list(env.queries) == ["employee"] and not env.decisions and not env.scenarios and not env.slots
