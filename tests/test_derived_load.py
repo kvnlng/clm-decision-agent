@@ -257,6 +257,11 @@ def test_a_second_reader_is_read_and_describe_names_it(tmp_path):
     assert "second reading by granite4:micro" in shown["second_reading"]
 
 
+def test_a_second_readers_names_are_stored_stripped(tmp_path):
+    env = load(make(tmp_path, decision=entry(), slots=with_reader('{ backend = "ollama", model = " qwen3:14b " }')))
+    assert env.second_reader == {"backend": "ollama", "model": "qwen3:14b"}
+
+
 def test_without_a_second_reader_describe_says_there_is_no_second_reading(tmp_path):
     env = load(make(tmp_path, decision=entry()))
     assert env.second_reader is None

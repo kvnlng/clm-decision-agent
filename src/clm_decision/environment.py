@@ -635,7 +635,7 @@ def _second_reader(data: dict) -> dict | None:
         raise ScenarioError(f"{where}.backend: must be {' or '.join(READER_BACKENDS)}")
     if not isinstance(reader.get("model"), str) or not reader["model"].strip():
         raise ScenarioError(f"{where}.model: must name the model, such as gemma4:26b")
-    return {"backend": reader["backend"], "model": reader["model"]}
+    return {"backend": reader["backend"], "model": reader["model"].strip()}
 
 
 def _why_not(entry: dict | None, admit: tuple[str, ...], override: bool, store, slot: Slot, on: date) -> str | None:

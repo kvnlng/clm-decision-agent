@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import tempfile
 from datetime import date, datetime, timezone
@@ -330,10 +331,20 @@ def reader_for(env: Environment) -> Extractor | None:
     return make_extractor(reader["backend"], reader["model"]) if reader else None
 
 
-def _differs(reader: Extractor | None, model: str | None) -> None:
-    if reader is not None and reader.model == model:
-        raise DeriveError(f"the second reader {reader.model} is the model that derived the layer, and would repeat "
-                          "its own reading: name another in [derived] second_reader")
+def _family(model: str) -> str:
+    """A model's family: case and spaces ignored; for Claude the id without a trailing date, for an Ollama model the
+    name before its tag, so any tag of gemma4 (gemma4:26b, gemma4:latest, gemma4) is gemma4."""
+    name = model.strip().lower()
+    return re.sub(r"-\d{8}$", "", name) if name.startswith("claude") else name.split(":", 1)[0]
+
+
+def refuse_same_model(reader: Extractor | None, model: str | None) -> None:
+    """Raise DeriveError when the second reader is of the family of the model that derived the layer: another tag
+    or dated id may be the same weights, and would repeat its own reading."""
+    if reader is not None and model and _family(reader.model) == _family(model):
+        raise DeriveError(f"the second reader {reader.model.strip()} is the model that derived the layer, {model}, "
+                          "or another tag of it, and would repeat its own reading: name another in [derived] "
+                          "second_reader")
 
 
 def _read_twice(env: Environment, slot: Slot, entry: dict, reader: Extractor, on: date) -> dict:
@@ -358,9 +369,9 @@ def run(path: str | Path, collection: str, extractor: Extractor, on: date, *,  #
     with `fresh`, and write the layer with its conflicts. -> {slot: status}."""
     env = load_environment(path, today=on)
     reader = reader_for(env)
-    _differs(reader, extractor.model)
+    refuse_same_model(reader, extractor.model)
     folder = env.path.resolve().parent
-    old =derived.empty(collection) if fresh else derived.read(folder)
+    old = derived.empty(collection) if fresh else derived.read(folder)
     layer = {**old, "collection": collection, "model": extractor.model,
              "derived_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     for name, slot in env.slots.items():
@@ -395,7 +406,7 @@ def _day(text: str | None) -> date:
 def _check(environment: str, folder: Path, on: date) -> int:
     env = load_environment(environment, today=on)
     reader = reader_for(env)
-    _differs(reader, derived.read(folder).get("model"))
+    refuse_same_model(reader, derived.read(folder).get("model"))
 
     def second(_kind: str, name: str, entry: dict) -> tuple[dict, list[str]]:
         return second_reading(env, env.slots[name], entry, reader, on)

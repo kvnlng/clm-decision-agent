@@ -330,6 +330,25 @@ def test_a_second_reader_that_is_the_layers_model_is_refused(path, read_again, m
     assert "second reader canned" in error and error.count("\n") == 1
 
 
+@pytest.mark.parametrize("first, again", [("gemma4:26b", "gemma4:26B"), ("gemma4:latest", "gemma4"),
+                                          ("gemma4:26b", "gemma4"), ("gemma4", " gemma4:e4b "),
+                                          ("claude-opus-5-5-20261001", "claude-opus-5-5"),
+                                          ("Claude-Opus-5-5", "claude-opus-5-5-20261001")])
+def test_another_tag_or_date_of_the_layers_model_is_the_same_reader(first, again):
+    reader = second()
+    reader.model = again
+    with pytest.raises(derive.DeriveError, match=f"second reader {again.strip()} .* {first}"):
+        derive.refuse_same_model(reader, first)
+
+
+@pytest.mark.parametrize("first, again", [("gemma4:26b", "qwen3:14b"), ("gemma4:26b", "claude-opus-5-5"),
+                                          ("claude-opus-5-5", "claude-sonnet-5"), ("granite4:micro", "gemma4")])
+def test_a_different_model_family_may_read_again(first, again):
+    reader = second()
+    reader.model = again
+    derive.refuse_same_model(reader, first)
+
+
 def test_check_command_makes_the_second_reading_and_says_how_it_went(path, read_again, capsys):
     run(path, good())
     read_again.append(second(carryover_limit=[SHIFTED], k401_2026__match_cap=[CAP]))

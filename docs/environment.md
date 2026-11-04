@@ -492,7 +492,10 @@ passes. The record is kept in the entry as `check.second_reading = {model, agree
 could not be made), and `check` prints how many agreed. It is made on every entry checked, including one the
 mechanical check already fails, and again at every `check`, so it is redone from the new edition when a document
 changes. It is never sent back to the first model as a retry. The second reader must not be the model that derived
-the layer: `run` and `check` refuse it, since it would repeat its own reading. Without `second_reader`, `describe`
+the layer, nor another tag of it (any `gemma4:…` for gemma4) or a dated id of the same Claude model: `run` and
+`check` refuse it, since it would repeat its own reading. Removing `second_reader` does not clear a recorded
+disagreement: `check` keeps failing the entry, as "an earlier second reading by MODEL …", until a later second
+reading agrees or a person corrects the entry. Without `second_reader`, `describe`
 and `check` say there is no second reading and the check is as before.
 
 **Agreement is necessary, not sufficient.** Two models can make the same mistake: in the handbook example, qwen3:14b
