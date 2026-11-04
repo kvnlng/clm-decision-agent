@@ -2,9 +2,11 @@
 written by hand, with a stand-in store and embedder, so no PostgreSQL or Ollama is needed."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import importlib.util
 import json
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fake_documents import FakeEmbedder, FakeStore
@@ -112,3 +114,71 @@ def test_every_result_says_not_advice(env):
     for question in ASKED:
         for found in ask(env, question)["branches"]:
             assert found["figures"]["notice"].startswith("Not HR, tax or legal advice")
+
+
+def _measure():
+    spec = importlib.util.spec_from_file_location("handbook_measure", EXAMPLE / "measure.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+KEYED = {"figures": {"match": {"value": 3400, "about": "a"}, "cap": {"value": 6.0, "about": "b"},
+                     "limit": {"value": 24500, "about": "c"}}, "superseded": [1840]}
+
+
+def item(value, hedged=False):
+    return {"value": value, "hedged": hedged}
+
+
+def test_a_right_figure_a_wrong_one_and_a_missing_one():
+    read = {"items": {"match": item(3400), "cap": item(5.0), "limit": item(None)}, "other": []}
+    assert _measure().score_figures(read, KEYED) == {"right": 1, "wrong": 1, "superseded": 0, "not_given": 1,
+                                                     "hedged": 0, "other_wrong": 0, "wrong_as_fact": 1}
+
+
+def test_the_old_match_is_wrong_and_counted_as_superseded():
+    read = {"items": {"match": item(1840), "cap": item(6), "limit": item(24500)}, "other": []}
+    scored = _measure().score_figures(read, KEYED)
+    assert scored["wrong"] == 1 and scored["superseded"] == 1 and scored["right"] == 2
+
+
+def test_a_hedged_guess_is_not_wrong():
+    read = {"items": {"match": item(2000, hedged=True), "cap": item(None), "limit": item(None)},
+            "other": [{"text": "typically 50% of 6%", "value": 50, "hedged": True}]}
+    scored = _measure().score_figures(read, KEYED)
+    assert scored["hedged"] == 2 and scored["wrong_as_fact"] == 0 and scored["not_given"] == 2
+
+
+def test_an_unkeyed_figure_stated_as_fact_is_wrong():
+    read = {"items": {"match": item(3400), "cap": item(6), "limit": item(24500)},
+            "other": [{"text": "a 3-year vesting cliff", "value": 3, "hedged": False}]}
+    scored = _measure().score_figures(read, KEYED)
+    assert scored["other_wrong"] == 1 and scored["wrong_as_fact"] == 1 and scored["right"] == 3
+
+
+class Recorder:
+    """A stand-in Anthropic client that keeps the request and answers nothing given."""
+
+    def __init__(self):
+        self.request, self.messages = None, self
+
+    def create(self, **request):
+        self.request = request
+        reply = {"items": {name: item(None) for name in KEY["q1"]["figures"]}, "other": [], "verdict": "not given"}
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text=json.dumps(reply))])
+
+
+def test_the_reader_is_never_shown_the_keys_values():
+    client = Recorder()
+    read = _measure().read_figures(client, "I don't know Meridian's plan.", KEY["q1"])
+    sent = json.dumps(client.request)
+    assert read["verdict"] == "not given" and "the company match in dollars" in sent
+    assert not [f for f in KEY["q1"]["figures"].values() if f"{f['value']:,}" in sent or f"{f['value']}" in sent]
+
+
+def test_policy_cited_counts_the_keys_sections_by_section_or_title():
+    measure = _measure()
+    assert measure.policy_cited("See Handbook § 4(3).", KEY["q1"]) == 1
+    assert measure.policy_cited("See the Tuition assistance policy.", KEY["q4"]) == 1
+    assert measure.policy_cited("See § 7.", KEY["q1"]) == 0
