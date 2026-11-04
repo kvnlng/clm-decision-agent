@@ -96,7 +96,31 @@ Other clients:
 
 - **Claude Code:** `claude mcp add --transport http decisions http://127.0.0.1:8000/mcp --header "Authorization: Bearer <the key>"`, then `/mcp` to see the tools.
 - **The MCP Inspector**, a web page for calling tools by hand: `npx @modelcontextprotocol/inspector`, then connect to the
-  address with the header.
+  address with the header. Its command line is below.
+
+### Inspecting a server
+
+The MCP Inspector, from the MCP project, also has a command-line mode, for a check you can repeat. It needs Node; `npx`
+downloads it. With the handbook server running over HTTP (its documents in PostgreSQL, as in
+[examples/handbook](../examples/handbook/README.md)):
+
+```bash
+export DECISION_SERVER_KEY=<a long random key>
+uv run clm-server examples/handbook/environment.toml --http --port 8000
+# in another shell
+npx -y @modelcontextprotocol/inspector@2.13.0 --cli http://127.0.0.1:8000/mcp --transport http \
+    --header "Authorization: Bearer <the key>" --method resources/list
+```
+
+The other methods are `tools/list`, `resources/templates/list` and `prompts/list`. To read or get one, add
+`--method resources/read --uri "rule://match_eligible"`, `--uri "document://handbook/hb-401k-2026/(2)"`, or
+`--method prompts/get --prompt-name answer_question --prompt-args "question=Am I eligible for the 401(k) match?"`.
+Each prints JSON.
+
+On 4 November 2026, Inspector 2.13.0 listed 22 tools, 19 resources (`environment://describe`, 5 rules and the 13
+handbook documents), 3 resource templates and 1 prompt for the handbook; it read the rule and the passage as JSON and
+got the prompt as one user message ([environment.md](environment.md#resources-a-prompt-and-context)). The scenario
+server offers tools only.
 
 ## Databricks
 

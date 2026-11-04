@@ -521,6 +521,41 @@ says so. A rejected entry never decides: neither the file nor the flag can admit
 
 All only read. Each tool's description is yours.
 
+## Resources, a prompt and context
+
+The server also reports its data as MCP resources, its instructions as a prompt, and where each kind of context lives,
+so a client or a person can see everything it offers ([serving.md](serving.md#inspecting-a-server) shows how).
+
+| Resource | Is |
+|---|---|
+| `environment://describe` | What `describe` returns |
+| `rule://<name>` | What `rule` returns for one rule, supplied or derived, with its origin and status; one listed per rule, and a template |
+| `document://<collection>/<id>`, `document://<collection>/<id>/<passage>` | A document or one passage, as `document_<collection>` returns it |
+| `derived://layer` | The derived layer as stored (`derived/derived.json`), when `environment.toml` has a `[derived]` table |
+
+- **One implementation, two doors.** Each resource is read by the code its tool uses, as JSON, and fails with the
+  tool's one-line reason.
+- **Documents** are offered only when the document tools are (`tools = true`). The templates always work; each
+  document is also listed when its collection holds at most 100 documents when the server starts. `describe` says so
+  for each collection.
+- **Graph facts stay `query_` tools:** a query takes parameters and runs your code, so it is not a fixed piece of data.
+- **The reads stay tools.** Outside information reaches the model only through tools: most MCP clients, and the
+  reference agent, let a model fetch only that way. Resources are for clients and people that browse or attach data.
+
+**The prompt**, `answer_question(question)`, is the reference agent's instructions with the environment's name and
+description and the question, in one user message, so any MCP client asks the way the agent does. Both take the text
+from `instructions.py`.
+
+**Context:**
+
+- **The instructions** the server sends when a client connects: call `describe` first, and take every figure from the
+  tools.
+- **Company data:** the graph and the collections, reached by the tools and the resources.
+- **Chat history:** the client's. The server keeps none.
+- **User preferences:** not kept.
+
+The CLM scenario server (`clm-server` on a scenario file) is unchanged: tools only, with no resources or prompts.
+
 ## From a new folder to a registered server
 
 The whole path, with the starter environment.
