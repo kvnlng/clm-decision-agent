@@ -727,10 +727,11 @@ async def _body(receive) -> bytes | None:
 
 
 class Guard:  # pylint: disable=too-few-public-methods
-    """Host, Origin, sign-in and CSRF checks in front of every route."""
+    """Host, Origin, sign-in and CSRF checks in front of every route. `public`, when given, is the origin a
+    TLS-terminating proxy serves the page at, which a POST may also come from."""
 
-    def __init__(self, app, portal: Portal, hosts: set[str]):
-        self.app, self.portal, self.hosts = app, portal, hosts
+    def __init__(self, app, portal: Portal, hosts: set[str], public: str | None = None):
+        self.app, self.portal, self.hosts, self.public = app, portal, hosts, public
 
     async def __call__(self, scope, receive, send):  # pylint: disable=too-many-return-statements
         if scope["type"] != "http":
@@ -742,7 +743,8 @@ class Guard:  # pylint: disable=too-few-public-methods
             await PlainTextResponse("This portal answers only at its own address.", 400)(scope, receive, send)
             return
         post = scope["method"] not in ("GET", "HEAD")
-        if post and request.headers.get("origin") != f"http://{host}":
+        origin = request.headers.get("origin")
+        if post and origin != f"http://{host}" and (self.public is None or origin != self.public):
             await PlainTextResponse("Refused: the request did not come from the portal's page.", 403)(
                 scope, receive, send)
             return
@@ -771,13 +773,34 @@ class Guard:  # pylint: disable=too-few-public-methods
         await self.app(scope, receive, send)
 
 
-def allowed_hosts(host: str, port: int) -> set[str]:
-    """The Host headers the portal answers: its bound address, and localhost when bound to 127.0.0.1."""
+def allowed_hosts(host: str, port: int, public: str | None = None) -> set[str]:
+    """The Host headers the portal answers: its bound address, localhost when bound to 127.0.0.1, and the public
+    origin's host, for a proxy that passes the browser's Host on."""
     shown = f"[{host}]" if ":" in host else host
     hosts = {f"{shown}:{port}"}
     if host == "127.0.0.1":
         hosts.add(f"localhost:{port}")
+    if public:
+        hosts.add(urllib.parse.urlsplit(public).netloc)
     return hosts
+
+
+def public_origin(text: str) -> str:
+    """An origin a TLS-terminating proxy serves the page at, as a browser sends it in Origin: lower case, without a
+    default port or a trailing /. ValueError, saying what is wrong, when it is not scheme://host[:port]."""
+    try:
+        found = urllib.parse.urlsplit(text.strip())
+        port = found.port
+    except ValueError as error:
+        raise ValueError(f"--public-origin {text}: {error}") from error
+    extra = found.path not in ("", "/") or any((found.query, found.fragment, found.username, found.password))
+    if found.scheme.lower() not in ("http", "https") or not found.hostname or extra:
+        raise ValueError(f"--public-origin {text}: give only the scheme, host and port the browser uses, such as "
+                         "https://portal.example.org")
+    scheme, host = found.scheme.lower(), found.hostname.lower()
+    host = f"[{host}]" if ":" in host else host
+    default = {"http": 80, "https": 443}[scheme]
+    return f"{scheme}://{host}" + (f":{port}" if port not in (None, default) else "")
 
 
 def routes() -> list:
@@ -792,8 +815,9 @@ def routes() -> list:
             Mount("/static", StaticFiles(directory=STATIC), name="static")]
 
 
-def create_app(portal: Portal, key: str, host: str, port: int):
-    """The page, behind its checks; it starts the portal's server with it and stops it after."""
+def create_app(portal: Portal, key: str, host: str, port: int, public: str | None = None):
+    """The page, behind its checks; it starts the portal's server with it and stops it after. `public` is the
+    origin a TLS-terminating proxy serves it at, if any, as public_origin() keeps it."""
     @contextlib.asynccontextmanager
     async def lifespan(_app):
         await portal.server.start()
@@ -803,4 +827,4 @@ def create_app(portal: Portal, key: str, host: str, port: int):
             portal.server.stop()
     app = Starlette(routes=routes(), lifespan=lifespan)
     app.state.portal, app.state.key = portal, key
-    return Guard(app, portal, allowed_hosts(host, port))
+    return Guard(app, portal, allowed_hosts(host, port, public), public)

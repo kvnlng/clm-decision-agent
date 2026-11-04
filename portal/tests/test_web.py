@@ -62,6 +62,52 @@ def test_a_foreign_host_header_is_refused(client):
     assert client.get("/", headers={"Host": "localhost:8400"}).status_code == 200
 
 
+PUBLIC = "https://portal.example"
+
+
+def test_a_public_origin_behind_a_tls_proxy_is_allowed_only_when_named(portal, monkeypatch):
+    monkeypatch.setattr(web, "WRONG_KEY_WAIT", 0.01)
+    proxied = {"Origin": PUBLIC, "Host": "portal.example"}
+    rewritten = {"Origin": PUBLIC, "Host": "127.0.0.1:8400"}
+    form = {"key": KEY, "name": "Kevin"}
+    with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400), base_url=ORIGIN) as client:
+        assert client.post("/sign-in", data=form, headers=proxied).status_code == 400
+        assert client.post("/sign-in", data=form, headers=rewritten).status_code == 403
+    with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400, public=PUBLIC),
+                    base_url=ORIGIN) as client:
+        assert client.post("/sign-in", data=form, headers=proxied).status_code == 200
+        assert client.post("/sign-in", data=form, headers=rewritten).status_code == 200
+        assert post(client, "/sign-out", sign_in(client)).status_code == 200
+        assert client.post("/sign-in", data=form, headers={"Origin": "https://evil.example",
+                                                          "Host": "portal.example"}).status_code == 403
+        assert client.get("/sign-in", headers={"Host": "evil.example"}).status_code == 400
+
+
+@pytest.mark.parametrize("given, kept", [("https://portal.example/", PUBLIC), ("HTTPS://Portal.Example:443", PUBLIC),
+                                         ("https://portal.example:8443", "https://portal.example:8443"),
+                                         ("http://10.0.0.5:8080", "http://10.0.0.5:8080")])
+def test_a_public_origin_is_kept_as_a_browser_sends_it(given, kept):
+    assert web.public_origin(given) == kept
+
+
+@pytest.mark.parametrize("given", ["portal.example", "https://portal.example/portal", "ftp://portal.example",
+                                   "https://portal.example?x=1", "https://"])
+def test_serve_refuses_a_public_origin_that_is_not_one(environment, monkeypatch, capsys, given):
+    monkeypatch.setenv("CLM_PORTAL_KEY", KEY)
+    ran = []
+    assert clm_portal.serve(serve_args(environment, "--public-origin", given), run=lambda *a, **k: ran.append(a)) == 2
+    err = capsys.readouterr().err
+    assert "--public-origin" in err and len(err.strip().splitlines()) == 1 and not ran
+
+
+def test_serve_passes_the_public_origin_to_the_page(environment, monkeypatch):
+    monkeypatch.setenv("CLM_PORTAL_KEY", KEY)
+    apps = []
+    assert clm_portal.serve(serve_args(environment, "--public-origin", PUBLIC + "/"),
+                            run=lambda app, **kwargs: apps.append(app)) == 0
+    assert apps[0].public == PUBLIC and apps[0].hosts == {"127.0.0.1:8400", "localhost:8400", "portal.example"}
+
+
 def serve_args(environment, *more):
     return clm_portal.parse(["serve", str(environment), *more])
 

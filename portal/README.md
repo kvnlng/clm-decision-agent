@@ -27,6 +27,7 @@ held in memory, so restarting the portal signs everyone out.
 |---|---|---|
 | `--host` | `127.0.0.1` | Any other address prints a warning: the portal is plain HTTP. Give the address you will type in the browser, not `0.0.0.0`: a request for any other address is refused |
 | `--port` | `8400` | |
+| `--public-origin URL` | none | Behind a proxy that ends TLS: the address the browser uses, such as `https://portal.example.org`. A form may also come from it, and a request may name its host |
 | `--backend`, `--model`, `--model-url` | as the chat | Ask's starting model, changeable on the page |
 
 The portal starts **its own decision server**, `clm-server ENVIRONMENT --http` on 127.0.0.1 at a free port, with a
@@ -73,7 +74,7 @@ with any key or password replaced by `***`, and when it succeeds the portal rest
 shorter than 16 characters. The session cookie is `HttpOnly` and
 `SameSite=Strict`; every form carries a per-session token; a POST from any other origin, or a request whose `Host`
 is not the portal's address, is refused. On an address other than 127.0.0.1 the portal is plain HTTP: put it behind
-TLS.
+TLS, and give the proxy's address in `--public-origin`.
 
 ## The chat
 

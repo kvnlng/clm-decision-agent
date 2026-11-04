@@ -1,6 +1,7 @@
 """The portal: one local page for the person who administers a decision server, and a command-line chat.
 
-    clm-portal serve ENVIRONMENT.toml [--host 127.0.0.1] [--port 8400] [--backend …] [--model …] [--model-url …]
+    clm-portal serve ENVIRONMENT.toml [--host 127.0.0.1] [--port 8400] [--public-origin URL] [--backend …]
+                                      [--model …] [--model-url …]
     clm-portal chat URL [--model M] [--model-url U] [--backend openai|claude] [--dry-run [TOOL]] [--full]
 
 `serve` shows an environment's whole configuration and changes only its documents and its derived layer; sign in
@@ -30,6 +31,9 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     serve_parser.add_argument("--host", default="127.0.0.1",
                               help="the address to listen on (default 127.0.0.1; any other is plain HTTP)")
     serve_parser.add_argument("--port", type=int, default=8400)
+    serve_parser.add_argument("--public-origin", metavar="URL",
+                              help="the address a TLS-terminating proxy serves the page at, such as "
+                                   "https://portal.example.org; a form may also come from it")
     serve_parser.add_argument("--backend", choices=("openai", "claude"), default="openai",
                               help="Ask's model, and Derive's: openai-style (default) or claude")
     serve_parser.add_argument("--model", help=f"default: {chat.STARTER_MODEL} with openai, {chat.CLAUDE_MODEL} with "
@@ -67,13 +71,18 @@ def serve(args: argparse.Namespace, run=None) -> int:
         print(f"error: {environment} is not an environment file (an environment.toml with an [environment] table)",
               file=sys.stderr)
         return 2
+    try:
+        public = web.public_origin(args.public_origin) if args.public_origin else None
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
     if args.host not in LOOPBACK:
         print(f"warning: listening on {args.host}: the portal is plain HTTP, so its key and every page cross the "
               "network unencrypted; put it behind TLS or keep it on 127.0.0.1", file=sys.stderr)
     jobs = managed.Jobs()
     portal = web.Portal(environment, managed.ManagedServer(environment), jobs, options={
         "backend": args.backend, "model": args.model, "model_url": args.model_url})
-    app = web.create_app(portal, key, args.host, args.port)
+    app = web.create_app(portal, key, args.host, args.port, public)
     if run is None:
         import uvicorn
         run = uvicorn.run
