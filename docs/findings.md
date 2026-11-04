@@ -88,8 +88,9 @@ The H100 decided the whole day at 50.1 a second.
   figures, and all 11 matched the hand-written tables and figures over a grid of every bound. Under the first check
   all 11 passed (3 on the second try), and answering from them Claude gave 17 of 17 key figures, as with the
   hand-written rules; gemma4 gave 14 of 17, none wrong. The check was then made stricter (a range's upper bound, whole
-  words in quotes, figures in a rule's reason): 7 of Claude's 11 pass it, the other four failing on dates and section
-  numbers in their reasons, so those rules are no longer approved and their questions fail visibly.
+  words in quotes, figures in a rule's reason, with ISO dates, section references and "401(k)" exempt): 8 of
+  Claude's 11 pass it; three fail on a bare year or a bare section number in their reasons, so those rules are no
+  longer approved and their questions fail visibly.
 - **Fully local derivation let wrong figures through the check.** gemma4 derived 9 of 11 that pass the stricter
   check (10 of 11 the first), but two of them are wrong: it read "100% of the first 3% ... 50% of the next 3%" as tiers of 100% and 50% of pay. Every
   figure is in the quote, so the mechanical check cannot tell a rate from a width; the scripted approval standing in

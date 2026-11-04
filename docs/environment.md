@@ -452,8 +452,9 @@ check** only when all of these hold:
 2. **Quote**: each piece of the quote (split at `...`) is, word for word, in a passage it cites, whole: never
    ending inside a word or a number ("up to 1" is not in "up to 10").
 3. **Figures**: every number the entry states is in the quote: a fact's value, each bound and numeric output of the
-   table (both ends of a range), each number in a text cell, in the statement and in the reason, dates and section
-   numbers included. Small numbers, ordinals ("90th") and the words one to
+   table (both ends of a range), each number in a text cell, in the statement and in the reason. In the statement
+   and reason, ISO dates, section references (§ 4, § 4(2), Section 6(1)) and "401(k)" are not figures; a day of the
+   month in a text cell ("31 December") still is. Small numbers, ordinals ("90th") and the words one to
    twenty count; only zero is exempt.
 4. **Ontology**: a fact's node and property are its slot's, of the slot's type; a table's inputs are exactly the
    slot's, its outputs include the slot's, it cites only its source; and the model named nothing `missing`.

@@ -21,6 +21,10 @@ _WORDS = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine"
 # Not inside a word or after a decimal point; after ".." (a range's upper bound) it counts
 _FIGURE = re.compile(r"(?<!\w)(?<!\d\.)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\b(?:" + "|".join(_WORDS) + r")\b",
                      re.IGNORECASE)
+# Not policy figures, so not checked in a rule's statement or reason: ISO dates, section references (§ 4, § 4(2),
+# § 4(2) and (4), Section 6(1)) and the plan's name, 401(k)
+_EXEMPT = re.compile(r"\b\d{4}-\d{2}-\d{2}\b|(?:§|\bSection)\s*\d+(?:\s*\(\d+\))?(?:\s*(?:and|or|,)\s*\(\d+\))*"
+                     r"|\b401\(k\)", re.IGNORECASE)
 _QUOTES = " \t\n\"'“”‘’"
 
 
@@ -78,6 +82,8 @@ def _figures(found: list[tuple[str, object]], quote: str) -> list[str]:
     quoted = numbers(quote)
     failures = []
     for where, value in found:
+        if isinstance(value, str) and where in ("statement", "reason"):
+            value = _EXEMPT.sub(" ", value)
         figures = numbers(value) if isinstance(value, str) else [value]
         for figure in figures:
             if figure != 0 and not any(abs(figure - other) < 1e-9 for other in quoted):

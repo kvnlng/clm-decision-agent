@@ -136,6 +136,30 @@ def test_a_figure_in_the_rules_reason_must_be_in_the_quote(env):
     assert any("figure 12 (reason)" in failure for failure in failures(env, "decisions", "carryover_limit", entry))
 
 
+def reason_failures(env, reason):
+    entry = decision(env)
+    entry["rule"]["reason"] = reason
+    return failures(env, "decisions", "carryover_limit", entry)
+
+
+def test_an_iso_date_in_a_reason_is_not_a_figure(env):
+    assert reason_failures(env, "The leave policy, in force on 2026-12-01.") == []
+
+
+def test_a_section_reference_in_a_reason_is_not_a_figure(env):
+    assert reason_failures(env, "Handbook § 5 (2), as § 5(2) and Section 5(2) say, and § 4.") == []
+
+
+def test_the_plans_name_401k_is_not_a_figure(env):
+    entry = decision(env, statement="Under the 401(k) plan, up to 7 unused days carry over, or 10 with 5 or more.")
+    assert failures(env, "decisions", "carryover_limit", entry) == []
+
+
+def test_a_real_figure_beside_an_exempt_one_still_fails(env):
+    found = reason_failures(env, "§ 5(2), in force on 2026-12-01, under the 401(k) plan: 12 days.")
+    assert [failure for failure in found if failure.startswith("figure")] == ["figure 12 (reason) is not in the quote"]
+
+
 def test_a_quote_not_in_the_passage_fails(env):
     found = failures(env, "decisions", "carryover_limit", decision(env, quote="Up to 8 unused days carry over"))
     assert any("quote" in failure for failure in found)

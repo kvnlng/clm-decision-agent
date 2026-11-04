@@ -8,11 +8,9 @@
       "check": {
         "passed": false,
         "failures": [
-          "figure 2026 (reason) is not in the quote",
-          "figure 401 (reason) is not in the quote",
-          "figure 12 (reason) is not in the quote"
+          "figure 2026 (reason) is not in the quote"
         ],
-        "at": "2026-11-04T14:31:05+00:00",
+        "at": "2026-11-04T14:36:58+00:00",
         "by": "clm-derive check"
       },
       "decided_by": null,
@@ -49,11 +47,9 @@
       "check": {
         "passed": false,
         "failures": [
-          "figure 401 (reason) is not in the quote",
-          "figure 2026 (reason) is not in the quote",
-          "figure 12 (reason) is not in the quote"
+          "figure 2026 (reason) is not in the quote"
         ],
-        "at": "2026-11-04T14:31:05+00:00",
+        "at": "2026-11-04T14:36:58+00:00",
         "by": "clm-derive check"
       },
       "decided_by": null,
@@ -86,20 +82,15 @@
     },
     "carryover_limit": {
       "description": "How many unused days of paid time off carry into next year, from full years of service.",
-      "status": "proposed",
+      "status": "approved",
       "check": {
-        "passed": false,
-        "failures": [
-          "figure 2 (reason) is not in the quote",
-          "figure 2026 (reason) is not in the quote",
-          "figure 1 (reason) is not in the quote",
-          "figure 12 (reason) is not in the quote"
-        ],
-        "at": "2026-11-04T14:31:05+00:00",
+        "passed": true,
+        "failures": [],
+        "at": "2026-11-04T14:36:58+00:00",
         "by": "clm-derive check"
       },
-      "decided_by": null,
-      "decided_at": null,
+      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
+      "decided_at": "2026-11-04T14:36:58+00:00",
       "note": null,
       "source": {
         "document": "hb-leave",
@@ -133,11 +124,9 @@
         "passed": false,
         "failures": [
           "figure 6 (reason) is not in the quote",
-          "figure 1 (reason) is not in the quote",
-          "figure 2 (reason) is not in the quote",
           "figure 3 (reason) is not in the quote"
         ],
-        "at": "2026-11-04T14:31:05+00:00",
+        "at": "2026-11-04T14:36:58+00:00",
         "by": "clm-derive check"
       },
       "decided_by": null,
@@ -175,11 +164,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:31:05+00:00",
+        "at": "2026-11-04T14:36:58+00:00",
         "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:31:05+00:00",
+      "decided_at": "2026-11-04T14:36:58+00:00",
       "note": null,
       "source": {
         "document": "hb-tuition",
@@ -216,11 +205,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:31:05+00:00",
+        "at": "2026-11-04T14:36:58+00:00",
         "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:31:05+00:00",
+      "decided_at": "2026-11-04T14:36:58+00:00",
       "note": null,
       "source": {
         "document": "hb-401k-2026",
@@ -241,11 +230,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:31:05+00:00",
+        "at": "2026-11-04T14:36:58+00:00",
         "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:31:05+00:00",
+      "decided_at": "2026-11-04T14:36:58+00:00",
       "note": null,
       "source": {
         "document": "hb-401k-2026",
@@ -266,11 +255,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:31:05+00:00",
+        "at": "2026-11-04T14:36:58+00:00",
         "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:31:05+00:00",
+      "decided_at": "2026-11-04T14:36:58+00:00",
       "note": null,
       "source": {
         "document": "hb-401k-2026",
@@ -291,11 +280,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:31:05+00:00",
+        "at": "2026-11-04T14:36:58+00:00",
         "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:31:05+00:00",
+      "decided_at": "2026-11-04T14:36:58+00:00",
       "note": null,
       "source": {
         "document": "hb-401k-2026",
@@ -316,11 +305,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:31:05+00:00",
+        "at": "2026-11-04T14:36:58+00:00",
         "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:31:05+00:00",
+      "decided_at": "2026-11-04T14:36:58+00:00",
       "note": null,
       "source": {
         "document": "hb-401k-2026",
@@ -341,11 +330,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:31:05+00:00",
+        "at": "2026-11-04T14:36:58+00:00",
         "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:31:05+00:00",
+      "decided_at": "2026-11-04T14:36:58+00:00",
       "note": null,
       "source": {
         "document": "hb-401k-2026",
