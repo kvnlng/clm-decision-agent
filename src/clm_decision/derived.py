@@ -85,7 +85,8 @@ CHECKER = "clm-derive check"
 
 def set_check(folder: str | Path, kind: str, name: str, check: dict) -> dict:
     """Record the mechanical check's result on a proposed or checked entry, with when and by clm-derive check, and
-    return the entry: one that passed becomes checked, one that failed proposed. An approved or rejected entry is a
+    return the entry: one that passed becomes checked, one that failed proposed. A second reading's record
+    ({model, agreed, differences}) is kept when one was made. An approved or rejected entry is a
     person's decision and is never changed here, nor are the fields recording it."""
     if kind not in ("decisions", "facts"):
         raise DerivedError(f"{kind!r}: only decisions or facts are checked")
@@ -98,7 +99,8 @@ def set_check(folder: str | Path, kind: str, name: str, check: dict) -> dict:
     passed = check.get("passed") is True
     entry.update(status="checked" if passed else "proposed",
                  check={"passed": passed, "failures": list(check.get("failures") or []),
-                        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "by": CHECKER})
+                        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "by": CHECKER,
+                        **({"second_reading": check["second_reading"]} if check.get("second_reading") else {})})
     write(folder, layer)
     return entry
 

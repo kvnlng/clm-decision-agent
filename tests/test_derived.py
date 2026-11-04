@@ -96,6 +96,16 @@ def test_set_check_moves_a_failing_checked_entry_back_to_proposed(tmp_path):
     assert entry["status"] == "proposed" and entry["check"]["failures"] == ["no 7"]
 
 
+def test_set_check_records_a_second_reading_and_only_when_one_was_made(tmp_path):
+    derived.write(tmp_path, _layer())
+    reading = {"model": "m", "agreed": False, "differences": [{"first": 7, "second": 10}]}
+    entry = derived.set_check(tmp_path, "decisions", "carryover_limit",
+                              {"passed": False, "failures": ["x"], "second_reading": reading})
+    assert entry["check"]["second_reading"] == reading
+    entry = derived.set_check(tmp_path, "facts", "k401_2026.match_cap", {"passed": True, "failures": []})
+    assert "second_reading" not in entry["check"]
+
+
 def test_set_check_never_touches_approved_or_rejected_entries(tmp_path):
     derived.write(tmp_path, _layer())
     derived.set_status(tmp_path, "decisions", "carryover_limit", "approved", by="kevin", note="ok")
