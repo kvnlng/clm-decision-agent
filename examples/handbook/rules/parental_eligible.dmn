@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="parental_eligible_definitions" name="Whether the employee may start parental leave" namespace="https://example.org/handbook">
+  <decision id="parental_eligible" name="parental_eligible">
+    <decisionTable id="parental_eligible_table" hitPolicy="FIRST">
+      <input id="parental_eligible_in1" label="days_employed"><inputExpression typeRef="number"><text>days_employed</text></inputExpression></input>
+      <output id="parental_eligible_out1" name="allowed" typeRef="boolean"/>
+      <output id="parental_eligible_out2" name="full_pay_weeks" typeRef="number"/>
+      <output id="parental_eligible_out3" name="partial_pay_weeks" typeRef="number"/>
+      <output id="parental_eligible_out4" name="partial_pay_percent" typeRef="number"/>
+      <output id="parental_eligible_out5" name="reason" typeRef="string"/>
+      <output id="parental_eligible_out6" name="citation" typeRef="string"/>
+      <rule id="eligible"><inputEntry><text>&gt;= 180</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>11</text></outputEntry><outputEntry><text>4</text></outputEntry><outputEntry><text>60</text></outputEntry><outputEntry><text>"Worked at least 180 days on the day the leave starts: 11 weeks at full pay, then up to 4 at 60%."</text></outputEntry><outputEntry><text>"hb-parental"</text></outputEntry></rule>
+      <rule id="too_soon"><inputEntry><text>-</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>0</text></outputEntry><outputEntry><text>0</text></outputEntry><outputEntry><text>0</text></outputEntry><outputEntry><text>"Parental leave needs at least 180 days of employment on the day it starts."</text></outputEntry><outputEntry><text>"hb-parental"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

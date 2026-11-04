@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="tuition_eligible_definitions" name="Whether a course's tuition is repaid" namespace="https://example.org/handbook">
+  <decision id="tuition_eligible" name="tuition_eligible">
+    <decisionTable id="tuition_eligible_table" hitPolicy="FIRST">
+      <input id="tuition_eligible_in1" label="years_of_service"><inputExpression typeRef="number"><text>years_of_service</text></inputExpression></input>
+      <input id="tuition_eligible_in2" label="job_related"><inputExpression typeRef="boolean"><text>job_related</text></inputExpression></input>
+      <output id="tuition_eligible_out1" name="allowed" typeRef="boolean"/>
+      <output id="tuition_eligible_out2" name="reimbursed_percent" typeRef="number"/>
+      <output id="tuition_eligible_out3" name="annual_cap" typeRef="number"/>
+      <output id="tuition_eligible_out4" name="reason" typeRef="string"/>
+      <output id="tuition_eligible_out5" name="citation" typeRef="string"/>
+      <rule id="eligible"><inputEntry><text>&gt;= 1</text></inputEntry><inputEntry><text>true</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>80</text></outputEntry><outputEntry><text>4750</text></outputEntry><outputEntry><text>"At least one full year of service and a job-related course: 80% of tuition, up to $4,750 a calendar year."</text></outputEntry><outputEntry><text>"hb-tuition"</text></outputEntry></rule>
+      <rule id="unrelated"><inputEntry><text>&gt;= 1</text></inputEntry><inputEntry><text>false</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>0</text></outputEntry><outputEntry><text>0</text></outputEntry><outputEntry><text>"Only a course the manager agrees is related to the job is repaid."</text></outputEntry><outputEntry><text>"hb-tuition"</text></outputEntry></rule>
+      <rule id="too_soon"><inputEntry><text>-</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>0</text></outputEntry><outputEntry><text>0</text></outputEntry><outputEntry><text>"Tuition assistance needs at least one full year of service."</text></outputEntry><outputEntry><text>"hb-tuition"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

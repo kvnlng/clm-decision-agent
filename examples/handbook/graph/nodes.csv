@@ -1,0 +1,11 @@
+id,kind,name,state,office,hired,salary,contribution_percent,leave_balance_days,irs_limit,match_cap,year,source
+meridian,company,Meridian Logistics (made up),,,,,,,,,,
+k401_2026,plan,401(k) plan as restated 1 January 2026,,,,,,,24500,6300,2026,"Meridian Employee Handbook § 4(2) and (4); the IRS limit from IRS Notice 2025-67"
+e_2001,employee,Employee e_2001,CO,Denver,2024-06-17,92000,4,6,,,,
+e_2002,employee,Employee e_2002,OH,Columbus,2023-04-10,67000,6,12.5,,,,
+e_2003,employee,Employee e_2003,TN,Memphis,2025-08-04,78000,5,3,,,,
+e_2004,employee,Employee e_2004,OH,Columbus,2024-09-30,71000,3,8,,,,
+e_2005,employee,Employee e_2005,CO,Denver,2022-02-14,58000,2,4,,,,
+e_2006,employee,Employee e_2006,TN,Memphis,2026-10-01,54000,5,1,,,,
+e_2007,employee,Employee e_2007,CO,Denver,2026-09-03,61000,6,1,,,,
+e_2008,employee,Employee e_2008,OH,Columbus,2020-05-18,88000,8,14,,,,

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="vesting_definitions" name="How much of the company match is the employee's" namespace="https://example.org/handbook">
+  <decision id="vesting" name="vesting">
+    <decisionTable id="vesting_table" hitPolicy="FIRST">
+      <input id="vesting_in1" label="years_of_service"><inputExpression typeRef="number"><text>years_of_service</text></inputExpression></input>
+      <output id="vesting_out1" name="vested_percent" typeRef="number"/>
+      <output id="vesting_out2" name="reason" typeRef="string"/>
+      <output id="vesting_out3" name="citation" typeRef="string"/>
+      <rule id="four"><inputEntry><text>&gt;= 4</text></inputEntry><outputEntry><text>100</text></outputEntry><outputEntry><text>"Fully vested after four full years of service."</text></outputEntry><outputEntry><text>"hb-401k-2026"</text></outputEntry></rule>
+      <rule id="three"><inputEntry><text>&gt;= 3</text></inputEntry><outputEntry><text>75</text></outputEntry><outputEntry><text>"75% vested after three full years of service."</text></outputEntry><outputEntry><text>"hb-401k-2026"</text></outputEntry></rule>
+      <rule id="two"><inputEntry><text>&gt;= 2</text></inputEntry><outputEntry><text>50</text></outputEntry><outputEntry><text>"50% vested after two full years of service."</text></outputEntry><outputEntry><text>"hb-401k-2026"</text></outputEntry></rule>
+      <rule id="one"><inputEntry><text>&gt;= 1</text></inputEntry><outputEntry><text>25</text></outputEntry><outputEntry><text>"25% vested after one full year of service."</text></outputEntry><outputEntry><text>"hb-401k-2026"</text></outputEntry></rule>
+      <rule id="none"><inputEntry><text>-</text></inputEntry><outputEntry><text>0</text></outputEntry><outputEntry><text>"Not yet vested: the match vests 25% for each full year of service."</text></outputEntry><outputEntry><text>"hb-401k-2026"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

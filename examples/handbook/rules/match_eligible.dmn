@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="match_eligible_definitions" name="Whether the company match has begun" namespace="https://example.org/handbook">
+  <decision id="match_eligible" name="match_eligible">
+    <decisionTable id="match_eligible_table" hitPolicy="FIRST">
+      <input id="match_eligible_in1" label="days_employed"><inputExpression typeRef="number"><text>days_employed</text></inputExpression></input>
+      <output id="match_eligible_out1" name="allowed" typeRef="boolean"/>
+      <output id="match_eligible_out2" name="reason" typeRef="string"/>
+      <output id="match_eligible_out3" name="citation" typeRef="string"/>
+      <rule id="begun"><inputEntry><text>&gt;= 90</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>"The company match begins on the 90th day of employment, counting the first day as day 1."</text></outputEntry><outputEntry><text>"hb-401k-2026"</text></outputEntry></rule>
+      <rule id="waiting"><inputEntry><text>-</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>"The company match has not begun: it begins on the 90th day of employment, counting the first day as day 1."</text></outputEntry><outputEntry><text>"hb-401k-2026"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

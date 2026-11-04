@@ -1,0 +1,81 @@
+# What a good answer says to each question, worked out by hand from handbook.jsonl and graph/nodes.csv, never from
+# handbook_functions.py: tests/test_handbook_example.py checks the functions against this key. The company, its people
+# and its policies are made up. Not HR, tax or legal advice.
+#
+# figures: each item a good answer states, with what it is about (the reader is shown `about`, never the value).
+# superseded: values from the 2024 401(k) summary, wrong since 1 January 2026.
+
+[q1]
+employee = "e_2001"
+question = "I work at Meridian Logistics; I'm employee e_2001, and today is 1 December 2026. What is the company match on my 401(k), and what is the maximum?"
+choices = ["eligible for the match", "not yet eligible for the match"]
+verdict = "eligible for the match"
+citations = ["hb-401k-2026"]
+# 92,000 x 3% = 2,760, plus 50% of the next 1% (920) = 460: 3,220. At 6% or more: 2,760 + 1,380 = 4,140.
+# Hired 17 June 2024: two full years, so 50% vested. The cap and the IRS limit are in § 4(4) and § 4(2).
+# The 2024 edition: 50% of the first 10%, so 1,840 at 4% and at most 4,600; a 2024 limit of 23,000; and no vesting
+# before three years.
+superseded = [1840, 4600, 23000, 0]
+
+[q1.figures]
+company_match = { value = 3220, about = "the company match in dollars a year at the employee's current contribution rate" }
+most_match = { value = 4140, about = "the most the company would match in dollars a year for this employee, at any contribution rate" }
+match_cap = { value = 6300, about = "the plan's cap on the company match in dollars a year, for anyone" }
+irs_limit = { value = 24500, about = "the IRS limit on the employee's own contributions in dollars for 2026" }
+vested_percent = { value = 50, about = "the percentage of the company match the employee owns now (vested)" }
+
+[q2]
+employee = "e_2002"
+question = "I work at Meridian Logistics; I'm employee e_2002, and today is 1 December 2026. Can I carry over my unused leave into next year, and how much?"
+choices = ["yes, all of it", "yes, part of it", "no"]
+verdict = "yes, part of it"
+citations = ["hb-leave"]
+# Three full years (hired 10 April 2023): the limit is 7 days. 12.5 days unused: 7 carried, 5.5 forfeited if no
+# more are taken this year.
+superseded = []
+
+[q2.figures]
+carryover_limit = { value = 7, about = "the most days the employee may carry into next year" }
+carried_days = { value = 7, about = "the days the employee would carry over if they take no more leave this year" }
+forfeited_days = { value = 5.5, about = "the days the employee would forfeit on 31 December if they take no more leave this year" }
+
+[q3]
+employee = "e_2003"
+question = "I work at Meridian Logistics; I'm employee e_2003, and today is 1 December 2026. I want to start parental leave today. Am I eligible, and for how long?"
+choices = ["eligible", "not eligible"]
+verdict = "eligible"
+citations = ["hb-parental"]
+# Hired 4 August 2025: 485 days on 1 December 2026, at least 180. 78,000 / 52 = 1,500 a week; 60% is 900.
+superseded = []
+
+[q3.figures]
+full_pay_weeks = { value = 11, about = "the weeks of parental leave at full pay" }
+partial_pay_weeks = { value = 4, about = "the further weeks of parental leave at reduced pay" }
+partial_pay_percent = { value = 60, about = "the percentage of pay during the reduced-pay weeks" }
+weekly_pay = { value = 1500, about = "the employee's weekly pay in dollars during the full-pay weeks" }
+partial_weekly_pay = { value = 900, about = "the employee's weekly pay in dollars during the reduced-pay weeks" }
+
+[q4]
+employee = "e_2004"
+question = "I work at Meridian Logistics; I'm employee e_2004, and today is 1 December 2026. I want to take a $3,900 logistics course in spring 2027 that my manager says is related to my job. Will the company reimburse my tuition, and up to how much?"
+choices = ["reimbursed", "not reimbursed"]
+verdict = "reimbursed"
+citations = ["hb-tuition"]
+# Two full years (hired 30 September 2024), a job-related course: 80% of 3,900 = 3,120, under the 4,750 a year.
+superseded = []
+
+[q4.figures]
+reimbursed = { value = 3120, about = "the dollars the company would repay for this course" }
+reimbursed_percent = { value = 80, about = "the percentage of tuition the company repays" }
+annual_cap = { value = 4750, about = "the most the company repays in tuition in dollars a calendar year" }
+
+[q5]
+employee = "e_2005"
+question = "I work at Meridian Logistics; I'm employee e_2005, and today is 1 December 2026. What is the dress code at the Denver office?"
+choices = []
+verdict = ""
+citations = ["hb-dress"]
+superseded = []
+
+[q5.figures]
+boot_allowance = { value = 150, about = "the safety boot allowance in dollars a year for Denver warehouse staff" }

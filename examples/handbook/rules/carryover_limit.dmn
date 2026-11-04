@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="carryover_limit_definitions" name="How many unused days carry into next year" namespace="https://example.org/handbook">
+  <decision id="carryover_limit" name="carryover_limit">
+    <decisionTable id="carryover_limit_table" hitPolicy="FIRST">
+      <input id="carryover_limit_in1" label="years_of_service"><inputExpression typeRef="number"><text>years_of_service</text></inputExpression></input>
+      <output id="carryover_limit_out1" name="carryover_limit" typeRef="number"/>
+      <output id="carryover_limit_out2" name="reason" typeRef="string"/>
+      <output id="carryover_limit_out3" name="citation" typeRef="string"/>
+      <rule id="long"><inputEntry><text>&gt;= 5</text></inputEntry><outputEntry><text>10</text></outputEntry><outputEntry><text>"With 5 or more full years of service, up to 10 unused days carry over."</text></outputEntry><outputEntry><text>"hb-leave"</text></outputEntry></rule>
+      <rule id="other"><inputEntry><text>-</text></inputEntry><outputEntry><text>7</text></outputEntry><outputEntry><text>"Up to 7 unused days carry over; days above the limit are forfeited on 31 December."</text></outputEntry><outputEntry><text>"hb-leave"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>
