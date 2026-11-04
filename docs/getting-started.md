@@ -60,6 +60,14 @@ pip install "clm-decision-agent[clm,neo4j,agent] @ git+https://github.com/kvnlng
 uv tool install "clm-decision-agent[clm] @ git+https://github.com/kvnlng/clm-decision-agent"       # commands only
 ```
 
+**Without installing**, `uvx` runs a command straight from GitHub, in a cached environment of its own; an MCP client
+or the Inspector can start a server this way:
+
+```bash
+uvx --from "git+https://github.com/kvnlng/clm-decision-agent" clm-server my_environment/environment.toml
+uvx --from "clm-decision-agent[documents] @ git+https://github.com/kvnlng/clm-decision-agent" clm-server ...  # an extra
+```
+
 | Extra | Adds |
 |---|---|
 | `clm` | CLM: scenarios, judges, training and the example writer |
