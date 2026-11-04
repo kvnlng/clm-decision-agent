@@ -77,10 +77,10 @@ citations, citations no tool returned, and cases found are counted by the script
 | 1 | without | Claude | 11/11 | 14/17 | 0 | | 3 | 27 |
 | 1 | with | gemma4 | 11/11 | 14/17 | 1 | | 2 | 38 |
 | 1 | without | gemma4 | 11/11 | 14/17 | 0 | | 2 | 20 |
-| 2 | with | Claude | 1/1 | 3/5 | 0 | 16 | 8 | 81 |
-| 2 | without | Claude | 1/1 | 2/5 | 1 | 4 | 5 | 44 |
-| 2 | with | gemma4 | 0/1 | 0/5 | 0 | 0 | 7 | 49 |
-| 2 | without | gemma4 | 0/1 | 0/5 | 0 | 0 | 7 | 35 |
+| 2 | with | Claude | 1/1 | 2/5 | 1 | 13 | 5 | 54 |
+| 2 | without | Claude | 1/1 | 1/5 | 0 | 9 | 5 | 48 |
+| 2 | with | gemma4 | 1/1 | 0/5 | 0 | 3 | 5 | 439 |
+| 2 | without | gemma4 | 1/1 | 1/5 | 0 | 0 | 4 | 429 |
 | 3 | with | Claude | 2/2 | 3/3 | 0 | | 6 | 26 |
 | 3 | without | Claude | 2/2 | 3/3 | 0 | | 5 | 19 |
 | 3 | with | gemma4 | 1/2 | 3/3 | 0 | | 8 | 23 |
@@ -92,17 +92,17 @@ What it says:
   citations, so both models got every state's verdict from `scenario_agreement_by_state` either way. The three key
   citations every answer missed are New York's case (the rules cite none for New York), 820 ILCS 90/20 and
   Minnesota's subdivision 2.
-- **For question 2 they made the answer better sourced, not different.** Claude reached "narrow it" both ways;
-  with the documents it searched and read opinions and cited 16 cases the tools returned, against 4 without,
-  where only the scenario's own case list was available. Without them it also cited one section, "§ 217", that no
-  tool returned.
-- **Claude was right more often than gemma4, and at similar speed.** gemma4 matched Claude on question 1, but on
+- **For question 2 they made the answer somewhat better sourced, not different.** Every run reached "narrow it".
+  With the documents Claude cited 13 cases the tools returned, against 9 without, where only the scenario's own
+  case list was available; with them it also cited one case, 818 S.W.2d 381, that no tool returned.
+- **Claude was right more often than gemma4, and as fast or faster.** gemma4 matched Claude on questions 1 and 2, but on
   question 3 passed `works: "contract"` to the choice-of-law rule once and read Colorado's threshold as "void"
   once.
-- **gemma4's question 2 runs measure a fault, not the model.** `scenario_narrow_to_enforce` returns about 1 MB
-  (every branch's similar cases, with their passages). Ollama silently cuts a conversation to its context window,
-  dropping the instructions and the question, so gemma4 answered "please provide the question". Until the
-  scenario returns less, or the agent warns when a result cannot fit, question 2 cannot be asked of a local model.
+- **Question 2 is too big a result for a local model.** `scenario_narrow_to_enforce` returns about 0.7 MB (every
+  branch's similar cases, with their steps). Ollama silently cuts a conversation to its context window. In a first
+  run, before the review's fixes, the result was about 1 MB and gemma4 lost the instructions and the question and
+  answered "please provide the question"; in the second it answered, but took over 7 minutes. Neither the scenario
+  nor the agent warns yet when a result cannot fit.
 
 ### The two judgements
 
@@ -117,4 +117,9 @@ measured them on the passages in `labels/`, each labelled from a court's own wor
   but no threshold separates them.
 
 So no rule reads either. `broader_than_needed` is reported in the figures and is not evidence; `departs` only
-orders which citing passages are shown first. The label sets are small, eleven and thirteen passages.
+orders each weighty case's citing passages, the most critical first.
+
+A case counts as **similar** (`rules/similar_case.dmn`) when its facts are known, its court is binding or strong
+(a federal court is only persuasive), and its role is in the same line of work: the asked role's first word,
+"sales" of "sales manager", appears in the role the opinion names. That is a crude rule over free text; an
+"account executive" who sells is missed. The label sets are small, eleven and thirteen passages.

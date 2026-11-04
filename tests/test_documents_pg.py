@@ -44,9 +44,10 @@ def built():
     return {"built_at": "2026-11-03T12:00:00Z", "source": "test", "model": "toy-embed", "dimensions": 26}
 
 
-def vectors(documents=DOCUMENTS):
+def vectors(documents=None):
     embedder = FakeEmbedder()
-    return [embedder.embed("toy-embed", [p["text"] for p in document["passages"]]) for document in documents]
+    return [embedder.embed("toy-embed", [p["text"] for p in document["passages"]])
+            for document in documents or DOCUMENTS]
 
 
 @pytest.fixture
@@ -86,6 +87,7 @@ def test_an_unreachable_database_is_one_line():
 
 def test_no_vector_extension_is_one_line(monkeypatch):
     class Connection:
+        """A connection whose database has no vector extension."""
         def execute(self, sql, *args):
             raise psycopg.errors.UndefinedFile('extension "vector" is not available\nDETAIL: more')
 
@@ -151,3 +153,15 @@ def test_replace_removes_what_was_there(store):
                                          "dimensions": 26, "documents": 1, "passages": 1}
     assert not store.exists("cases", "case-a")
     assert store.built("nothing") is None
+
+
+@pytest.mark.postgres
+def test_a_walk_of_a_dense_graph_visits_each_document_once(store):
+    """Every one of 25 documents cites every other: walking paths, not documents, would give millions of rows."""
+    dense = [{"id": f"d{n:02}", "citation": f"{n} S.W.3d 1", "title": f"D{n}", "metadata": {},
+              "passages": [{"label": "1", "text": "We follow the others."}],
+              "cites": [{"id": f"d{m:02}", "passage": "1"} for m in range(25) if m != n]} for n in range(25)]
+    store.replace("cases", dense, vectors(dense), built())
+    store.connection.execute("SET statement_timeout = '5s'")
+    rows = store.cited_by("cases", "d00", 5)
+    assert len(rows) == 24 and {row["depth"] for row in rows} == {1}

@@ -95,16 +95,23 @@ def _nationwide(area):
     return any(word in (area or "").lower() for word in ("nation", "united states", "country", "anywhere"))
 
 
+def _same_line_of_work(asked, found):
+    """Whether a case's role is in the asker's line of work: the asked role's first word is in it ("sales" of
+    "sales manager" is in "regional sales manager" and "salesman")."""
+    return bool(found) and asked.split()[0].lower() in found.lower()
+
+
 def _still_good_law(steps, cases):
-    """For the three weightiest cases, read up to three passages that cite each and judge whether they depart."""
+    """For the three weightiest cases, read up to three passages that cite each, and list them with how far each
+    departs from the case, the most critical first. The judgement orders them; it decides nothing."""
     for case in sorted(cases, key=lambda c: c["weight"] != "binding")[:3]:
-        departures = []
+        citing = []
         for citer in steps.cited_by("cases", case["document"], 1)[:3]:
             if citer["passage"]:
                 text = steps.document("cases", citer["document"], citer["passage"])["passages"][0]["text"]
-                departures.append(steps.judge("departs", text)["probability"])
-        case["citing_cases_read"] = len(departures)
-        case["most_critical_citing"] = max(departures, default=0.0)
+                citing.append({"document": citer["document"], "citation": citer["citation"],
+                               "passage": citer["passage"], "departs": steps.judge("departs", text)["probability"]})
+        case["citing"] = sorted(citing, key=lambda c: -c["departs"])
 
 
 def narrow(steps, params, levers):  # pylint: disable=too-many-locals
@@ -122,7 +129,8 @@ def narrow(steps, params, levers):  # pylint: disable=too-many-locals
         weight = steps.decide("court_weight", court_level=meta.get("court_level", "other"))["weight"]
         known = isinstance(meta.get("length_months"), (int, float)) and meta.get("outcome") in (
             "enforced", "reformed", "void")
-        if steps.decide("similar_case", weight=weight, facts_known=known)["similar"]:
+        if steps.decide("similar_case", weight=weight, facts_known=known,
+                        same_line_of_work=_same_line_of_work(params["role"], meta.get("role")))["similar"]:
             cases.append({"document": row["document"], "citation": row["citation"], "title": row["title"],
                           "weight": weight, "role": meta.get("role"), "length_months": meta["length_months"],
                           "area": meta.get("area"), "nationwide": _nationwide(meta.get("area")),

@@ -22,7 +22,9 @@ def write(tmp_path, *lines):
 
 
 def test_a_good_line_is_read_and_its_text_split(tmp_path):
-    [document] = load_documents.read_jsonl(write(tmp_path, GOOD), CASES)
+    documents = load_documents.read_jsonl(write(tmp_path, GOOD), CASES)
+    assert len(documents) == 1
+    document = documents[0]
     assert document["passages"] == [{"label": "1", "text": "The manager was barred."},
                                     {"label": "2", "text": "We reform the covenant."}]
     assert document["cites"] == [{"id": "tx-15.50", "passage": None}]

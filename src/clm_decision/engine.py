@@ -54,6 +54,8 @@ _FILTER_WORDS = {"string": "text", "boolean": "true or false", "integer": "a who
 _RANGED = ("integer", "number", "date")
 MAX_SEARCH = 50
 MAX_DEPTH = 5
+# The most documents a citation walk returns: more would not fit a model's context
+MAX_ROWS = 100
 
 
 def _filter_value_ok(kind: str, value) -> bool:
@@ -90,12 +92,16 @@ def _filters(env: Environment, name: str, filters: dict | None) -> dict:
 
 
 def _resolved(env: Environment, collection: str, cell: str) -> list[dict]:
-    """A citation cell's ids (separated by ;) with each document's citation and title, as the collection holds."""
+    """A citation cell's ids (separated by ;) with each document's citation, title and passages, as the collection
+    holds them, and when the collection was built."""
     found = []
+    built = env.store.built(collection) or {}
     for ident in (part.strip() for part in cell.split(";")):
         document = env.store.document(collection, ident, None) if ident else {}
         if document:
-            found.append({"id": ident, "citation": document["citation"], "title": document["title"]})
+            found.append({"id": ident, "citation": document["citation"], "title": document["title"],
+                          "passages": document["passages"], "collection": collection,
+                          "built_at": built.get("built_at")})
     return found
 
 
@@ -263,9 +269,9 @@ class Steps:
         tracing.add("citations")
         rows = getattr(self.env.store, direction)(collection, id, depth)
         self.steps.append({"kind": "citations", "name": collection,
-                           "inputs": {"id": id, "depth": depth, "direction": direction}, "result": rows,
-                           "built_at": built["built_at"]})
-        return rows
+                           "inputs": {"id": id, "depth": depth, "direction": direction}, "result": rows[:MAX_ROWS],
+                           "built_at": built["built_at"], "omitted": max(len(rows) - MAX_ROWS, 0)})
+        return rows[:MAX_ROWS]
 
     def cites(self, collection: str, id: str, depth: int = 1) -> list[dict]:  # pylint: disable=redefined-builtin
         """The documents this one cites, and those they cite, to the depth."""
@@ -318,10 +324,12 @@ def run_document(env: Environment, name: str, args: dict) -> dict:
 
 
 def run_citations(env: Environment, name: str, args: dict, direction: str) -> dict:
-    """-> {"rows", "built_at", "steps"}; `direction` is "cites" or "cited_by"."""
+    """-> {"rows", "omitted", "built_at", "steps"}: at most MAX_ROWS rows, and how many more there were;
+    `direction` is "cites" or "cited_by"."""
     steps = Steps(env)
     rows = getattr(steps, direction)(name, args["id"], args.get("depth", 1))
-    return {"rows": rows, "built_at": steps.steps[-1]["built_at"], "steps": steps.steps}
+    return {"rows": rows, "omitted": steps.steps[-1]["omitted"], "built_at": steps.steps[-1]["built_at"],
+            "steps": steps.steps}
 
 
 def _branches(scenario, branches: list[dict] | None) -> list[dict]:

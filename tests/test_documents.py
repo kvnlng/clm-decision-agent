@@ -38,7 +38,7 @@ def test_a_collection_is_read(write_environment):
 
 def test_an_environment_without_documents_has_no_store(write_environment):
     env = load_environment(write_environment())
-    assert env.collections == {} and env.store is None
+    assert not env.collections and env.store is None
 
 
 def test_collections_need_a_documents_table(write_environment):

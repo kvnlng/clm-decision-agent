@@ -11,6 +11,7 @@ import measure
 from fake_documents import FakeEmbedder, FakeStore
 from mcp import Client
 
+from clm_decision import decision_record
 from clm_decision.engine import run_decision, run_query, run_scenario
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
@@ -52,6 +53,18 @@ def test_california_is_void_with_its_citation(env):
     assert decision["citations"][0]["citation"] == "Cal. Bus. & Prof. Code § 16600"
 
 
+def test_a_rules_citation_carries_its_collection_date_and_passages(env):
+    result = run_scenario(env, "agreement_by_state", {"agreement": "standard_v3"})
+    [decision] = [s for s in branch(result, state="CA")["steps"] if s["kind"] == "decision"]
+    assert decision["citations"][0]["built_at"] == BUILT["built_at"]
+    assert "(a)" in [passage["label"] for passage in decision["citations"][0]["passages"]]
+    call = {"tool": "scenario_agreement_by_state", "arguments": {}, "result": result, "error": None}
+    stored = decision_record.build("Does it hold?", [call])["documents"]
+    assert {"collection": "statutes", "built_at": BUILT["built_at"], "document": "ca-bpc-16600",
+            "citation": "Cal. Bus. & Prof. Code § 16600", "passage": "(a)"} in [
+                {k: v for k, v in item.items() if k != "text"} for item in stored]
+
+
 def test_colorado_holds_only_above_the_threshold(env):
     colorado = branch(run_scenario(env, "agreement_by_state", {"agreement": "standard_v3"}), state="CO")
     assert colorado["status"] == "rejected" and colorado["figures"]["holds"] == "only above threshold"
@@ -86,16 +99,24 @@ def test_narrowing_keeps_the_broadest_terms_that_pass(env):
 
 def test_the_bottom_line_is_calculated_from_the_cases(env):
     best = branch(run_scenario(env, "narrow_to_enforce", TEXAS), length_months=18, area="served")["figures"]
-    assert best["similar"] == 8 and best["as_broad"] == 6
-    assert best["enforced_as_written"] == 3 and best["share_enforced"] == 0.5
-    assert {case["weight"] for case in best["cases"]} == {"binding", "strong", "persuasive"}
+    assert best["similar"] == 6 and best["as_broad"] == 4
+    assert best["enforced_as_written"] == 2 and best["share_enforced"] == 0.5
+    assert {case["weight"] for case in best["cases"]} == {"binding", "strong"}
+
+
+def test_a_similar_case_is_the_same_line_of_work_in_a_court_of_weight(env):
+    best = branch(run_scenario(env, "narrow_to_enforce", TEXAS), length_months=18, area="served")["figures"]
+    # made-3 is an account executive, made-8 a federal court's: neither counts
+    assert {case["document"] for case in best["cases"]} == {"made-1", "made-2", "made-4", "made-5", "made-6",
+                                                            "made-7"}
     assert best["broader_than_needed"] == 0.1
 
 
 def test_still_good_law_reads_the_citing_passages(env):
     best = branch(run_scenario(env, "narrow_to_enforce", TEXAS), length_months=18, area="served")["figures"]
     binding = next(case for case in best["cases"] if case["weight"] == "binding")
-    assert binding["citing_cases_read"] == 1 and binding["most_critical_citing"] == 0.9
+    assert [(c["document"], c["departs"]) for c in binding["citing"]] == [("made-9", 0.9)]
+    assert "most_critical_citing" not in binding
 
 
 def test_no_rule_reads_a_search_score(env):

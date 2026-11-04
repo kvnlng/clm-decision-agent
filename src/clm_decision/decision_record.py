@@ -32,17 +32,23 @@ def _information(record: dict, steps: list[dict], descriptions: dict) -> None:
 
 
 def _documents(record: dict, steps: list[dict]) -> None:
-    """Every passage a search or document step returned, once, with its collection and when it was built."""
+    """Every passage a search or document step returned, and every passage of a document a rule cited, once, with
+    its collection and when it was built."""
     for step in steps:
         if step["kind"] == "search":
-            passages = [(row["document"], row["citation"], row["passage"], row["text"]) for row in step["result"]]
+            passages = [(step["name"], step["built_at"], row["document"], row["citation"], row["passage"], row["text"])
+                        for row in step["result"]]
         elif step["kind"] == "document":
             found = step["result"]
-            passages = [(found["id"], found["citation"], p["label"], p["text"]) for p in found["passages"]]
+            passages = [(step["name"], step["built_at"], found["id"], found["citation"], p["label"], p["text"])
+                        for p in found["passages"]]
+        elif step["kind"] == "decision" and step.get("citations"):
+            passages = [(cited["collection"], cited["built_at"], cited["id"], cited["citation"], p["label"], p["text"])
+                        for cited in step["citations"] for p in cited.get("passages", [])]
         else:
             continue
-        for document, citation, passage, text in passages:
-            item = {"collection": step["name"], "built_at": step["built_at"], "document": document,
+        for collection, built_at, document, citation, passage, text in passages:
+            item = {"collection": collection, "built_at": built_at, "document": document,
                     "citation": citation, "passage": passage, "text": text}
             if item not in record["documents"]:
                 record["documents"].append(item)

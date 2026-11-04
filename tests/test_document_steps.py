@@ -136,3 +136,12 @@ async def test_tools_false_offers_no_document_tools(write_environment):
         names = {tool.name for tool in (await client.list_tools()).tools}
     assert not {name for name in names if name.endswith("_cases")}
     assert Steps(env).search("cases", "covenant")       # the owner's functions still search
+
+
+def test_a_citation_walk_returns_at_most_the_cap_and_says_how_many_more(env):
+    many = [{"id": f"citer-{n:03}", "citation": f"{n} S.W.3d 1", "title": f"Citer {n}", "metadata": {},
+             "passages": [{"label": "1", "text": "We follow Case A."}], "cites": [{"id": "case-a", "passage": "1"}]}
+            for n in range(engine.MAX_ROWS + 5)]
+    env.store.replace("cases", CASES + many, [], BUILT)
+    result = engine.run_citations(env, "cases", {"id": "case-a"}, "cited_by")
+    assert len(result["rows"]) == engine.MAX_ROWS and result["omitted"] == 5

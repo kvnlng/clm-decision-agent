@@ -19,9 +19,9 @@ embedding_model = "toy-embed"
 '''
 RULE = '''
 [decisions.share_limit.rule]
-statement = "At most 90% of a product's parts may come from Region B."
-reason = "One region's disruption must not stop production."
-owner = "Supply chain"
+statement = "No more than 90% of a product's parts come from Region B."
+reason = "Production must survive one region's disruption."
+owner = "Sourcing"
 version = "2026-01"
 cites = ["sec-1"]
 '''

@@ -169,21 +169,22 @@ class PostgresStore:
             "passages": [{"label": label, "text": text} for label, text in passages]}
 
     def _walk(self, collection: str, id: str, depth: int, forward: bool) -> list[dict]:  # pylint: disable=redefined-builtin
+        """Breadth first, one query a step, each document once at its nearest depth: a walk of paths would grow with
+        every path between two documents."""
         near, far = ("source", "target") if forward else ("target", "source")
         sql = f"""
-            WITH RECURSIVE walk(document, passage, depth, path) AS (
-                SELECT c.{far}, c.source_passage, 1, ARRAY[%s::text, c.{far}]
-                FROM citations c WHERE c.collection = %s AND c.{near} = %s
-                UNION ALL
-                SELECT c.{far}, c.source_passage, w.depth + 1, w.path || c.{far}
-                FROM walk w JOIN citations c ON c.collection = %s AND c.{near} = w.document
-                WHERE w.depth < %s AND NOT c.{far} = ANY(w.path))
-            SELECT DISTINCT ON (w.document) w.document, d.citation, w.depth, w.passage
-            FROM walk w LEFT JOIN documents d ON d.collection = %s AND d.id = w.document
-            ORDER BY w.document, w.depth"""
-        rows = self._rows(sql, (id, collection, id, collection, depth, collection))
-        found = [dict(zip(("document", "citation", "depth", "passage"), row)) for row in rows]
-        return sorted(found, key=lambda row: (row["depth"], row["document"]))
+            SELECT DISTINCT ON (c.{far}) c.{far}, d.citation, c.source_passage
+            FROM citations c LEFT JOIN documents d ON d.collection = c.collection AND d.id = c.{far}
+            WHERE c.collection = %s AND c.{near} = ANY(%s) AND NOT c.{far} = ANY(%s)
+            ORDER BY c.{far}, c.source_passage"""
+        found, frontier, seen = [], [id], [id]
+        for step in range(1, depth + 1):
+            rows = self._rows(sql, (collection, frontier, seen)) if frontier else []
+            found += [{"document": document, "citation": citation, "depth": step, "passage": passage}
+                      for document, citation, passage in rows]
+            frontier = [row[0] for row in rows]
+            seen += frontier
+        return found
 
     def cites(self, collection: str, id: str, depth: int) -> list[dict]:  # pylint: disable=redefined-builtin
         """The documents this one cites, to the depth, nearest first."""

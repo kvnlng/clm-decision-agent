@@ -39,7 +39,7 @@ def test_a_reporter_citation_matches():
 
 def test_an_invented_case_is_not_found():
     result = citation_check.check("Varghese v. China Southern Airlines, 925 F.3d 1339 (11th Cir. 2019).", SEARCHED)
-    assert result["not_found"] == ["925 F.3d 1339"] and result["unchecked"] == []
+    assert result["not_found"] == ["925 F.3d 1339"] and not result["unchecked"]
 
 
 def test_a_bare_case_name_is_unchecked():
@@ -61,8 +61,9 @@ def test_a_table_citation_is_resolved_in_its_step(write_environment):
                            embedder=FakeEmbedder())
     steps = Steps(env)
     steps.decide("share_limit", share=0.5)
-    assert steps.steps[0]["citations"] == [{"id": "sec-1", "citation": "Code § sec-1", "title": "Section sec-1"},
-                                           {"id": "sec-2", "citation": "Code § sec-2", "title": "Section sec-2"}]
+    assert steps.steps[0]["citations"] == [
+        {"id": i, "citation": f"Code § {i}", "title": f"Section {i}", "passages": [{"label": "1", "text": "x"}],
+         "collection": "laws", "built_at": None} for i in ("sec-1", "sec-2")]
 
 
 def test_the_record_lists_citations_with_passages():

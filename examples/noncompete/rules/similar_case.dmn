@@ -4,9 +4,12 @@
     <decisionTable id="similar_case_table" hitPolicy="FIRST">
       <input id="similar_case_in1" label="weight"><inputExpression typeRef="string"><text>weight</text></inputExpression></input>
       <input id="similar_case_in2" label="facts_known"><inputExpression typeRef="boolean"><text>facts_known</text></inputExpression></input>
+      <input id="similar_case_in3" label="same_line_of_work"><inputExpression typeRef="boolean"><text>same_line_of_work</text></inputExpression></input>
       <output id="similar_case_out1" name="similar" typeRef="boolean"/>
-      <rule id="unknown_facts"><inputEntry><text>-</text></inputEntry><inputEntry><text>false</text></inputEntry><outputEntry><text>false</text></outputEntry></rule>
-      <rule id="weighted"><inputEntry><text>-</text></inputEntry><inputEntry><text>true</text></inputEntry><outputEntry><text>true</text></outputEntry></rule>
+      <rule id="unknown_facts"><inputEntry><text>-</text></inputEntry><inputEntry><text>false</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>false</text></outputEntry></rule>
+      <rule id="persuasive_only"><inputEntry><text>"persuasive"</text></inputEntry><inputEntry><text>-</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>false</text></outputEntry></rule>
+      <rule id="other_work"><inputEntry><text>-</text></inputEntry><inputEntry><text>-</text></inputEntry><inputEntry><text>false</text></inputEntry><outputEntry><text>false</text></outputEntry></rule>
+      <rule id="similar"><inputEntry><text>-</text></inputEntry><inputEntry><text>true</text></inputEntry><inputEntry><text>true</text></inputEntry><outputEntry><text>true</text></outputEntry></rule>
     </decisionTable>
   </decision>
 </definitions>
