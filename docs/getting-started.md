@@ -69,7 +69,7 @@ uv tool install "clm-decision-agent[clm] @ git+https://github.com/kvnlng/clm-dec
 
 Commands: `clm-server`, `clm-agent`, `clm-chat`, `clm-call`, `clm-new-scenario`, `clm-new-environment`,
 `clm-synthesize`, `clm-train`, `clm-evaluate`, `clm-record`, `clm-load-graph`, `clm-load-documents`, `clm-registry`,
-`clm-trace-report`. Each takes `--help`, and one that needs a missing extra says which. In Python, the package is
+`clm-trace-report`, `clm-derive`. Each takes `--help`, and one that needs a missing extra says which. In Python, the package is
 `clm_decision`.
 
 ## Try an example

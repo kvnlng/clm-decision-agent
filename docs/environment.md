@@ -476,7 +476,7 @@ says so. No tool of the decision server changes a status.
 | `search_<name>`, `document_<name>` | A collection's closest passages to a `text`, with `filters` and `limit`; one document or passage as stored |
 | `cites_<name>`, `cited_by_<name>` | The documents one cites, or that cite it with the citing passage, to a `depth` |
 | `scenario_<name>` | Every branch, or the `branches` given: figures, status, rejecting limits and every step |
-| `describe` | Name, description, and every part with its parameters, levers, objective and limits |
+| `describe` | Name, description, and every part with its parameters, levers, objective and limits; with slots, each derived entry's status and why it is unfilled |
 | `rules`, `rule` | With rule metadata: the rules governing a topic, and one rule with its rows (above) |
 
 All only read. Each tool's description is yours.
