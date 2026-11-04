@@ -181,3 +181,12 @@ def test_a_correction_without_clm_derive_says_so_as_an_error(client, environment
     assert response.status_code == 200 and layer_of(environment)["facts"][FACT]["value"] == 6300
     shown = re.search(r'<p class="(\w+)">[^<]*clm-derive is not installed', response.text)
     assert shown and shown.group(1) == "failed"
+
+
+def test_with_a_second_reader_an_entry_is_approved_only_after_its_reading(client, environment):
+    with environment.open("a") as file:
+        file.write('\n[derived]\nsecond_reader = { backend = "ollama", model = "qwen3:14b" }\n')
+    token = sign_in(client, "Kevin")
+    response = post(client, "/review/decisions/carryover_limit/approve", token)
+    assert response.status_code == 409 and "second reading by qwen3:14b" in response.text
+    assert layer_of(environment)["decisions"]["carryover_limit"]["status"] == "checked"

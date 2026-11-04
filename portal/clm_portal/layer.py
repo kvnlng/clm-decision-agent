@@ -13,7 +13,7 @@ import tomllib
 from pathlib import Path
 
 from clm_decision import derived, dmn
-from clm_decision.environment import graph_settings
+from clm_decision.environment import graph_settings, second_reader_of
 from clm_decision.scenario import ScenarioError
 
 DECISION_FIELDS = {"description", "dmn", "function", "params", "collection", "rule", "source", "status", "check",
@@ -258,10 +258,13 @@ def review(environment: Path) -> dict:  # pylint: disable=too-many-locals
 
 # pylint: disable-next=too-many-arguments
 def decide(environment: Path, kind: str, name: str, status: str, *, by: str, note: str | None) -> dict:
-    """Approve, reject or resolve one entry, recording who and why; Refused when the layer does not allow it."""
+    """Approve, reject or resolve one entry, recording who and why; Refused when the layer does not allow it. With a
+    [derived] second_reader, approving needs its agreeing reading, as clm-derive status does."""
     try:
-        return derived.set_status(Path(environment).parent, kind, name, status, by=by, note=note or None)
-    except derived.DerivedError as error:
+        reader = second_reader_of(environment)
+        return derived.set_status(Path(environment).parent, kind, name, status, by=by, note=note or None,
+                                  second_reader=reader["model"] if reader else None)
+    except (derived.DerivedError, ScenarioError) as error:
         raise Refused(str(error)) from error
 
 
