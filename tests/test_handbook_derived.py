@@ -3,6 +3,7 @@ are slots derived from the handbook, and environment_documents_only.toml, which 
 layers here are written by hand to test loading; nothing is derived."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import functools
 import importlib.util
 import json
 import shutil
@@ -13,7 +14,7 @@ from pathlib import Path
 import pytest
 from fake_documents import FakeEmbedder, FakeStore
 
-from clm_decision import derive_check, derived
+from clm_decision import derive, derive_check, derived
 from clm_decision.engine import run_scenario
 from clm_decision.environment import load_environment
 
@@ -173,6 +174,40 @@ def test_a_kept_layer_is_checked_again_and_only_its_passing_entries_approved(fol
     assert entries["k401_2026.match_cap"]["status"] == "proposed"
     assert entries["k401_2026.irs_limit"]["status"] == "approved"
     assert entries["k401_2026.irs_limit"]["decided_by"] == module.SCRIPTED
+
+
+class FactReader:  # pylint: disable=too-few-public-methods
+    """A second reader that reads every plan figure as the hand-written key has it, and cannot read a table."""
+    model = "reader"
+
+    def extract(self, _system, prompt, _schema):
+        name = next((name for name in FACTS if f"Slot: k401_2026.{name}\n" in prompt), None)
+        if name is None:
+            raise derive.DeriveError("no table today")
+        return {"value": FACTS[name][0], "source": {"document": "hb-401k-2026", "passages": [], "quote": ""},
+                "missing": []}
+
+
+def test_a_second_reading_of_a_kept_layer_counts_what_it_caught_and_what_it_flagged(folder, tmp_path,
+                                                                                     monkeypatch):
+    hand_written_layer(folder)
+    layer = derived.read(folder)
+    layer["facts"]["k401_2026.first_tier_percent"]["value"] = 100    # passes the check, as gemma4's did
+    derived.write(folder, layer)
+    kept = tmp_path / "runs" / "derived-test"
+    shutil.copytree(folder / "derived", kept)
+    before = (kept / "derived.json").read_text(encoding="utf-8")
+    monkeypatch.setattr(derive, "reader_for", lambda env: FactReader() if env.second_reader else None)
+    monkeypatch.setattr(derive, "load_environment",
+                        functools.partial(load_environment, store=store(), embedder=FakeEmbedder()))
+    found = measure().second_read("test", "ollama", "reader", tmp_path / "runs", folder)
+    assert found["summary"] == {"slots": 11, "wrong": 1, "wrong_caught": 1, "right": 10, "right_flagged": 5,
+                                "right_flagged_passing": 0, "agreed": 5, "disagreed": 1, "not_made": 5,
+                                "passes_both": 5, "passes_both_but_wrong": 0}
+    assert found["slots"]["k401_2026.first_tier_percent"]["second_reading"]["differences"] == [
+        {"first": 100, "second": 3}]
+    assert (kept / "derived.json").read_text(encoding="utf-8") == before
+    assert not (folder / "derived" / "derived.json").read_text(encoding="utf-8").count("second_reading")
 
 
 def test_a_derived_setup_needs_the_layer_of_its_model(folder):

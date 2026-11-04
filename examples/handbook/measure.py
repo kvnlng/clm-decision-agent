@@ -7,6 +7,7 @@ local model.
     uv run python examples/handbook/measure.py recheck claude|ollama
     uv run python examples/handbook/measure.py run [--backends claude,ollama] [--questions q1,...] [--setups none,...]
     uv run python examples/handbook/measure.py compare
+    uv run python examples/handbook/measure.py second claude|ollama claude|ollama MODEL
     uv run python examples/handbook/measure.py score
 
 derive runs `clm-derive run --fresh` on environment_derived.toml with that backend, approves every entry that passed
@@ -14,7 +15,10 @@ its check, labelled as a scripted approval and not a person's, and keeps a copy 
 runs/measure/derived-BACKEND/; restore puts that copy back; recheck checks that copy again with the check as it is
 now, asking no model, and approves by script only what passes. compare evaluates each kept layer against the second
 key, the hand-written rules/*.dmn and graph/nodes.csv, and writes runs/measure/second_key.json: above all, the
-entries that passed the check and are wrong, which a person approving them would have had to catch.
+entries that passed the check and are wrong, which a person approving them would have had to catch. second checks a
+copy of a kept layer again with a second reading by MODEL (clm-derive check, in runs/measure/second-FIRST-by-MODEL/),
+asking no first model and leaving the kept layer as it is, and counts against the second key the wrong entries it
+caught and the right ones it flagged, in runs/measure/second_reading.json.
 
 run asks clm-agent each question in each setup, on each backend, and writes each answer to runs/measure/, which git
 ignores: `none` with --no-tools, `rules` with environment_without_documents.toml, `documents` with environment.toml,
@@ -268,6 +272,70 @@ def compare(runs: Path = RUNS) -> dict:
     return found
 
 
+SECOND = "a second reading by "
+
+
+def _scratch(first: str, backend: str, model: str, runs: Path, here: Path) -> Path:
+    """A copy of the derived variant, with the second reader named in its [derived] table, holding a copy of the
+    kept layer with every entry back to proposed and no check, as a correction is; nothing tracked is touched."""
+    scratch = runs / f"second-{first}-by-{re.sub(r'[^A-Za-z0-9._-]', '-', model)}"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    shutil.copy(here / "handbook_functions.py", scratch)
+    shutil.copytree(here / "graph", scratch / "graph")
+    text = (here / DERIVED.name).read_text(encoding="utf-8")
+    (scratch / DERIVED.name).write_text(text.replace(
+        "[derived]\n", f'[derived]\nsecond_reader = {{ backend = "{backend}", model = "{model}" }}\n', 1),
+        encoding="utf-8")
+    shutil.copytree(runs / f"derived-{first}", scratch / "derived")
+    layer = derived.read(scratch)
+    for kind in ("decisions", "facts"):
+        for entry in layer[kind].values():
+            entry.update(status="proposed", check=None, decided_by=None, decided_at=None, note=None)
+    derived.write(scratch, layer)
+    return scratch
+
+
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments,too-many-locals
+def second_read(first: str, backend: str, model: str, runs: Path = RUNS, here: Path = HERE) -> dict:
+    """Check a copy of the kept layer derived-FIRST again with a second reading by the model, asking no first
+    model, and count against the second key: the wrong entries it caught and the right ones it flagged (did not
+    agree with), and how many pass both the mechanical check and the second reading. The kept layer is not
+    changed."""
+    scratch = _scratch(first, backend, model, runs, here)
+    code = derive.main(["check", str(scratch / DERIVED.name), "--as-of", AS_OF])
+    if code:
+        raise SystemExit(code)
+    key = compare(runs)[first]["slots"]
+    layer, rows = derived.read(scratch), {}
+    for name, keyed in key.items():
+        check = layer[keyed["kind"]][name]["check"]
+        reading = check.get("second_reading") or {}
+        rows[name] = {"right": keyed["right"], "status": layer[keyed["kind"]][name]["status"],
+                      "mechanical": not [line for line in check["failures"] if not line.startswith(SECOND)],
+                      "reading": "not_made" if reading.get("error") else "agreed" if reading.get("agreed")
+                      else "disagreed", "second_reading": reading, "failures": check["failures"]}
+    flagged = [row for row in rows.values() if row["right"] and row["reading"] != "agreed"]
+    both = [row for row in rows.values() if row["status"] == "checked"]
+    summary = {"slots": len(rows), "wrong": sum(not row["right"] for row in rows.values()),
+               "wrong_caught": sum(not row["right"] and row["reading"] != "agreed" for row in rows.values()),
+               "right": sum(row["right"] for row in rows.values()), "right_flagged": len(flagged),
+               "right_flagged_passing": sum(row["mechanical"] for row in flagged),
+               **{reading: sum(row["reading"] == reading for row in rows.values())
+                  for reading in ("agreed", "disagreed", "not_made")},
+               "passes_both": len(both), "passes_both_but_wrong": sum(not row["right"] for row in both)}
+    return {"first": first, "first_model": layer.get("model"), "reader": model, "summary": summary, "slots": rows}
+
+
+def show_second(found: dict) -> None:
+    """A second reading's results as a table."""
+    print(f"{found['first_model']} read again by {found['reader']}: {found['summary']}")
+    for name, row in found["slots"].items():
+        check = 'passed' if row['mechanical'] else 'failed'
+        print(f"  {name:32} {'right' if row['right'] else 'WRONG':5} check {check:6}"
+              f" second {row['reading']:9} {'; '.join(line for line in row['failures'] if line.startswith(SECOND))}")
+
+
 def show_compare(found: dict) -> None:
     """The second key's results as a table."""
     for backend, result in found.items():
@@ -335,7 +403,17 @@ def show(rows: list[dict]) -> None:
               f"{'  stopped: ' + r['stopped'] if r['stopped'] else ''}")
 
 
-def main(argv: list[str] | None = None) -> int:
+def _second(first: str, backend: str, model: str) -> int:
+    found = second_read(first, backend, model)
+    out = RUNS / "second_reading.json"
+    kept = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
+    kept[f"{first}-by-{model}"] = found
+    out.write_text(json.dumps(kept, indent=2), encoding="utf-8")
+    show_second(found)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-return-statements
     """run or score."""
     parser = argparse.ArgumentParser(description="Measure the five questions in three setups.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -347,7 +425,13 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("compare")
     for command in ("derive", "restore", "recheck"):
         commands.add_parser(command).add_argument("backend", choices=("claude", "ollama"))
+    again = commands.add_parser("second")
+    again.add_argument("first", choices=("claude", "ollama"), help="the kept layer to read again")
+    again.add_argument("backend", choices=("claude", "ollama"), help="the second reader's backend")
+    again.add_argument("model", help="the second reader's model")
     args = parser.parse_args(argv)
+    if args.command == "second":
+        return _second(args.first, args.backend, args.model)
     if args.command == "run":
         return run(args.backends.split(","), args.questions.split(","), args.setups.split(","))
     if args.command == "derive":
