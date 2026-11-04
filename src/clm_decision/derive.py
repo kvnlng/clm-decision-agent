@@ -274,6 +274,8 @@ def derive_slot(env: Environment, slot: Slot, extractor: Extractor, on: date) ->
 def _read_again(env: Environment, slot: Slot, entry: dict, reader: Extractor, on: date) -> dict:
     """The second reader's answer compared with the entry: {model, agreed, differences}; raises DeriveError when it
     cannot be made."""
+    if ("value" if slot.kind == "facts" else "dmn") not in entry:
+        raise DeriveError("the first reading gave nothing to compare")
     ident = str((entry.get("source") or {}).get("document") or "")
     document = env.store.document(slot.collection, ident, None) if env.store and ident else None
     if not document or not in_force(document, on):

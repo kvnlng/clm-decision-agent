@@ -304,6 +304,19 @@ def test_a_second_reading_that_cannot_be_made_fails_the_check(path, read_again):
     assert entry["check"]["second_reading"]["error"] == "cannot reach Ollama"
 
 
+def test_a_first_reading_with_no_answer_is_not_read_again_as_a_disagreement(path, read_again):
+    class Broken(Canned):  # pylint: disable=missing-class-docstring
+        def extract(self, system, prompt, schema):
+            return derive.OllamaExtractor(http=FakeHttp('{"value": 63')).extract(system, prompt, schema)
+    run(path, Broken(carryover_limit=[CARRYOVER]))
+    layer = derived.read(path.parent)
+    for kind, name in (("decisions", "carryover_limit"), ("facts", "k401_2026.match_cap")):
+        failures = layer[kind][name]["check"]["failures"]
+        assert layer[kind][name]["status"] == "proposed" and "JSON" in failures[0]
+        assert failures[-1] == ("a second reading by second could not be made: the first reading gave nothing to "
+                                "compare")
+
+
 def test_a_second_reader_that_is_the_layers_model_is_refused(path, read_again, monkeypatch, capsys):
     read_again[-1].model = "canned"
     monkeypatch.setattr(derive, "_extractor", lambda args: good())
