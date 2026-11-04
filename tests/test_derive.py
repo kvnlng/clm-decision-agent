@@ -2,6 +2,7 @@
 commands. No model, PostgreSQL or Ollama is needed."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name,unused-argument
+import dataclasses
 import functools
 import sys
 
@@ -236,3 +237,107 @@ def test_claude_backend_without_the_agent_extra_says_so_in_one_line(path, monkey
     assert derive.main(["run", str(path), "handbook", "--backend", "claude"]) == 2
     error = capsys.readouterr().err
     assert "agent extra" in error and error.count("\n") == 1
+
+
+SHIFTED = {**CARRYOVER, "rows": [{**CARRYOVER["rows"][0], "inputs": {"years_of_service": ">= 4"}},
+                                 CARRYOVER["rows"][1]]}
+
+
+def second(**answers):
+    reader = Canned(**answers)
+    reader.model = "second"
+    return reader
+
+
+@pytest.fixture
+def read_again(path, monkeypatch):
+    """The environment with a second reader configured, answered by the returned list's last Canned."""
+    path.write_text(path.read_text(encoding="utf-8").replace(
+        '[derived]\ncollection = "handbook"',
+        '[derived]\ncollection = "handbook"\nsecond_reader = { backend = "ollama", model = "second" }'),
+        encoding="utf-8")
+    readers = [second(carryover_limit=[CARRYOVER], k401_2026__match_cap=[CAP])]
+    monkeypatch.setattr(derive, "reader_for", lambda env: readers[-1] if env.second_reader else None)
+    return readers
+
+
+def test_run_with_a_second_reader_records_that_it_agrees(path, read_again):
+    run(path, good())
+    entry = derived.read(path.parent)["decisions"]["carryover_limit"]
+    assert entry["status"] == "checked" and entry["check"]["passed"]
+    assert entry["check"]["second_reading"] == {"model": "second", "agreed": True, "differences": []}
+
+
+def test_a_second_reading_that_disagrees_leaves_the_entry_proposed_saying_where(path, read_again):
+    read_again.append(second(carryover_limit=[SHIFTED], k401_2026__match_cap=[{**CAP, "value": 6000}]))
+    first = good()
+    run(path, first)
+    layer = derived.read(path.parent)
+    entry = layer["decisions"]["carryover_limit"]
+    assert entry["status"] == "proposed" and entry["attempts"] == 1
+    assert entry["check"]["failures"] == ["a second reading by second disagrees: at years_of_service=4, 7 against 10"]
+    assert entry["check"]["second_reading"]["differences"] == [
+        {"inputs": {"years_of_service": 4}, "first": {"carryover_limit": 7}, "second": {"carryover_limit": 10}}]
+    assert layer["facts"]["k401_2026.match_cap"]["check"]["failures"] == [
+        "a second reading by second disagrees: 6300 against 6000"]
+    assert len(first.prompts) == 2
+
+
+def test_the_second_reader_reads_the_cited_document_and_never_the_first_answer(path, read_again):
+    run(path, good())
+    [(_, prompt)] = [item for item in read_again[-1].prompts if item[0] == "carryover_limit"]
+    assert prompt.count("Document id: ") == 1 and "\nDocument id: hb-leave\n" in prompt
+    assert "Your answer was" not in prompt and "Slot: carryover_limit\n" in prompt
+
+
+def test_a_second_reading_that_cannot_be_made_fails_the_check(path, read_again):
+    class Down(Canned):  # pylint: disable=missing-class-docstring
+        model = "second"
+
+        def extract(self, system, prompt, schema):
+            raise derive.DeriveError("cannot reach Ollama")
+    read_again.append(Down())
+    run(path, good())
+    entry = derived.read(path.parent)["facts"]["k401_2026.match_cap"]
+    assert entry["status"] == "proposed"
+    assert entry["check"]["failures"] == ["a second reading by second could not be made: cannot reach Ollama"]
+    assert entry["check"]["second_reading"]["error"] == "cannot reach Ollama"
+
+
+def test_a_second_reader_that_is_the_layers_model_is_refused(path, read_again, monkeypatch, capsys):
+    read_again[-1].model = "canned"
+    monkeypatch.setattr(derive, "_extractor", lambda args: good())
+    assert derive.main(["run", str(path), "handbook", "--as-of", "2026-12-01"]) == 2
+    assert "second reader" in capsys.readouterr().err and not derived.path(path.parent).exists()
+    read_again[-1].model = "second"
+    run(path, good())
+    read_again[-1].model = "canned"
+    assert derive.main(["check", str(path), "--as-of", "2026-12-01"]) == 2
+    error = capsys.readouterr().err
+    assert "second reader canned" in error and error.count("\n") == 1
+
+
+def test_check_command_makes_the_second_reading_and_says_how_it_went(path, read_again, capsys):
+    run(path, good())
+    read_again.append(second(carryover_limit=[SHIFTED], k401_2026__match_cap=[CAP]))
+    assert derive.main(["check", str(path), "--as-of", "2026-12-01"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["1 checked, 1 proposed, 0 stale, 0 untouched",
+                   "second reading by second: 1 agreed, 1 disagreed, 0 not made"]
+    assert derived.read(path.parent)["decisions"]["carryover_limit"]["status"] == "proposed"
+
+
+def test_check_command_without_a_second_reader_says_there_is_none(path, capsys):
+    run(path, good())
+    assert derive.main(["check", str(path), "--as-of", "2026-12-01"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[1] == "no second reading: [derived] names no second_reader"
+    assert "second_reading" not in derived.read(path.parent)["decisions"]["carryover_limit"]["check"]
+
+
+def test_the_second_reader_is_the_backend_and_model_the_environment_names(path):
+    env = derive.load_environment(path, today=ON)
+    assert derive.reader_for(env) is None
+    reader = derive.reader_for(dataclasses.replace(env, second_reader={"backend": "ollama",
+                                                                       "model": "granite4:micro"}))
+    assert isinstance(reader, derive.OllamaExtractor) and reader.model == "granite4:micro"

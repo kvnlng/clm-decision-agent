@@ -11,6 +11,9 @@ documents in force on --as-of (default today) whole, renders the decision table 
 entry (derive_check.py), asking the model once more with the failures if it fails. Entries are written proposed, or
 checked when they pass, to derived/derived.json; a derived fact that differs from a supplied one is an open conflict,
 and the supplied value stands. check re-runs the check on every proposed or checked entry, as after a correction.
+When [derived] names a second_reader, run and check also make a second reading of each entry they check: that
+model, which must not be the layer's, derives it again from its cited document without seeing the first answer,
+and an entry it disagrees with, or could not read, fails the check (second_reading).
 status is a person's decision: approved, rejected, or a conflict resolved. The model is Claude (the agent extra) or a
 local model through Ollama, as clm-agent reaches them; errors are one line and a non-zero exit.
 """
@@ -19,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Protocol
@@ -28,7 +32,7 @@ import httpx
 
 from . import derive_check, derived
 from .decision_agent import LOCAL_MODEL, MODEL, OLLAMA_URL
-from .dmn import DmnError
+from .dmn import DmnError, load_table
 from .engine import Steps
 from .environment import Environment, Slot, edition, in_force, load_environment
 from .scenario import ScenarioError, StepError
@@ -267,6 +271,78 @@ def derive_slot(env: Environment, slot: Slot, extractor: Extractor, on: date) ->
     return _checked(entry, failures, 2)
 
 
+def _read_again(env: Environment, slot: Slot, entry: dict, reader: Extractor, on: date) -> dict:
+    """The second reader's answer compared with the entry: {model, agreed, differences}; raises DeriveError when it
+    cannot be made."""
+    ident = str((entry.get("source") or {}).get("document") or "")
+    document = env.store.document(slot.collection, ident, None) if env.store and ident else None
+    if not document or not in_force(document, on):
+        raise DeriveError(f"{slot.collection} holds no document {ident or '(none cited)'} in force on {on}")
+    answer = reader.extract(SYSTEM, _prompt(slot, [document], on), answer_schema(slot))
+    try:
+        if slot.kind == "facts":
+            agreed = derive_check.same_value(entry.get("value"), answer["value"])
+            differences = [] if agreed else [{"first": entry.get("value"), "second": answer["value"]}]
+        else:
+            first = load_table(env.path.resolve().parent / "derived" / str(entry.get("dmn") or ""))
+            with tempfile.TemporaryDirectory() as folder:
+                file = Path(folder) / f"{slot.name}.dmn"
+                file.write_text(render_dmn(slot, answer["rows"], ident), encoding="utf-8")
+                again = load_table(file)
+            differences = derive_check.table_differences(first, again, list(slot.outputs))
+    except (KeyError, TypeError, AttributeError, DmnError) as error:
+        raise DeriveError(f"its answer cannot be compared: {_first_line(error)}") from error
+    return {"model": reader.model, "agreed": not differences, "differences": differences[:derive_check.KEPT]}
+
+
+def second_reading(env: Environment, slot: Slot, entry: dict, reader: Extractor, on: date) -> tuple[dict, list[str]]:
+    """A second model derives the entry again from its cited document, never seeing the first answer, and the two
+    are compared: a decision over the grid of inputs, a fact within 0.5%. -> the record for check.second_reading,
+    and the failure lines: a disagreement, or a reading that could not be made, which never counts as agreement."""
+    try:
+        record = _read_again(env, slot, entry, reader, on)
+    except DeriveError as error:
+        text = _first_line(error)
+        return ({"model": reader.model, "agreed": False, "differences": [], "error": text},
+                [f"a second reading by {reader.model} could not be made: {text}"])
+    if record["agreed"]:
+        return record, []
+    return record, [derive_check.disagreement(reader.model, record["differences"])]
+
+
+def make_extractor(backend: str, model: str | None = None, ollama_url: str = OLLAMA_URL) -> Extractor:
+    """Claude or a local model through Ollama, as clm-agent reaches them."""
+    if backend == "ollama":
+        return OllamaExtractor(model or LOCAL_MODEL, ollama_url)
+    try:
+        import anthropic  # pylint: disable=import-outside-toplevel
+    except ImportError as missing:
+        raise DeriveError(f"Claude needs the agent extra ({missing.name or 'anthropic'} is missing): pip install "
+                          "'clm-decision-agent[agent]', or use --backend ollama") from missing
+    return ClaudeExtractor(anthropic.Anthropic(), model or MODEL)
+
+
+def reader_for(env: Environment) -> Extractor | None:
+    """The second reader the environment's [derived] second_reader names, or None."""
+    reader = env.second_reader
+    return make_extractor(reader["backend"], reader["model"]) if reader else None
+
+
+def _differs(reader: Extractor | None, model: str | None) -> None:
+    if reader is not None and reader.model == model:
+        raise DeriveError(f"the second reader {reader.model} is the model that derived the layer, and would repeat "
+                          "its own reading: name another in [derived] second_reader")
+
+
+def _read_twice(env: Environment, slot: Slot, entry: dict, reader: Extractor, on: date) -> dict:
+    """run's entry with the second reading's failures joined to its check."""
+    record, failures = second_reading(env, slot, entry, reader, on)
+    check = entry["check"]
+    failures = [*check["failures"], *failures]
+    return {**entry, "status": "proposed" if failures else "checked",
+            "check": {**check, "passed": not failures, "failures": failures, "second_reading": record}}
+
+
 def _unchanged(env: Environment, slot: Slot, entry: dict, on: date) -> bool:
     """Whether the entry's cited document is still the edition in force."""
     source = entry.get("source") or {}
@@ -279,8 +355,10 @@ def run(path: str | Path, collection: str, extractor: Extractor, on: date, *,  #
     """Derive every slot in the collection that is not approved or rejected on an unchanged edition, or every slot
     with `fresh`, and write the layer with its conflicts. -> {slot: status}."""
     env = load_environment(path, today=on)
+    reader = reader_for(env)
+    _differs(reader, extractor.model)
     folder = env.path.resolve().parent
-    old = derived.empty(collection) if fresh else derived.read(folder)
+    old =derived.empty(collection) if fresh else derived.read(folder)
     layer = {**old, "collection": collection, "model": extractor.model,
              "derived_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     for name, slot in env.slots.items():
@@ -288,7 +366,8 @@ def run(path: str | Path, collection: str, extractor: Extractor, on: date, *,  #
         if slot.collection != collection or (kept and kept.get("status") in ("approved", "rejected")
                                              and _unchanged(env, slot, kept, on)):
             continue
-        layer[slot.kind][name] = derive_slot(env, slot, extractor, on)
+        entry = derive_slot(env, slot, extractor, on)
+        layer[slot.kind][name] = _read_twice(env, slot, entry, reader, on) if reader else entry
     found = derive_check.conflicts(env, layer)
     for name, conflict in found.items():
         before = old["conflicts"].get(name) or {}
@@ -301,14 +380,7 @@ def run(path: str | Path, collection: str, extractor: Extractor, on: date, *,  #
 
 
 def _extractor(args) -> Extractor:
-    if args.backend == "ollama":
-        return OllamaExtractor(args.model or LOCAL_MODEL, args.ollama_url)
-    try:
-        import anthropic  # pylint: disable=import-outside-toplevel
-    except ImportError as missing:
-        raise DeriveError(f"Claude needs the agent extra ({missing.name or 'anthropic'} is missing): pip install "
-                          "'clm-decision-agent[agent]', or use --backend ollama") from missing
-    return ClaudeExtractor(anthropic.Anthropic(), args.model or MODEL)
+    return make_extractor(args.backend, args.model, args.ollama_url)
 
 
 def _day(text: str | None) -> date:
@@ -316,6 +388,20 @@ def _day(text: str | None) -> date:
         return date.fromisoformat(text) if text else date.today()
     except ValueError as error:
         raise DeriveError(f"--as-of must be a date such as 2026-12-01, not {text!r}") from error
+
+
+def _check(environment: str, folder: Path, on: date) -> int:
+    env = load_environment(environment, today=on)
+    reader = reader_for(env)
+    _differs(reader, derived.read(folder).get("model"))
+
+    def second(_kind: str, name: str, entry: dict) -> tuple[dict, list[str]]:
+        return second_reading(env, env.slots[name], entry, reader, on)
+    counts = derive_check.recheck(folder, env, on=on, second=second if reader else None)
+    print(", ".join(f"{counts[status]} {status}" for status in ("checked", "proposed", "stale", "untouched")))
+    print(f"second reading by {reader.model}: {counts['agreed']} agreed, {counts['disagreed']} disagreed, "
+          f"{counts['not_made']} not made" if reader else "no second reading: [derived] names no second_reader")
+    return 0
 
 
 def _command(args) -> int:
@@ -326,9 +412,7 @@ def _command(args) -> int:
         return 0
     on = _day(args.as_of)
     if args.command == "check":
-        counts = derive_check.recheck(folder, load_environment(args.environment, today=on), on=on)
-        print(", ".join(f"{count} {status}" for status, count in counts.items()))
-        return 0
+        return _check(args.environment, folder, on)
     extractor = _extractor(args)
     before = derived.read(folder)
     statuses = run(args.environment, args.collection, extractor, on, fresh=args.fresh)
