@@ -3,53 +3,20 @@ commands. No model, PostgreSQL or Ollama is needed."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name,unused-argument
 import functools
-import json
 import sys
-from datetime import date
-from pathlib import Path
 
 import httpx
 import pytest
-from fake_documents import FakeEmbedder, FakeStore
+import test_derive_check
+from fake_documents import FakeEmbedder
+from test_derive_check import LEAVE_2, ON, store
 
 from clm_decision import derive, derived
 from clm_decision.dmn import load_table
 from clm_decision.environment import load_environment
 
-HANDBOOK = Path(__file__).parent.parent / "examples" / "handbook" / "handbook.jsonl"
-ON = date(2026, 12, 1)
-LEAVE_2 = ("Up to 7 unused days carry into the next year; with 5 or more full years of service, up to 10. Days "
-           "above the limit are forfeited on 31 December")
-TOML = '''
-[environment]
-name = "Test"
-description = "A test environment."
-functions = "fx_functions"
-
-[graph]
-nodes = "nodes.csv"
-edges = "edges.csv"
-
-[documents]
-
-[collections.handbook]
-description = "The handbook."
-embedding_model = "m"
-
-[derived]
-collection = "handbook"
-
-[derived.decisions.carryover_limit]
-description = "How many unused days of paid time off carry into next year, from full years of service."
-inputs = { years_of_service = "number" }
-outputs = { carryover_limit = "number" }
-owner = "People Operations"
-governs = ["benefits"]
-
-[derived.facts.k401_2026.match_cap]
-description = "The plan's cap on the company match, in dollars a plan year."
-type = "number"
-'''
+# The check tests' environment with its first two slots only: the carryover table and the match cap
+TOML = test_derive_check.TOML.split("\n[derived.facts.k401_2026.first_tier_rate]", maxsplit=1)[0]
 CARRYOVER = {"statement": "Up to 7 unused days carry over, or 10 with 5 or more full years of service.",
              "reason": "The paid time off policy.",
              "rows": [{"inputs": {"years_of_service": ">= 5"}, "outputs": {"carryover_limit": 10},
@@ -75,13 +42,6 @@ class Canned:  # pylint: disable=too-few-public-methods
         self.prompts.append((name, prompt))
         given = self.answers[name]
         return given.pop(0) if len(given) > 1 else given[0]
-
-
-def store() -> FakeStore:
-    found = FakeStore()
-    found.replace("handbook", [json.loads(line) for line in HANDBOOK.read_text(encoding="utf-8").splitlines()], [],
-                  {"built_at": "2026-11-03T12:00:00Z", "source": "test", "model": "m", "dimensions": 26})
-    return found
 
 
 @pytest.fixture

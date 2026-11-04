@@ -78,9 +78,23 @@ The H100 decided the whole day at 50.1 a second.
   labelled pairs rightly, worse than chance; "departs" 28 of 40. No rule reads either.
 - **With a company's own documents, the missing answer is the gap, not a wrong one.** Asked about a made-up
   handbook with no tools, Claude and gemma4 said they could not know (Claude gave 1 of 17 figures, the public IRS
-  limit; gemma4 none) rather than invent figures; no answer in any setup stated one of the 17 key figures wrongly. With the rules, 16 of 17 figures were
-  right; the handbook added the one question no rule covers, and the policy text. One run each.
-  ([examples/handbook](../examples/handbook/README.md))
-- **Small results suit a local model.** On the handbook's questions gemma4 was as fast as Claude (about 14 s) and
-  as accurate with the rules only (16 of 17 each); with the handbook it gave 15 of 17 against Claude's 17, and cited
-  the handbook less often.
+  limit; gemma4 none) rather than invent figures; with supplied rules no answer stated one of the 17 key figures
+  wrongly. With the rules, 16 of 17 figures were right; the handbook added the one question no rule covers, and the
+  policy text. One run each. ([examples/handbook](../examples/handbook/README.md))
+- **Small results suit a local model.** On the handbook's questions gemma4 was about as fast as Claude (13 to 17 s)
+  and as accurate with the rules only (16 of 17 each); with the handbook it gave 14 of 17 against Claude's 17.
+- **Rules derived by Claude from the handbook matched the hand-written ones.** A rule is supplied, or derived from
+  the documents and checked before a person approves it. Claude derived the handbook's five tables and six plan
+  figures; all 11 passed the mechanical check (3 on the second try) and all 11 matched the hand-written tables and
+  figures over a grid of every bound. Answering from them, Claude gave 17 of 17 key figures, as with the hand-written
+  rules; gemma4 gave 14 of 17, none wrong.
+- **Fully local derivation let wrong figures through the check.** gemma4 derived 10 of 11 that passed, but two of
+  them were wrong: it read "100% of the first 3% ... 50% of the next 3%" as tiers of 100% and 50% of pay. Every
+  figure is in the quote, so the mechanical check cannot tell a rate from a width; the scripted approval standing in
+  for a person passed them, and gemma4 answering from its own layer stated two wrong figures as fact (a $3,680 match
+  where the key says $3,220). The check catches figures that are not in the document, not figures put in the wrong
+  place: that is the person's part. gemma4 also needed thinking off (with it, under a JSON schema, it ran past
+  100,000 tokens without answering).
+- **The handbook alone, with the calculations, was nearly enough for Claude and not for gemma4.** With no rules,
+  Claude gave 16 of 17 and recognised the superseded 2024 edition as replaced; gemma4 gave 10 of 17 and one wrong
+  figure, passing the match's rates to the calculation wrongly.

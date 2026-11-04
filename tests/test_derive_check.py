@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from fake_documents import FakeEmbedder, FakeStore
+from test_derived_load import HEAD
 
 from clm_decision import derive_check, derived
 from clm_decision.environment import load_environment
@@ -17,22 +18,7 @@ HANDBOOK = Path(__file__).parent.parent / "examples" / "handbook" / "handbook.js
 ON = date(2026, 12, 1)
 LEAVE_2 = ("Up to 7 unused days carry into the next year; with 5 or more full years of service, up to 10. Days "
            "above the limit are forfeited on 31 December")
-TOML = '''
-[environment]
-name = "Test"
-description = "A test environment."
-functions = "fx_functions"
-
-[graph]
-nodes = "nodes.csv"
-edges = "edges.csv"
-
-[documents]
-
-[collections.handbook]
-description = "The handbook."
-embedding_model = "m"
-
+TOML = HEAD.replace("[collections.hb]", "[collections.handbook]") + '''
 [derived]
 collection = "handbook"
 

@@ -170,6 +170,15 @@ def test_a_derived_setup_needs_the_layer_of_its_model(folder):
     assert module.wrong_layer("rules", folder) is None
 
 
+def test_the_committed_layer_loads_and_its_approvals_say_they_are_scripted():
+    env = load(EXAMPLE)
+    assert not env.unfilled and len(env.admitted) == 11
+    layer = derived.read(EXAMPLE)
+    for kind in ("decisions", "facts"):
+        for entry in layer[kind].values():
+            assert entry["status"] != "approved" or entry["decided_by"] == measure().SCRIPTED
+
+
 def test_documents_only_offers_only_the_employee_query_calculations_and_documents(folder):
     env = load(folder, "environment_documents_only.toml")
     assert list(env.queries) == ["employee"] and not env.decisions and not env.scenarios and not env.slots

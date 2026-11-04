@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Derived by clm-derive from hb-tuition; see derived.json for its source and status. -->
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="tuition_eligible_definitions" name="tuition_eligible" namespace="https://example.org/derived">
+  <decision id="tuition_eligible" name="tuition_eligible">
+    <decisionTable id="tuition_eligible_table" hitPolicy="FIRST">
+      <input id="tuition_eligible_in1" label="years_of_service"><inputExpression typeRef="number"><text>years_of_service</text></inputExpression></input>
+      <input id="tuition_eligible_in2" label="job_related"><inputExpression typeRef="boolean"><text>job_related</text></inputExpression></input>
+      <output id="tuition_eligible_out1" name="allowed" typeRef="boolean"/>
+      <output id="tuition_eligible_out2" name="reimbursed_percent" typeRef="number"/>
+      <output id="tuition_eligible_out3" name="annual_cap" typeRef="number"/>
+      <output id="tuition_eligible_out4" name="reason" typeRef="string"/>
+      <output id="tuition_eligible_out5" name="citation" typeRef="string"/>
+      <rule id="tuition_eligible_r1"><inputEntry><text>&gt;= 1</text></inputEntry><inputEntry><text>true</text></inputEntry><outputEntry><text>true</text></outputEntry><outputEntry><text>80</text></outputEntry><outputEntry><text>4750</text></outputEntry><outputEntry><text>"At least one full year of service and the manager agrees the course is job-related: 80% of tuition is repaid, up to $4,750 a calendar year."</text></outputEntry><outputEntry><text>"hb-tuition"</text></outputEntry></rule>
+      <rule id="tuition_eligible_r2"><inputEntry><text>-</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>false</text></outputEntry><outputEntry><text>0</text></outputEntry><outputEntry><text>0</text></outputEntry><outputEntry><text>"Not eligible: requires at least one full year of service and manager agreement that the course is related to the job."</text></outputEntry><outputEntry><text>"hb-tuition"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

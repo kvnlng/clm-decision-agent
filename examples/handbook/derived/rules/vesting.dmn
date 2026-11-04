@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Derived by clm-derive from hb-401k-2026; see derived.json for its source and status. -->
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="vesting_definitions" name="vesting" namespace="https://example.org/derived">
+  <decision id="vesting" name="vesting">
+    <decisionTable id="vesting_table" hitPolicy="FIRST">
+      <input id="vesting_in1" label="years_of_service"><inputExpression typeRef="number"><text>years_of_service</text></inputExpression></input>
+      <output id="vesting_out1" name="vested_percent" typeRef="number"/>
+      <output id="vesting_out2" name="reason" typeRef="string"/>
+      <output id="vesting_out3" name="citation" typeRef="string"/>
+      <rule id="vesting_r1"><inputEntry><text>&gt;= 4</text></inputEntry><outputEntry><text>100</text></outputEntry><outputEntry><text>"With four or more full years of service, the company match is 100% vested."</text></outputEntry><outputEntry><text>"hb-401k-2026"</text></outputEntry></rule>
+      <rule id="vesting_r2"><inputEntry><text>&gt;= 3</text></inputEntry><outputEntry><text>75</text></outputEntry><outputEntry><text>"With three full years of service, the company match is 75% vested."</text></outputEntry><outputEntry><text>"hb-401k-2026"</text></outputEntry></rule>
+      <rule id="vesting_r3"><inputEntry><text>&gt;= 2</text></inputEntry><outputEntry><text>50</text></outputEntry><outputEntry><text>"With two full years of service, the company match is 50% vested."</text></outputEntry><outputEntry><text>"hb-401k-2026"</text></outputEntry></rule>
+      <rule id="vesting_r4"><inputEntry><text>&gt;= 1</text></inputEntry><outputEntry><text>25</text></outputEntry><outputEntry><text>"With one full year of service, the company match is 25% vested."</text></outputEntry><outputEntry><text>"hb-401k-2026"</text></outputEntry></rule>
+      <rule id="vesting_r5"><inputEntry><text>-</text></inputEntry><outputEntry><text>0</text></outputEntry><outputEntry><text>"With less than one full year of service, none of the company match is vested yet."</text></outputEntry><outputEntry><text>"hb-401k-2026"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

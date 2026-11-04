@@ -1,0 +1,348 @@
+{
+  "version": 1,
+  "collection": "handbook",
+  "decisions": {
+    "match_eligible": {
+      "description": "Whether the company match has begun for an employee, from their days of employment, counting the first day of employment.",
+      "status": "approved",
+      "check": {
+        "passed": true,
+        "failures": [],
+        "at": "2026-11-04T13:59:52+00:00",
+        "by": "clm-derive run"
+      },
+      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
+      "decided_at": "2026-11-04T14:01:14+00:00",
+      "note": null,
+      "source": {
+        "document": "hb-401k-2026",
+        "passages": [
+          "(1)"
+        ],
+        "quote": "The company match begins on your 90th day of employment, counting your first day as day 1.",
+        "edition": "2026-01-01"
+      },
+      "missing": [],
+      "dmn": "rules/match_eligible.dmn",
+      "collection": "handbook",
+      "rule": {
+        "statement": "The company match has begun for an employee once they reach their 90th day of employment, counting the first day of employment as day 1; before day 90 the match has not begun.",
+        "reason": "The 2026 401(k) plan summary, in force on 2026-12-01, says the company match begins on the 90th day of employment, with the first day counted as day 1. So an employee with days_employed of 90 or more has the match, and one with fewer than 90 does not.",
+        "owner": "People Operations (made up)",
+        "version": "2026-01-01",
+        "governs": [
+          "benefits"
+        ],
+        "cites": [
+          "hb-401k-2026"
+        ]
+      },
+      "attempts": 1
+    },
+    "vesting": {
+      "description": "The percentage of the company match an employee owns (is vested in), from their full years of service.",
+      "status": "approved",
+      "check": {
+        "passed": true,
+        "failures": [],
+        "at": "2026-11-04T13:59:58+00:00",
+        "by": "clm-derive run"
+      },
+      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
+      "decided_at": "2026-11-04T14:01:14+00:00",
+      "note": null,
+      "source": {
+        "document": "hb-401k-2026",
+        "passages": [
+          "(5)"
+        ],
+        "quote": "The company match vests 25% for each full year of service: 25% after one year, 50% after two, 75% after three and 100% after four.",
+        "edition": "2026-01-01"
+      },
+      "missing": [],
+      "dmn": "rules/vesting.dmn",
+      "collection": "handbook",
+      "rule": {
+        "statement": "The company match vests 25% for each full year of service: 100% at 4 or more full years, 75% at 3, 50% at 2, 25% at 1, and 0% with less than one full year.",
+        "reason": "The 401(k) Plan Summary restated 1 January 2026 is in force on 2026-12-01 and gives a graded vesting schedule for the company match based on full years of service. Fewer than one full year gives no vesting, as the schedule starts at 25% after one year.",
+        "owner": "People Operations (made up)",
+        "version": "2026-01-01",
+        "governs": [
+          "benefits"
+        ],
+        "cites": [
+          "hb-401k-2026"
+        ]
+      },
+      "attempts": 1
+    },
+    "carryover_limit": {
+      "description": "How many unused days of paid time off carry into next year, from full years of service.",
+      "status": "approved",
+      "check": {
+        "passed": true,
+        "failures": [],
+        "at": "2026-11-04T14:00:18+00:00",
+        "by": "clm-derive run"
+      },
+      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
+      "decided_at": "2026-11-04T14:01:14+00:00",
+      "note": null,
+      "source": {
+        "document": "hb-leave",
+        "passages": [
+          "(2)"
+        ],
+        "quote": "Up to 7 unused days carry into the next year; with 5 or more full years of service, up to 10. Days above the limit are forfeited on 31 December, except where state law requires otherwise.",
+        "edition": "2026-01-01"
+      },
+      "missing": [],
+      "dmn": "rules/carryover_limit.dmn",
+      "collection": "handbook",
+      "rule": {
+        "statement": "Up to 10 unused days of paid time off carry into the next year with 5 or more full years of service; otherwise up to 7 days carry over. Days above the limit are forfeited on 31 December, except where state law requires otherwise.",
+        "reason": "Handbook § 5 (2), effective 2026-01-01 and in force on 2026-12-01, sets the carryover limit by full years of service: 7 days by default, or 10 days with 5 or more full years. The state-law exception cannot be applied from the inputs given.",
+        "owner": "People Operations (made up)",
+        "version": "2026-01-01",
+        "governs": [
+          "benefits"
+        ],
+        "cites": [
+          "hb-leave"
+        ]
+      },
+      "attempts": 2
+    },
+    "parental_eligible": {
+      "description": "Whether an employee may start parental leave, and its weeks at full pay, its further weeks at reduced pay and the percentage of pay in those weeks, from days employed on the day it starts.",
+      "status": "approved",
+      "check": {
+        "passed": true,
+        "failures": [],
+        "at": "2026-11-04T14:00:40+00:00",
+        "by": "clm-derive run"
+      },
+      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
+      "decided_at": "2026-11-04T14:01:14+00:00",
+      "note": null,
+      "source": {
+        "document": "hb-parental",
+        "passages": [
+          "(1)",
+          "(2)"
+        ],
+        "quote": "Eligibility. Any parent, by birth, adoption or foster placement, is eligible who has worked for Meridian at least 180 days on the day the leave starts. ... Pay. Parental leave is 11 weeks at full pay, followed by up to 4 more weeks at 60% of pay.",
+        "edition": "2026-01-01"
+      },
+      "missing": [],
+      "dmn": "rules/parental_eligible.dmn",
+      "collection": "handbook",
+      "rule": {
+        "statement": "An employee may start parental leave if they have worked for Meridian at least 180 days on the day the leave starts. The leave is 11 weeks at full pay, followed by up to 4 more weeks at 60% of pay.",
+        "reason": "Section 6(1) sets eligibility at 180 days worked on the day the leave starts. Section 6(2) sets the pay: 11 weeks at full pay, then up to 4 weeks at 60%. The partial-pay figure is a maximum ('up to 4 more weeks'). The table assumes the person is a parent by birth, adoption or foster placement and that the timing condition in 6(3) is met, because the slot offers no input for either.",
+        "owner": "People Operations (made up)",
+        "version": "2026-01-01",
+        "governs": [
+          "benefits"
+        ],
+        "cites": [
+          "hb-parental"
+        ]
+      },
+      "attempts": 2
+    },
+    "tuition_eligible": {
+      "description": "Whether a course's tuition is repaid, the percentage repaid and the yearly cap in dollars, from full years of service and whether the manager agrees the course is related to the job.",
+      "status": "approved",
+      "check": {
+        "passed": true,
+        "failures": [],
+        "at": "2026-11-04T14:00:58+00:00",
+        "by": "clm-derive run"
+      },
+      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
+      "decided_at": "2026-11-04T14:01:14+00:00",
+      "note": null,
+      "source": {
+        "document": "hb-tuition",
+        "passages": [
+          "(1)",
+          "(2)"
+        ],
+        "quote": "Eligibility. Employees with at least one full year of service may claim for a course their manager agrees is related to their job. ... Amount. Meridian repays 80% of tuition, up to $4,750 a calendar year. Books and fees are not repaid.",
+        "edition": "2026-01-01"
+      },
+      "missing": [],
+      "dmn": "rules/tuition_eligible.dmn",
+      "collection": "handbook",
+      "rule": {
+        "statement": "Tuition is repaid only for employees with at least one full year of service whose manager agrees the course is related to their job; Meridian then repays 80% of tuition, up to $4,750 a calendar year. Otherwise nothing is repaid.",
+        "reason": "The tuition assistance section limits claims to employees with at least one full year of service, for a course their manager agrees is related to their job. It sets the amount at 80% of tuition, capped at $4,750 a calendar year. The grade requirement, the repayment-on-leaving rule and the exclusion of books and fees are not covered by this slot's inputs and outputs.",
+        "owner": "People Operations (made up)",
+        "version": "2026-01-01",
+        "governs": [
+          "benefits"
+        ],
+        "cites": [
+          "hb-tuition"
+        ]
+      },
+      "attempts": 2
+    }
+  },
+  "facts": {
+    "k401_2026.irs_limit": {
+      "node": "k401_2026",
+      "property": "irs_limit",
+      "status": "approved",
+      "check": {
+        "passed": true,
+        "failures": [],
+        "at": "2026-11-04T14:01:02+00:00",
+        "by": "clm-derive run"
+      },
+      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
+      "decided_at": "2026-11-04T14:01:14+00:00",
+      "note": null,
+      "source": {
+        "document": "hb-401k-2026",
+        "passages": [
+          "(2)"
+        ],
+        "quote": "You may contribute from 1% to 75% of your pay, up to the IRS limit on elective deferrals, which for 2026 is $24,500 (IRS Notice 2025-67).",
+        "edition": "2026-01-01"
+      },
+      "missing": [],
+      "value": 24500,
+      "attempts": 1
+    },
+    "k401_2026.match_cap": {
+      "node": "k401_2026",
+      "property": "match_cap",
+      "status": "approved",
+      "check": {
+        "passed": true,
+        "failures": [],
+        "at": "2026-11-04T14:01:04+00:00",
+        "by": "clm-derive run"
+      },
+      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
+      "decided_at": "2026-11-04T14:01:14+00:00",
+      "note": null,
+      "source": {
+        "document": "hb-401k-2026",
+        "passages": [
+          "(4)"
+        ],
+        "quote": "The company match is capped at $6,300 a plan year, whatever your pay.",
+        "edition": "2026-01-01"
+      },
+      "missing": [],
+      "value": 6300,
+      "attempts": 1
+    },
+    "k401_2026.first_tier_percent": {
+      "node": "k401_2026",
+      "property": "first_tier_percent",
+      "status": "approved",
+      "check": {
+        "passed": true,
+        "failures": [],
+        "at": "2026-11-04T14:01:06+00:00",
+        "by": "clm-derive run"
+      },
+      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
+      "decided_at": "2026-11-04T14:01:14+00:00",
+      "note": null,
+      "source": {
+        "document": "hb-401k-2026",
+        "passages": [
+          "(3)"
+        ],
+        "quote": "Meridian matches 100% of the first 3% of pay you contribute, and 50% of the next 3%.",
+        "edition": "2026-01-01"
+      },
+      "missing": [],
+      "value": 3,
+      "attempts": 1
+    },
+    "k401_2026.first_tier_rate": {
+      "node": "k401_2026",
+      "property": "first_tier_rate",
+      "status": "approved",
+      "check": {
+        "passed": true,
+        "failures": [],
+        "at": "2026-11-04T14:01:08+00:00",
+        "by": "clm-derive run"
+      },
+      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
+      "decided_at": "2026-11-04T14:01:14+00:00",
+      "note": null,
+      "source": {
+        "document": "hb-401k-2026",
+        "passages": [
+          "(3)"
+        ],
+        "quote": "Meridian matches 100% of the first 3% of pay you contribute, and 50% of the next 3%.",
+        "edition": "2026-01-01"
+      },
+      "missing": [],
+      "value": 100,
+      "attempts": 1
+    },
+    "k401_2026.second_tier_percent": {
+      "node": "k401_2026",
+      "property": "second_tier_percent",
+      "status": "approved",
+      "check": {
+        "passed": true,
+        "failures": [],
+        "at": "2026-11-04T14:01:12+00:00",
+        "by": "clm-derive run"
+      },
+      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
+      "decided_at": "2026-11-04T14:01:14+00:00",
+      "note": null,
+      "source": {
+        "document": "hb-401k-2026",
+        "passages": [
+          "(3)"
+        ],
+        "quote": "Meridian matches 100% of the first 3% of pay you contribute, and 50% of the next 3%.",
+        "edition": "2026-01-01"
+      },
+      "missing": [],
+      "value": 3,
+      "attempts": 1
+    },
+    "k401_2026.second_tier_rate": {
+      "node": "k401_2026",
+      "property": "second_tier_rate",
+      "status": "approved",
+      "check": {
+        "passed": true,
+        "failures": [],
+        "at": "2026-11-04T14:01:14+00:00",
+        "by": "clm-derive run"
+      },
+      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
+      "decided_at": "2026-11-04T14:01:14+00:00",
+      "note": null,
+      "source": {
+        "document": "hb-401k-2026",
+        "passages": [
+          "(3)"
+        ],
+        "quote": "Meridian matches 100% of the first 3% of pay you contribute, and 50% of the next 3%.",
+        "edition": "2026-01-01"
+      },
+      "missing": [],
+      "value": 50,
+      "attempts": 1
+    }
+  },
+  "conflicts": {},
+  "model": "claude-opus-5-5",
+  "derived_at": "2026-11-04T13:59:45+00:00"
+}
