@@ -3,14 +3,16 @@
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import html
 import json
+from pathlib import Path
 
 import pytest
 from mcp.server import MCPServer
 from starlette.testclient import TestClient
 
 import clm_portal
-from clm_portal import web
-from conftest import KEY, ORIGIN, SERVER_KEY, FakeServer, csrf_of, post, sign_in
+from clm_portal import managed, web
+from conftest import KEY, ORIGIN, FakeServer, csrf_of, post, sign_in
+from test_managed import FakePopen
 
 PAGES = ["/", "/ask", "/review", "/documents", "/jobs/current", "/passage?collection=handbook&id=hb-401k"]
 
@@ -238,12 +240,30 @@ def test_a_server_that_failed_to_start_shows_its_error_and_the_files(environment
     assert environment.is_file()
 
 
+class EchoesItsKey(FakePopen):
+    """A clm-server that prints the key it was given, then exits: the worst its error output could do."""
+
+    def __call__(self, argv, *, env, stderr, **kwargs):
+        self.stderr = f"error: cannot start with the key {env[managed.SERVER_KEY_ENV]}\n"
+        return super().__call__(argv, env=env, stderr=stderr, **kwargs)
+
+
 @pytest.mark.parametrize("path", PAGES + ["/sign-in"])
-def test_the_keys_never_appear_on_a_page(client, path, monkeypatch):
+def test_the_keys_never_appear_on_a_page(environment, portal, path, monkeypatch):
+    monkeypatch.setattr(web, "WRONG_KEY_WAIT", 0.01)
     monkeypatch.setenv("CLM_PORTAL_KEY", KEY)
-    assert KEY not in client.get("/sign-in").text
-    assert KEY not in client.post("/sign-in", data={"key": KEY + "x", "name": "K"}, headers={"Origin": ORIGIN}).text
-    signed = client.post("/sign-in", data={"key": KEY, "name": "Kevin"}, headers={"Origin": ORIGIN}).text
-    assert KEY not in signed and SERVER_KEY not in signed
-    page = client.get(path).text
-    assert KEY not in page and SERVER_KEY not in page
+    monkeypatch.setenv("LLM_API_KEY", "the-model-key-not-a-secret")
+    popen = EchoesItsKey(code=2)
+    portal.server = managed.ManagedServer(environment, popen=popen, connect=lambda url, key: None, wait=0.5,
+                                          find=lambda name: Path("/stand-in/bin") / name)
+    with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400), base_url=ORIGIN) as client:
+        server_key = popen.started[0].env[managed.SERVER_KEY_ENV]
+        keys = (KEY, server_key, "the-model-key-not-a-secret")
+        assert len(server_key) >= 32 and server_key in popen.stderr
+        assert not any(key in client.get("/sign-in").text for key in keys)
+        wrong = client.post("/sign-in", data={"key": KEY + "x", "name": "K"}, headers={"Origin": ORIGIN}).text
+        assert not any(key in wrong for key in keys)
+        signed = client.post("/sign-in", data={"key": KEY, "name": "Kevin"}, headers={"Origin": ORIGIN}).text
+        assert "cannot start with the key ***" in signed and not any(key in signed for key in keys)
+        page = client.get(path).text
+        assert not any(key in page for key in keys)
