@@ -12,6 +12,7 @@ import pytest
 from fake_documents import FakeEmbedder, FakeStore
 from mcp import Client
 
+from clm_decision import serving
 from clm_decision.engine import Steps, run_scenario
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
@@ -186,3 +187,15 @@ def test_policy_cited_counts_the_keys_sections_by_section_number():
     assert measure.policy_cited("See the Tuition assistance policy.", KEY["q4"]) == 0
     assert measure.policy_cited("Handbook §7(2)", KEY["q4"]) == 1
     assert measure.policy_cited("See § 7.", KEY["q1"]) == 0
+
+
+@pytest.mark.anyio
+async def test_the_fewer_tools_setup_is_the_handbook_with_only_describe_scenarios_and_documents(tmp_path):
+    path = _measure().fewer_tools(tmp_path)
+    assert path.parent.parent == tmp_path and path.name == "environment.toml"
+    env = load_environment(path, store=store(), embedder=FakeEmbedder())
+    assert env.description == load().description
+    async with Client(build_environment_server(env, serve=serving.read(path))) as client:
+        names = sorted(tool.name for tool in (await client.list_tools()).tools)
+    assert names == ["describe", "document_handbook", "scenario_carryover", "scenario_match",
+                     "scenario_parental_leave", "scenario_tuition", "search_handbook"]
