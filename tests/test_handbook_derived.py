@@ -229,6 +229,9 @@ def test_the_committed_layer_loads_and_its_approvals_say_they_are_scripted():
             assert entry["status"] in ("approved", "proposed")
             assert (entry["status"] == "approved") == (name in env.admitted) == entry["check"]["passed"]
             assert entry["status"] != "approved" or entry["decided_by"] == measure().SCRIPTED
+    # Each table is the one its check passed, by digest, so a hand edit to it would stop it deciding
+    assert all(entry["check"].get("dmn_sha256") and not derived.changed_since_check(EXAMPLE, entry)
+               for entry in layer["decisions"].values())
 
 
 def test_documents_only_offers_only_the_employee_query_calculations_and_documents(folder):

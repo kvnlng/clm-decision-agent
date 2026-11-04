@@ -1,6 +1,7 @@
 """Tests for the derived layer's file: reading it, writing it, and changing an entry's status."""
 # Test names say what they check.
 # pylint: disable=missing-function-docstring
+import hashlib
 import json
 
 import pytest
@@ -147,6 +148,38 @@ def test_set_stale_never_touches_a_rejected_entry(tmp_path):
     derived.set_status(tmp_path, "facts", "k401_2026.match_cap", "rejected", by="kevin")
     with pytest.raises(derived.DerivedError, match="rejected"):
         derived.set_stale(tmp_path, "facts", "k401_2026.match_cap", "newer edition")
+
+
+def _with_table(folder) -> None:
+    layer = _layer()
+    layer["decisions"]["carryover_limit"] = {"dmn": "rules/carryover_limit.dmn", "status": "proposed", "check": None}
+    derived.write(folder, layer)
+    (folder / "derived" / "rules").mkdir()
+    (folder / "derived" / "rules" / "carryover_limit.dmn").write_text("<table/>", encoding="utf-8")
+
+
+def test_set_check_records_the_digest_of_the_table_it_checked(tmp_path):
+    _with_table(tmp_path)
+    entry = derived.set_check(tmp_path, "decisions", "carryover_limit", {"passed": True, "failures": []})
+    assert entry["check"]["dmn_sha256"] == hashlib.sha256(b"<table/>").hexdigest()
+    assert "dmn_sha256" not in derived.set_check(tmp_path, "facts", "k401_2026.match_cap", {"passed": True})["check"]
+    assert not derived.changed_since_check(tmp_path, entry)
+
+
+def test_a_table_changed_since_its_check_cannot_be_approved(tmp_path):
+    _with_table(tmp_path)
+    derived.set_check(tmp_path, "decisions", "carryover_limit", {"passed": True, "failures": []})
+    (tmp_path / "derived" / "rules" / "carryover_limit.dmn").write_text("<edited/>", encoding="utf-8")
+    with pytest.raises(derived.DerivedError, match="^carryover_limit's DMN has changed since its check: run "
+                                                   "clm-derive check again$"):
+        derived.set_status(tmp_path, "decisions", "carryover_limit", "approved", by="kevin")
+    assert derived.changed_since_check(tmp_path, derived.read(tmp_path)["decisions"]["carryover_limit"])
+
+
+def test_a_check_recorded_before_digests_were_kept_is_taken_as_it_is(tmp_path):
+    _with_table(tmp_path)
+    assert not derived.changed_since_check(tmp_path, {"dmn": "rules/carryover_limit.dmn",
+                                                      "check": {"passed": True, "failures": []}})
 
 
 def test_set_check_refuses_conflicts(tmp_path):

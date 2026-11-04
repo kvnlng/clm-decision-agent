@@ -280,6 +280,18 @@ def test_recheck_sends_an_approved_entry_on_a_replaced_edition_back_to_proposed(
     assert "newer edition" in entry["check"]["failures"][0] and counts["stale"] == 1
 
 
+def test_recheck_sends_an_approved_entry_whose_table_changed_back_and_checks_it_again(env):
+    approved = {**decision(env, status="approved"), "decided_by": "kevin"}
+    approved["check"] = {"passed": True, "failures": [], "dmn_sha256": "0" * 64}
+    folder = layer_with(env, carryover_limit=("decisions", approved))
+    counts = derive_check.recheck(folder, env, on=ON)
+    entry = derived.read(folder)["decisions"]["carryover_limit"]
+    assert entry["status"] == "checked" and entry["decided_by"] == "kevin"
+    assert "changed since its check" in entry["note"]
+    assert entry["check"]["dmn_sha256"] == derived.dmn_digest(folder, entry)
+    assert counts["stale"] == 1 and counts["checked"] == 1
+
+
 def test_recheck_accepts_a_null_check_after_a_correction(env):
     folder = layer_with(env, carryover_limit=("decisions", decision(env)))
     assert derived.read(folder)["decisions"]["carryover_limit"]["check"] is None

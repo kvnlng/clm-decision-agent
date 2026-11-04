@@ -639,7 +639,8 @@ def _second_reader(data: dict) -> dict | None:
     return {"backend": reader["backend"], "model": reader["model"].strip()}
 
 
-def _why_not(entry: dict | None, admit: tuple[str, ...], override: bool, store, slot: Slot, on: date) -> str | None:
+def _why_not(entry: dict | None, admit: tuple[str, ...], override: bool, store, slot: Slot, on: date,
+             folder: Path) -> str | None:
     """Why a derived entry may not fill its slot, or None when it may."""
     # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-return-statements
     if entry is None:
@@ -650,6 +651,8 @@ def _why_not(entry: dict | None, admit: tuple[str, ...], override: bool, store, 
     passed = (entry.get("check") or {}).get("passed") is True
     if not passed and not (override and "proposed" in admit):
         return "it failed its check, or was never checked: run clm-derive check"
+    if derived.changed_since_check(folder, entry):
+        return "its DMN has changed since its check: run clm-derive check again"
     source = entry.get("source") or {}
     document = store.document(slot.collection, source.get("document", ""), None) if store else {}
     if not document:
@@ -701,7 +704,7 @@ def _fill(slots: dict[str, Slot], context: tuple, graph: Graph | None, collectio
     for name, slot in slots.items():
         entry = layer[slot.kind].get(name)
         found.statuses[name] = entry.get("status") if entry is not None else NOT_DERIVED
-        why = _why_not(entry, admit, override, store, slot, on)
+        why = _why_not(entry, admit, override, store, slot, on, folder)
         if why is None and slot.kind == "facts":
             supplied = graph.node(slot.node) if slot.node in {n["id"] for n in graph.nodes()} else None
             if supplied is None:

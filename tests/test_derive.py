@@ -75,6 +75,7 @@ def test_run_fills_every_slot_and_checks_it(path):
     assert entry["source"]["edition"] == "2026-01-01" and entry["rule"]["cites"] == ["hb-leave"]
     assert entry["description"].startswith("How many unused days")
     assert (path.parent / "derived" / entry["dmn"]).is_file()
+    assert entry["check"]["dmn_sha256"] and entry["check"]["dmn_sha256"] == derived.dmn_digest(path.parent, entry)
     assert layer["facts"]["k401_2026.match_cap"]["status"] == "checked"
     assert layer["facts"]["k401_2026.match_cap"]["value"] == 6300
 

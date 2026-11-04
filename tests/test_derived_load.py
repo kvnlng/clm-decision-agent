@@ -171,6 +171,18 @@ def test_an_approved_decision_loads_from_derived_rules(tmp_path):
     assert run_decision(env, "carry", {"years": 3})["outputs"]["carry"] == 7
 
 
+def test_a_decision_whose_table_changed_since_its_check_is_not_admitted(tmp_path):
+    path = make(tmp_path, decision=entry())
+    layer = derived.read(tmp_path)
+    layer["decisions"]["carry"]["check"]["dmn_sha256"] = derived.dmn_digest(tmp_path, layer["decisions"]["carry"])
+    derived.write(tmp_path, layer)
+    assert "carry" in load(path).admitted
+    (tmp_path / "derived" / "rules" / "carry.dmn").write_text(DMN.replace(">7<", ">70<"), encoding="utf-8")
+    env = load(path)
+    assert "carry" not in env.decisions
+    assert env.unfilled["carry"] == "its DMN has changed since its check: run clm-derive check again"
+
+
 def test_a_checked_decision_is_not_admitted_by_default(tmp_path):
     env = load(make(tmp_path, decision=entry("checked")))
     assert "carry" not in env.decisions

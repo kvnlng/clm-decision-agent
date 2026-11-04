@@ -197,7 +197,8 @@ def _reading(record: dict) -> str:
 def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondReading | None = None) -> dict:
     """Check every proposed or checked entry again, as after a correction, recording each result through
     derived.set_check, and send any entry but a rejected one whose cited document is no longer the edition it came
-    from back to proposed (derived.set_stale). Otherwise approved and rejected entries are a person's decision and
+    from back to proposed (derived.set_stale); an approved one whose table changed since its check goes back to
+    proposed too, and is checked again at once. Otherwise approved and rejected entries are a person's decision and
     are left alone. With `second` (kind, name, entry -> record, failures), each entry checked is also read again by
     a second model, whether or not the mechanical check passed it, and its failures join the check's. -> counts."""
     counts = {"checked": 0, "proposed": 0, "stale": 0, "untouched": 0}
@@ -211,6 +212,9 @@ def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondRea
                 derived.set_stale(folder, kind, name, why)
                 counts["stale"] += 1
                 continue
+            if entry.get("status") == "approved" and derived.changed_since_check(folder, entry):
+                entry = derived.set_stale(folder, kind, name, "its DMN has changed since its check")
+                counts["stale"] += 1
             if entry.get("status") not in ("proposed", "checked"):
                 counts["untouched"] += 1
                 continue

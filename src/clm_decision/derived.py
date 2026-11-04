@@ -9,6 +9,7 @@ the edition in force, both recorded as made by clm-derive check.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from datetime import datetime, timezone
@@ -55,6 +56,28 @@ def write(folder: str | Path, layer: dict) -> None:
     os.replace(partial, file)
 
 
+def dmn_digest(folder: str | Path, entry: dict) -> str | None:
+    """The sha256 of the entry's decision table as it is now; None for an entry with no table, or one not there."""
+    if not entry.get("dmn"):
+        return None
+    try:
+        return hashlib.sha256((Path(folder) / "derived" / entry["dmn"]).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def changed_since_check(folder: str | Path, entry: dict) -> bool:
+    """Whether the entry's table is no longer the one its check passed. A check recorded before digests were kept
+    (no dmn_sha256) is taken as it is."""
+    recorded = (entry.get("check") or {}).get("dmn_sha256")
+    return recorded is not None and recorded != dmn_digest(folder, entry)
+
+
+def changed_line(name: str) -> str:
+    """What to say of an entry whose table changed since its check."""
+    return f"{name}'s DMN has changed since its check: run clm-derive check again"
+
+
 # pylint: disable-next=too-many-arguments
 def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str, note: str | None = None) -> dict:
     """Change one entry's status, recording who did it, when and why, and return the entry. A rule or fact is
@@ -75,6 +98,8 @@ def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str
         raise DerivedError(f"{name} failed its check, or was never checked, so it cannot be approved")
     if status == "approved" and entry.get("status") == "proposed":
         raise DerivedError(f"{name} is proposed: it is approved only once clm-derive check has checked it")
+    if status == "approved" and changed_since_check(folder, entry):
+        raise DerivedError(changed_line(name))
     entry.update(status=status, decided_by=by, note=note,
                  decided_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     write(folder, layer)
@@ -87,8 +112,9 @@ CHECKER = "clm-derive check"
 def set_check(folder: str | Path, kind: str, name: str, check: dict) -> dict:
     """Record the mechanical check's result on a proposed or checked entry, with when and by clm-derive check, and
     return the entry: one that passed becomes checked, one that failed proposed. A second reading's record
-    ({model, agreed, differences}) is kept when one was made. An approved or rejected entry is a
-    person's decision and is never changed here, nor are the fields recording it."""
+    ({model, agreed, differences}) is kept when one was made, and the sha256 of the table checked when there is
+    one. An approved or rejected entry is a person's decision and is never changed here, nor are the fields
+    recording it."""
     if kind not in ("decisions", "facts"):
         raise DerivedError(f"{kind!r}: only decisions or facts are checked")
     layer = read(folder)
@@ -97,10 +123,11 @@ def set_check(folder: str | Path, kind: str, name: str, check: dict) -> dict:
         raise DerivedError(f"no {kind} entry named {name!r}")
     if entry.get("status") not in ("proposed", "checked"):
         raise DerivedError(f"{name} is {entry.get('status')}: only proposed or checked entries are checked")
-    passed = check.get("passed") is True
+    passed, digest = check.get("passed") is True, dmn_digest(folder, entry)
     entry.update(status="checked" if passed else "proposed",
                  check={"passed": passed, "failures": list(check.get("failures") or []),
                         "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "by": CHECKER,
+                        **({"dmn_sha256": digest} if digest else {}),
                         **({"second_reading": check["second_reading"]} if check.get("second_reading") else {})})
     write(folder, layer)
     return entry

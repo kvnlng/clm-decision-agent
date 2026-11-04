@@ -247,10 +247,12 @@ def _entry(env: Environment, slot: Slot, answer: dict) -> dict:
                      "cites": [given["document"]]}}
 
 
-def _checked(entry: dict, failures: list[str], attempts: int) -> dict:
+def _checked(env: Environment, entry: dict, failures: list[str], attempts: int) -> dict:
+    digest = derived.dmn_digest(env.path.resolve().parent, entry)
     return {**entry, "status": "proposed" if failures else "checked", "attempts": attempts,
             "check": {"passed": not failures, "failures": failures,
-                      "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "by": RUN}}
+                      "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "by": RUN,
+                      **({"dmn_sha256": digest} if digest else {})}}
 
 
 def _attempt(env: Environment, slot: Slot, extractor: Extractor, prompt: str, on: date) -> tuple[dict, dict, list]:
@@ -270,15 +272,15 @@ def derive_slot(env: Environment, slot: Slot, extractor: Extractor, on: date) ->
     """One slot derived and checked: asked once, and once more with the failures if the check fails."""
     documents = candidates(env, slot, on)
     if not documents:
-        return _checked(_blank(slot), [f"source: no document in {slot.collection} in force on {on} matches"], 0)
+        return _checked(env, _blank(slot), [f"source: no document in {slot.collection} in force on {on} matches"], 0)
     prompt = _prompt(slot, documents, on)
     answer, entry, failures = _attempt(env, slot, extractor, prompt, on)
     if not failures:
-        return _checked(entry, failures, 1)
+        return _checked(env, entry, failures, 1)
     again = (f"{prompt}\n\nYour answer was:\n{json.dumps(answer)}\n\nIt failed the check:\n"
              + "\n".join(f"- {failure}" for failure in failures) + "\n\nAnswer again, fixing every failure.")
     _, entry, failures = _attempt(env, slot, extractor, again, on)
-    return _checked(entry, failures, 2)
+    return _checked(env, entry, failures, 2)
 
 
 def _read_again(env: Environment, slot: Slot, entry: dict, reader: Extractor, on: date) -> dict:
@@ -402,7 +404,7 @@ def run(path: str | Path, collection: str, extractor: Extractor, on: date, *, fr
             if name in layer[slot.kind]}
 
 
-# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments,too-many-locals
 def _derive_all(env: Environment, collection: str, extractor: Extractor, reader: Extractor | None, on: date,
                 fresh: bool) -> dict:
     """The layer run writes: each slot derived (and read again with `reader`) unless kept, with its conflicts."""

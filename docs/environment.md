@@ -474,11 +474,15 @@ Statuses go proposed, then checked once the check passes, then approved or rejec
 refuses to approve an entry that is not checked. A correction (a changed value or table) is written with status
 proposed and check null together, then `check` runs the check again. `check` also sends any entry but a rejected
 one whose cited document has a newer edition (or has left the collection, or is no longer in force) back to
-proposed, approved ones included, keeping who decided and adding the reason to the note. Loading admits an entry only when its status is
-in `admit`, its check passed, its cited edition is still the one in force (a new edition is re-derived by `run`) and
-its table loads. Anything else leaves the slot **unfilled**: `describe` lists every slot under `derived` with its
-status (`not derived` when the layer has no entry for it) and why, and a step that calls an unfilled slot fails with that reason, so the branch fails visibly while the
-other questions still load. An admitted fact fills its node's property only where the graph has none; a query that
+proposed, approved ones included, keeping who decided and adding the reason to the note. Each check records the
+sha256 of the table it checked (`check.dmn_sha256`). If the table is edited after that, `status` refuses to approve
+the entry and loading refuses to admit it, saying its DMN has changed since its check and to run `clm-derive check`
+again; `check` sends an approved one back to proposed and checks it at once. A check recorded before digests were
+kept is taken as it is. Loading admits an entry only when its status is in `admit`, its check passed, its table is
+the one checked, its cited edition is still the one in force (a new edition is re-derived by `run`) and its table
+loads. Anything else leaves the slot **unfilled**: `describe` lists every slot under `derived` with its status
+(`not derived` when the layer has no entry for it) and why, and a step that calls an unfilled slot fails with that
+reason, so the branch fails visibly while the other questions still load. An admitted fact fills its node's property only where the graph has none; a query that
 read it carries `origin: "derived"` and the fact's name.
 
 ### A second reading
