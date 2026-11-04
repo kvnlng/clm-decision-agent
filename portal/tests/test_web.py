@@ -2,6 +2,7 @@
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import pytest
+from mcp.server import MCPServer
 from starlette.testclient import TestClient
 
 import clm_portal
@@ -167,6 +168,29 @@ def test_supplied_and_derived_rules_are_labelled_with_origin_and_status(client):
     page = client.get("/").text
     assert 'class="origin supplied"' in page and 'class="origin derived"' in page and "checked" in page
     assert "confidence" in page and "high-ish" in page
+
+
+def serving_without_the_handbook(left_out: list[str]) -> MCPServer:
+    server = MCPServer("stand-in")
+
+    @server.tool()
+    def describe() -> dict:
+        """What the environment offers, with no collection, and these tools left out by [serve]."""
+        return {"name": "Tiny handbook", **({"left_out": left_out} if left_out else {})}
+    return server
+
+
+def test_a_collection_whose_tools_serve_leaves_out_says_so(client, server):
+    sign_in(client)
+    server.server = serving_without_the_handbook(["search_handbook", "document_handbook", "decision_vesting"])
+    for path in ("/", "/documents"):
+        page = client.get(path).text
+        assert "not offered: the server's [serve] setting leaves out its tools" in page, path
+        assert "not known" not in page, path
+    for left_out in ([], ["decision_vesting"]):
+        server.server = serving_without_the_handbook(left_out)
+        page = client.get("/").text
+        assert "not known" in page and "not offered" not in page
 
 
 def test_a_passage_is_read_through_the_portals_server(client):

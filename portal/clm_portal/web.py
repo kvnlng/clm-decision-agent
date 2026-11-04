@@ -213,13 +213,15 @@ def configuration_body(found: dict, environment: Path) -> str:
     if found["collections"]:
         parts.append("<h2>Collections</h2>" + table(
             ["collection", "description", "built"],
-            [[esc(item["name"]), esc(item["description"]), built_text(item["built"])]
+            [[esc(item["name"]), esc(item["description"]), built_text(item["built"], item["left_out"])]
              for item in found["collections"]]))
     return "".join(parts)
 
 
-def built_text(built: dict | None) -> str:
-    """When and from what a collection was built."""
+def built_text(built: dict | None, left_out: bool = False) -> str:
+    """When and from what a collection was built, or that the server's [serve] setting leaves out its tools."""
+    if left_out:
+        return '<span class="muted">not offered: the server\'s [serve] setting leaves out its tools</span>'
     if not built:
         return '<span class="muted">not known (empty, or the server is not running)</span>'
     return esc(", ".join(f"{key}: {shown_value(value)}" for key, value in built.items()))
@@ -588,7 +590,8 @@ def documents_body(portal: Portal, session: Session, described: dict | None, mes
     """Each collection with when it was built, and the forms that load and derive."""
     found = collections(portal)
     built = (described or {}).get("collections", {})
-    rows = [[esc(name), esc(table_.get("description", "")), built_text((built.get(name) or {}).get("built"))]
+    rows = [[esc(name), esc(table_.get("description", "")),
+             built_text((built.get(name) or {}).get("built"), layer.left_out(described, name))]
             for name, table_ in found.items()]
     choose = "".join(f'<option value="{esc(name)}">{esc(name)}</option>' for name in found)
     files = "".join(f'<option value="{esc(name)}">{esc(name)}</option>' for name in jsonl_files(portal))
