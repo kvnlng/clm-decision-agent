@@ -93,15 +93,15 @@ def _filters(env: Environment, name: str, filters: dict | None) -> dict:
 
 def _resolved(env: Environment, collection: str, cell: str) -> list[dict]:
     """A citation cell's ids (separated by ;) with each document's citation, title and passages, as the collection
-    holds them, and when the collection was built."""
+    holds them, and when the collection was built; without the passages when the environment sets cited_text false."""
     found = []
     built = env.store.built(collection) or {}
     for ident in (part.strip() for part in cell.split(";")):
         document = env.store.document(collection, ident, None) if ident else {}
         if document:
             found.append({"id": ident, "citation": document["citation"], "title": document["title"],
-                          "passages": document["passages"], "collection": collection,
-                          "built_at": built.get("built_at")})
+                          **({"passages": document["passages"]} if env.cited_text else {}),
+                          "collection": collection, "built_at": built.get("built_at")})
     return found
 
 

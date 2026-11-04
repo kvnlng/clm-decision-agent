@@ -156,6 +156,7 @@ user = "clm"
 password_env = "CLM_DOCUMENTS_PASSWORD"   # the variable that holds the password; never the password itself
 ollama_url = "http://127.0.0.1:11434"     # embeds passages and searches, so no text leaves the machine
 tools = true                              # false: only your functions search; the agent gets no document tools
+cited_text = true                         # false: a rule's citations give the document's citation and title, not its text
 
 [collections.cases]
 description = "Court opinions on non-competes: what the agent reads about the collection."

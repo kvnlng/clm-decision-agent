@@ -42,6 +42,7 @@ class DocumentSettings:  # pylint: disable=too-many-instance-attributes
     password_env: str
     ollama_url: str
     tools: bool = True          # whether the agent gets search_, document_, cites_ and cited_by_ tools
+    cited_text: bool = True     # whether a rule's resolved citations carry their passages
 
 
 class DocumentStore(Protocol):
@@ -101,11 +102,14 @@ def document_settings(data: dict) -> DocumentSettings | None:
     tools = table.get("tools", True)
     if not isinstance(tools, bool):
         raise ScenarioError("documents.tools: must be true or false")
+    cited_text = table.get("cited_text", True)
+    if not isinstance(cited_text, bool):
+        raise ScenarioError("documents.cited_text: must be true or false")
     return DocumentSettings(_text(table, "host", "documents", "127.0.0.1"), port,
                             _text(table, "database", "documents", "clm_documents"),
                             _text(table, "user", "documents", "clm"),
                             _text(table, "password_env", "documents", "CLM_DOCUMENTS_PASSWORD"),
-                            _text(table, "ollama_url", "documents", "http://127.0.0.1:11434"), tools)
+                            _text(table, "ollama_url", "documents", "http://127.0.0.1:11434"), tools, cited_text)
 
 
 def collections(data: dict, settings: DocumentSettings | None) -> dict[str, Collection]:

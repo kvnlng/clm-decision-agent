@@ -6,6 +6,7 @@ import pytest
 from conftest import ENV_TOML
 from fake_documents import FakeEmbedder, FakeStore
 
+from clm_decision.engine import run_decision
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import explain_rule
 from clm_decision.scenario import ScenarioError
@@ -92,3 +93,17 @@ def test_rule_shows_its_citations(write_environment):
     env = load(write_environment, with_collection(ENV_TOML) + DOCUMENTS + RULE)
     shown = explain_rule(env, "share_limit")
     assert shown["cites"] == ["sec-1"] and shown["collection"] == "laws"
+
+
+def test_cited_text_false_keeps_the_citation_and_drops_the_passages(write_environment):
+    toml = with_collection(ENV_TOML) + DOCUMENTS.replace("[documents]", "[documents]\ncited_text = false")
+    env = load(write_environment, toml, dmn=cited_dmn())
+    cited = run_decision(env, "share_limit", {"share": 0.5})["steps"][0]["citations"]
+    assert [c["citation"] for c in cited] == ["sec-1", "sec-2"]
+    assert all("passages" not in c for c in cited)
+
+
+def test_cited_text_must_be_true_or_false(write_environment):
+    toml = with_collection(ENV_TOML) + DOCUMENTS.replace("[documents]", '[documents]\ncited_text = "no"')
+    with pytest.raises(ScenarioError, match="documents.cited_text"):
+        load(write_environment, toml, dmn=cited_dmn())
