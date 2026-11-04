@@ -9,6 +9,7 @@ from . import tracing
 from .scenario import Scenario
 
 # A decision's fields that say which route and how sure; routing again with facts replaces them
+READ_ONLY = "read-only server"     # why every acting tool is skipped on a read-only server
 ROUTE_KEYS = ("route", "confidence", "probabilities", "source", "clm_route", "similarity")
 
 
@@ -189,14 +190,17 @@ def _request(text: str, result: dict, scenario: Scenario, context: dict | None) 
     return request
 
 
-def _act(result: dict, request: dict, option: dict | None, scenario: Scenario,
-         tools: dict[str, Callable]) -> list[dict]:
-    """Run the acting tools the route and the answers call for, or say why each was skipped."""
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def _act(result: dict, request: dict, option: dict | None, scenario: Scenario, tools: dict[str, Callable],
+         read_only: bool = False) -> list[dict]:
+    """Run the acting tools the route and the answers call for, or say why each was skipped. A read-only server
+    runs none."""
     actions = []
     for action in scenario.actions:
         if result["route"] not in action.routes or (action.when and not action.when.applies(request["answers"])):
             continue
-        skip = "route uncertain" if result["uncertain"] else _option_problem(scenario, result["route"], option)
+        skip = READ_ONLY if read_only else "route uncertain" if result["uncertain"] else \
+            _option_problem(scenario, result["route"], option)
         if skip:
             actions.append({"tool": action.tool, "status": "skipped", "reason": skip})
         else:
@@ -204,21 +208,24 @@ def _act(result: dict, request: dict, option: dict | None, scenario: Scenario,
     return actions
 
 
-def _finish(made: dict, scenario: Scenario, router, tools: dict[str, Callable]) -> dict:
+def _finish(made: dict, scenario: Scenario, router, tools: dict[str, Callable], read_only: bool = False) -> dict:
     """The reply for one request part-way through: `made` holds its result, request and informed outcomes,
     with the questions already asked again. Ranks the options and runs the acting tools."""
     result, request, informed = made["result"], made["request"], made["informed"]
     option = _choose(request, scenario, router, informed)
     reply = {**result, "answers": request["answers"], "rules": request["rules"], "informed": informed,
-             "actions": _act(result, request, option, scenario, tools)}
+             "actions": _act(result, request, option, scenario, tools, read_only)}
     if scenario.routes[result["route"]].options:
         reply["option"] = option
     return reply
 
 
-def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable], context: dict | None = None) -> dict:
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable], context: dict | None = None,
+           read_only: bool = False) -> dict:
     """The scenario's decision on `text`, with what its tools found and did. `context` (such as a booking or
-    user ID) is passed to the tools; CLM never reads it."""
+    user ID) is passed to the tools; CLM never reads it. `read_only` runs every informing tool and no acting
+    one."""
     tracing.add("decisions")
     earlier = route_facts(text, scenario, tools, context)
     facts = facts_of(earlier)
@@ -227,10 +234,12 @@ def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable], co
     request = _request(text, result, scenario, context)
     informed = gather(request, scenario, tools, earlier)
     _answer(request, scenario, router, _asks(request, scenario, informed))
-    return _finish({"result": result, "request": request, "informed": informed}, scenario, router, tools)
+    return _finish({"result": result, "request": request, "informed": informed}, scenario, router, tools,
+                   read_only)
 
 
-def decide_many(requests: list[dict], scenario: Scenario, router, tools: dict[str, Callable]) -> list[dict]:
+def decide_many(requests: list[dict], scenario: Scenario, router, tools: dict[str, Callable],
+                read_only: bool = False) -> list[dict]:
     """decide() for each of `requests` ({"text", "context"?}), with the same replies, made phase by phase so
     CLM encodes each phase's texts in one batched pass. The tools run in the order of the requests."""
     if not requests:
@@ -257,7 +266,7 @@ def decide_many(requests: list[dict], scenario: Scenario, router, tools: dict[st
     router.prefetch_asks([pair for one in made for pair in one["asks"]], ranks)
     for one in made:
         _answer(one["request"], scenario, router, one["asks"])
-    return [_finish(one, scenario, router, tools) for one in made]
+    return [_finish(one, scenario, router, tools, read_only) for one in made]
 
 
 def check_call(text: str, call: dict, scenario: Scenario, router) -> dict:

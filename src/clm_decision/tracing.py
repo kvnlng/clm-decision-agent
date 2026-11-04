@@ -58,10 +58,11 @@ def note_tool(name: str, kind: str, ms: float, status: str) -> None:
 
 
 class TraceWriter:
-    """Appends one line per traced call to `path`. The request's text is left out unless `text` is True."""
+    """Appends one line per traced call to `path`. The request's text is left out unless `text` is True; a
+    read-only server's lines say so."""
 
-    def __init__(self, path, text: bool = False):
-        self.path, self.text = Path(path), text
+    def __init__(self, path, text: bool = False, read_only: bool = False):
+        self.path, self.text, self.read_only = Path(path), text, read_only
         self._records: queue.SimpleQueue = queue.SimpleQueue()
         self._stopped = False
         self._thread = threading.Thread(target=self._write, name="trace-writer", daemon=True)
@@ -101,6 +102,8 @@ class TraceWriter:
         record: dict = {"tool": tool, "started": time.time(), "counts": {}, "tools": [], "outcome": {}}
         if self.text and request_text is not None:
             record["text"] = request_text
+        if self.read_only:
+            record["read_only"] = True
         # With OAuth, who called; never the token itself
         access = get_access_token()
         if access is not None:
