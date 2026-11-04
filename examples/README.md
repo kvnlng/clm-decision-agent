@@ -17,7 +17,8 @@ kinds). Each folder has its own README with the full story, how to run it and wh
 - **A scenario:** service_desk. CLM must be trained once first (under a minute):
   `uv run clm-train examples/service_desk/scenario.toml`.
 - **An environment:** tariff, then new_site. Neither needs training; tariff's news judge needs the `clm` extra.
-  `uv run clm-call examples/new_site/environment.toml rules '{"topic": "open_site"}'` shows what an agent sees.
+  `npx -y @modelcontextprotocol/inspector@2.13.0 uv run clm-server examples/new_site/environment.toml` shows what an agent sees, in the browser
+  ([Looking inside the server](../docs/getting-started.md#looking-inside-the-server)).
 
 The repository includes no trained heads and no runs: `runs/` folders and `*.heads/` are written locally and
 ignored by git.

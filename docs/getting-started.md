@@ -67,7 +67,7 @@ uv tool install "clm-decision-agent[clm] @ git+https://github.com/kvnlng/clm-dec
 | `documents` | The PostgreSQL driver and pgvector, for collections of documents |
 | `agent` | The Anthropic SDK, for `clm-agent` with Claude; Ollama needs nothing more |
 
-Commands: `clm-server`, `clm-agent`, `clm-chat`, `clm-call`, `clm-new-scenario`, `clm-new-environment`,
+Commands: `clm-server`, `clm-agent`, `clm-new-scenario`, `clm-new-environment`,
 `clm-synthesize`, `clm-train`, `clm-evaluate`, `clm-record`, `clm-load-graph`, `clm-load-documents`, `clm-registry`,
 `clm-trace-report`, `clm-derive`. Each takes `--help`, and one that needs a missing extra says which. In Python, the package is
 `clm_decision`.
@@ -92,27 +92,23 @@ uv run clm-agent examples/tariff/environment.toml \
 ```bash
 uv run clm-train examples/service_desk/scenario.toml
 uv run python examples/service_desk/mock_tracker.py              # terminal 1: a stand-in issue tracker
-uv run clm-chat examples/service_desk/scenario.toml --review     # terminal 2: the test chat
+npx -y @modelcontextprotocol/inspector@2.13.0 \
+    uv run clm-server examples/service_desk/scenario.toml --review    # terminal 2: the MCP Inspector
 ```
 
-```
-you> I need access to the oncology registry for an audit, needed this week
-  route: Data_Access 0.65 (next: Information_Request 0.23)
-  answers: urgency 1.61   identifiable 0.54
-  facts: lookup_queue: Data Governance handles this kind of request. ...
-  rules: urgency >= 1.5: Set the ticket's priority to High and state the deadline in the summary.
-  actions: create_ticket done: {"number": 5, "url": "http://127.0.0.1:8765/..."}
-```
+In the Inspector ([Looking inside the server](#looking-inside-the-server)), call `decide` with a message such as "I
+need access to the oncology registry for an audit, needed this week". The result has the route (Data_Access) with its
+probabilities, each question's answer, the facts the informing tools found, the rules that apply, and the ticket the
+acting tool opened in the mock tracker: tools run for real. In review mode, `correct` saves the right route for a
+message and `agreement` says how often CLM agrees with your corrections.
 
 ## Build your own
 
-- **Routing:** `uv run clm-new-scenario my_scenario`, then the [walkthrough](walkthrough.md). In review mode, `/correct
-  <route>` saves a correction; [fine-tuning](fine-tuning.md) trains CLM on them.
+- **Routing:** `uv run clm-new-scenario my_scenario`, then the [walkthrough](walkthrough.md). In review mode, the `correct`
+  tool saves a correction; [fine-tuning](fine-tuning.md) trains CLM on them.
 - **Weighing options:** `uv run clm-new-environment my_environment`, then [environment](environment.md). Its graph can
   live in [Neo4j](environment.md#on-neo4j).
-- **Either:** `uv run clm-call <file>` lists the tools, and `uv run clm-call <file> <tool> '<json>'` calls one, with
-  no agent. Give a running server's URL instead of a file to reach it.
-- **In a browser:** the MCP Inspector shows everything the server offers and calls one tool at a time; see
+- **Either:** the MCP Inspector shows everything the server offers and calls one tool at a time, with no agent; see
   [Looking inside the server](#looking-inside-the-server).
 
 A mistake in either file stops start-up with one line naming the setting.
@@ -165,9 +161,22 @@ npx -y @modelcontextprotocol/inspector@2.13.0 sh -c \
     'set -a; . ./.postgres-local.env; exec uv run clm-server examples/handbook/environment.toml'
 ```
 
-The handbook shows 22 tools, 19 resources (`describe`, 5 rules and 13 documents), 3 templates and 1 prompt. A
-server already running over HTTP can be inspected too, with its key, from the Inspector's command line:
-[serving](serving.md#inspecting-a-server). The Inspector's page changes between versions; these steps are for 2.13.0.
+The handbook shows 22 tools, 19 resources (`describe`, 5 rules and 13 documents), 3 templates and 1 prompt.
+
+**A routing scenario** works the same way: give the scenario file, and `--review` for its `correct` and `agreement`
+tools (`npx -y @modelcontextprotocol/inspector@2.13.0 uv run clm-server my_scenario.toml --review`). Call `decide`
+with a message's `text`; its acting tools run for real.
+
+**One call from the command line**, for a check you can repeat or put in a script, is `--cli` with a method:
+
+```bash
+npx -y @modelcontextprotocol/inspector@2.13.0 --cli uv run clm-server examples/tariff/environment.toml \
+    --method tools/call --tool-name scenario_sourcing --tool-arg product=PX
+```
+
+It prints the result as JSON. `--method tools/list`, `resources/list` and `prompts/list` list them. A server already
+running over HTTP is reached with its address and key instead: [serving](serving.md#inspecting-a-server). The
+Inspector's page changes between versions; these steps are for 2.13.0.
 
 ## Trying it in a chat
 

@@ -20,18 +20,20 @@ uv run clm-train examples/service_desk/scenario.toml
 Then two terminals, from the project root.
 
 ```bash
-uv run python examples/service_desk/mock_tracker.py                    # terminal 1: the mock tracker
-uv run clm-chat examples/service_desk/scenario.toml --review     # terminal 2: the test chat
+uv run python examples/service_desk/mock_tracker.py                     # terminal 1: the mock tracker
+npx -y @modelcontextprotocol/inspector@2.13.0 \
+    uv run clm-server examples/service_desk/scenario.toml --review        # terminal 2: the MCP Inspector
 ```
 
-Try:
+In the Inspector's page, connect, open **Tools** and call `decide` with each `text`
+([getting started](../../docs/getting-started.md#looking-inside-the-server) walks through the page):
 
 - `I need access to the oncology registry for an audit, needed this week`: a ticket with
   `priority-high` and `governance-review`.
 - `Should this patient be started on a beta blocker?`: out of scope, so no ticket.
 - `can you help with the audit data`: a vaguer request, which CLM is less sure of. If its route
-  is wrong, type `/correct Data_Access`; send it again and your route is used.
-- `/agreement`, then `/routes`, then `/quit`.
+  is wrong, call `correct` with the same text and `route` Data_Access; call `decide` again and your route is used.
+- `agreement`, then `describe` for the routes and questions.
 
 **Every handled request opens a ticket, at once.** Typing the same request twice opens two.
 

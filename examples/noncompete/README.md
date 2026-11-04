@@ -56,7 +56,9 @@ uv run python examples/noncompete/fetch_cases.py build    # reads each opinion's
 uv run clm-load-documents examples/noncompete/environment.toml cases examples/noncompete/data/cases.jsonl \
     --source "Caselaw Access Project, fetched 2026-11-03"
 
-uv run clm-call examples/noncompete/environment.toml scenario_agreement_by_state '{"agreement": "standard_v3"}'
+npx -y @modelcontextprotocol/inspector@2.13.0 --cli \
+    sh -c 'set -a; . ./.postgres-local.env; exec uv run clm-server examples/noncompete/environment.toml' \
+    --method tools/call --tool-name scenario_agreement_by_state --tool-arg agreement=standard_v3
 uv run clm-agent examples/noncompete/environment.toml \
     "In Texas, is a 2-year, nationwide non-compete for a sales manager reasonable?"
 ```

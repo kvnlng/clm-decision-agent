@@ -51,12 +51,13 @@ uv run clm-server examples/tariff/environment.toml            # MCP over stdio
 DECISION_SERVER_KEY=... uv run clm-server examples/tariff/environment.toml --http
 ```
 
-`clm-call` starts the server and lists its tools, or calls one, with no agent:
+The MCP Inspector starts the server and shows its tools, resources and prompts, and calls one, with no agent: in
+the browser ([getting started](getting-started.md#looking-inside-the-server)), or once from the command line:
 
 ```bash
-uv run clm-call examples/tariff/environment.toml
-uv run clm-call examples/tariff/environment.toml scenario_sourcing '{"product": "PX"}'
-uv run clm-call http://127.0.0.1:8000/mcp describe     # a running server, with the key in DECISION_SERVER_KEY
+npx -y @modelcontextprotocol/inspector@2.13.0 uv run clm-server examples/tariff/environment.toml
+npx -y @modelcontextprotocol/inspector@2.13.0 --cli uv run clm-server examples/tariff/environment.toml \
+    --method tools/call --tool-name scenario_sourcing --tool-arg product=PX
 ```
 
 `--http`, the key and `--trace` work as in routing ([serving.md](serving.md)). Review mode is for routing only.
@@ -564,8 +565,9 @@ The whole path, with the starter environment.
 
 ```bash
 uv run clm-new-environment offsite                  # a working environment to edit
-uv run clm-call offsite/environment.toml            # its tools, without an agent
-uv run clm-call offsite/environment.toml scenario_offsite '{"team": "T1", "days": 2}'
+npx -y @modelcontextprotocol/inspector@2.13.0 uv run clm-server offsite/environment.toml   # its tools, in the browser
+npx -y @modelcontextprotocol/inspector@2.13.0 --cli uv run clm-server offsite/environment.toml \
+    --method tools/call --tool-name scenario_offsite --tool-arg team=T1 --tool-arg days=2
 ```
 
 Expect Leith Studio (V3) best at 6,960 pounds, Northern Works cheaper but rejected as too small for everyone, and Thames
@@ -577,7 +579,8 @@ uv run clm-server offsite/environment.toml --http --trace calls.jsonl
 uv run clm-registry offsite/environment.toml --name io.github.you/offsite \
     --url https://offsite.corp.internal/mcp --version 0.1.0 --description "Where a team should hold its offsite"
 mcp-publisher validate server.json && mcp-publisher publish server.json
-uv run clm-call http://127.0.0.1:8000/mcp describe  # without the key: refused (401)
+npx -y @modelcontextprotocol/inspector@2.13.0 --cli http://127.0.0.1:8000/mcp --transport http \
+    --header "Authorization: Bearer <the key>" --method tools/list   # without the header: refused (401)
 uv run clm-agent http://127.0.0.1:8000/mcp "Where should the Platform team hold its two-day offsite?"
 uv run clm-trace-report calls.jsonl                 # the steps behind each call
 ```
@@ -585,7 +588,7 @@ uv run clm-trace-report calls.jsonl                 # the steps behind each call
 - **The registry needs an HTTPS address with a host name** others can find. List a server on your own computer under
   its future name, and reach it at `127.0.0.1` meanwhile
   ([registry.md](registry.md#a-private-registry-on-this-computer)).
-- **Change one thing at a time and call it again:** a query, a threshold, a lever's values. `clm-call` shows what an
+- **Change one thing at a time and call it again:** a query, a threshold, a lever's values. The Inspector shows what an
   agent reads: each branch's figures, rejecting limits and every step.
 
 ## The reference agent and the number check

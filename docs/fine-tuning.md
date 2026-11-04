@@ -23,7 +23,9 @@ much, and every result is reported per answer ("4 of 5"): otherwise "never urgen
   `<scenario>.examples.jsonl`. `[synthesize] messages` says who is writing and to what; the example's is "messages
   that staff might send to a help desk". Read some of the results. Edit the file freely, or add lines:
   `{"text": "<a message>", "route": "<a route's name>"}`
-- Correct decisions in review mode (`clm-chat <scenario> --review`). Every corrected route is a real example.
+- Correct decisions in review mode: start the server with `--review` in the MCP Inspector
+  (`npx -y @modelcontextprotocol/inspector@2.13.0 uv run clm-server <scenario> --review`), call `decide` with a
+  message, then `correct` with the same text and the right route. Every corrected route is a real example.
 
 **Labelling the questions and options.** A line can also give each question's right answer and, on a route with
 options, the right option. Only what a line labels is trained from it:
@@ -63,7 +65,7 @@ held-back examples did not improve, nothing is saved.
 
 **4. Start the server.** It says at start-up whether it is using the trained heads.
 
-Then loop: generate examples, train, try messages in the test chat and correct them, evaluate, adjust, train again.
+Then loop: generate examples, train, try messages in the Inspector and correct them, evaluate, adjust, train again.
 
 ## What it did on the example
 

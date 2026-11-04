@@ -23,8 +23,10 @@ officer needs:
 ## Try it
 
 ```bash
-uv run clm-call examples/new_site/environment.toml rules '{"topic": "open_site"}'
-uv run clm-call examples/new_site/environment.toml scenario_new_site '{"neighbourhood": "tract_4102"}'
+npx -y @modelcontextprotocol/inspector@2.13.0 --cli uv run clm-server examples/new_site/environment.toml \
+    --method tools/call --tool-name rules --tool-arg topic=open_site
+npx -y @modelcontextprotocol/inspector@2.13.0 --cli uv run clm-server examples/new_site/environment.toml \
+    --method tools/call --tool-name scenario_new_site --tool-arg neighbourhood=tract_4102
 uv run clm-agent examples/new_site/environment.toml "Are we in a position to open a new site in an expensive area?"
 uv run clm-agent examples/new_site/environment.toml \
     "Are we in a position to open a new site in an expensive area? We are looking at tract_4102."

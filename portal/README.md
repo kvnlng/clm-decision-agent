@@ -35,8 +35,9 @@ touches the server agents use. It needs the environment's folder on disk, so it 
 
 ### What it shows and what it changes
 
-- **Configuration**, read only: the environment's name and description; what its server reports (its instructions,
-  and every tool, resource, resource template and prompt, with names and descriptions); every rule,
+- **Configuration**, read only: the environment's name and description; the command that opens its server in the MCP
+  Inspector, which shows its tools, resources and prompts ([getting
+  started](../docs/getting-started.md#looking-inside-the-server)); every rule,
   supplied or derived, with its origin, status, owner, version, DMN rows and links to the passages it cites; the
   information items; the graph's nodes and edges (a graph in Neo4j is named, not shown); the collections and when each
   was built; and every load error, such as why its server did not start. It is read from the files, not by loading

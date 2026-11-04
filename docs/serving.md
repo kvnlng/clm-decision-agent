@@ -9,7 +9,7 @@ answers calls until stopped. Loading messages go to stderr.
 uv run clm-server my_scenario.toml [--review]
 ```
 
-The client starts the server and talks over stdin and stdout, as the test chat does. For Claude Code:
+The client starts the server and talks over stdin and stdout, as the MCP Inspector does. For Claude Code:
 
 ```bash
 claude mcp add decisions -- uv run --directory /path/to/this/repo clm-server my_scenario.toml
@@ -86,10 +86,11 @@ uv run clm-server my_scenario.toml --http --auth oauth \
 4. Start the server with `--issuer https://login.microsoftonline.com/<tenant id>/v2.0 --audience <server app id>
    --scope decide`.
 
-Try it with the test chat, which connects as an outside agent would:
+Try it with the MCP Inspector, which connects as an outside agent would:
 
 ```bash
-DECISION_SERVER_KEY=<the key> uv run clm-chat --url http://127.0.0.1:8000/mcp
+npx -y @modelcontextprotocol/inspector@2.13.0 --cli http://127.0.0.1:8000/mcp --transport http \
+    --header "Authorization: Bearer <the key>" --method tools/list
 ```
 
 Other clients:
