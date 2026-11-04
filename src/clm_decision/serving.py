@@ -8,7 +8,9 @@ matches no tool stops start-up with one line naming it and the tools there are.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
+from .environment import _read  # one way to read either file, with the same one-line errors
 from .scenario import ScenarioError
 
 ALWAYS = "describe"
@@ -44,6 +46,11 @@ def from_file(data: dict) -> Serve:
     if not isinstance(read_only, bool):
         raise ScenarioError("serve.read_only: true or false")
     return Serve(_names(table, "tools"), _names(table, "exclude_tools") or (), read_only)
+
+
+def read(path: str | Path) -> Serve:
+    """The [serve] table of the scenario or environment file at `path`."""
+    return from_file(_read(Path(path)))
 
 
 def _flag(value: str | None, flag: str) -> tuple[str, ...] | None:

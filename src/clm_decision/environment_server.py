@@ -23,10 +23,12 @@ from . import derived
 from . import engine
 from . import instructions
 from . import oauth
+from . import serving
 from . import tracing
 from .dmn import DmnError
 from .environment import Environment
 from .scenario import ScenarioError
+from .serving import Serve
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
 JSON = "application/json"
@@ -67,28 +69,35 @@ def _tool(run: Callable[[dict], dict], signature: inspect.Signature, trace, name
     return tool
 
 
-def describe(env: Environment) -> dict:
-    """What the environment offers, for an agent to read first."""
+def describe(env: Environment, offered: list[str] | None = None, left_out: list[str] | None = None,
+             read_only: bool = False) -> dict:
+    """What the environment offers, for an agent to read first. With `offered`, only the parts whose tools are
+    offered, and in left_out the tools the operator left out; read_only says the server is read-only."""
+    def shown(tool: str) -> bool:
+        return offered is None or tool in offered
+    collections = {name: collection for name, collection in env.collections.items()
+                   if any(shown(f"{kind}_{name}") for kind in ("search", "document", "cites", "cited_by"))}
     return {"name": env.name, "description": env.description,
             "queries": {name: {"description": query.description, "params": query.params}
-                        for name, query in env.queries.items()},
+                        for name, query in env.queries.items() if shown(f"query_{name}")},
             "decisions": {name: {"description": decision.description, "params": decision.params}
-                          for name, decision in env.decisions.items()},
+                          for name, decision in env.decisions.items() if shown(f"decision_{name}")},
             "calculations": {name: {"description": calculation.description, "params": calculation.params}
-                             for name, calculation in env.calculations.items()},
+                             for name, calculation in env.calculations.items() if shown(f"calculation_{name}")},
             "judges": {name: {"description": judge.description, "instructions": judge.instructions}
-                       for name, judge in env.judges.items()},
+                       for name, judge in env.judges.items() if shown(f"judge_{name}")},
             "scenarios": {name: {"description": scenario.description, "params": scenario.params,
                                  "levers": {lever: list(values) for lever, values in scenario.levers.items()},
                                  "objective": scenario.objective, "maximise": scenario.maximise,
                                  "limits": list(scenario.limits), "uncertain": list(scenario.uncertain),
                                  "approvals": list(scenario.approvals)}
-                          for name, scenario in env.scenarios.items()},
+                          for name, scenario in env.scenarios.items() if shown(f"scenario_{name}")},
             **({"collections": {name: {"description": collection.description, "filters": collection.filters,
                                        "built": env.store.built(name)}
-                                for name, collection in env.collections.items()}} if env.collections else {}),
-            **({"topics": env.topics()} if env.topics() else {}),
-            **({"derived": _derived(env)} if env.slots else {})}
+                                for name, collection in collections.items()}} if collections else {}),
+            **({"topics": env.topics()} if env.topics() and shown("rules") else {}),
+            **({"derived": _derived(env)} if env.slots else {}),
+            **({"left_out": left_out} if left_out else {}), **({"read_only": True} if read_only else {})}
 
 
 def _derived(env: Environment) -> dict:
@@ -202,9 +211,11 @@ def _json(trace, uri: str, run: Callable[[], dict]) -> str:
             raise ResourceError(f"{type(error).__name__}: {error}") from error
 
 
-def in_force(env: Environment) -> dict:
+def in_force(env: Environment, quotes: bool | None = None) -> dict:
     """The derived entries admitted to decide, each with its origin, status and source; the source's quote only when
-    the document tools are offered. The whole layer, with entries not in force, is the portal's."""
+    the document tools are offered (or as `quotes` says). The whole layer, with entries not in force, is the
+    portal's."""
+    quotes = env.document_tools if quotes is None else quotes
     entries = {}
     for name in env.admitted:
         slot = env.slots[name]
@@ -215,13 +226,15 @@ def in_force(env: Environment) -> dict:
             entry = env.derived_facts[slot.node][slot.property]
             status, source = entry.get("status"), entry.get("source")
             more = {"node": slot.node, "property": slot.property, "value": entry.get("value")}
-        cited = {key: value for key, value in (source or {}).items() if env.document_tools or key != "quote"}
+        cited = {key: value for key, value in (source or {}).items() if quotes or key != "quote"}
         entries[name] = {"kind": slot.kind, "origin": "derived", "status": status, "source": cited, **more}
     return {"admit": list(env.admit), "entries": entries}
 
 
-def _add_document_resources(server: MCPServer, env: Environment, add: Callable, trace) -> None:
-    """Templates for a document and a passage, and every document of a small enough collection listed."""
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def _add_document_resources(server: MCPServer, env: Environment, add: Callable, trace, collections: list[str]) -> None:
+    """Templates for a document and a passage, and every document of a small enough collection listed, for the
+    collections named."""
     def document(collection: str, id: str) -> str:  # pylint: disable=redefined-builtin
         return _json(trace, f"document://{collection}/{id}",
                      lambda: engine.run_document(env, collection, {"id": id}))
@@ -235,7 +248,7 @@ def _add_document_resources(server: MCPServer, env: Environment, add: Callable, 
                                 f"{LISTED_DOCUMENTS} documents when the server starts.")(document)
     server.resource("document://{collection}/{id}/{passage}", name="passage", mime_type=JSON,
                     description="One passage of a document, by its label, as document_COLLECTION returns it.")(passage)
-    for name in env.collections:
+    for name in collections:
         ids = env.store.ids(name, LISTED_DOCUMENTS + 1)
         for ident in ids if len(ids) <= LISTED_DOCUMENTS else ():
             found = env.store.document(name, ident, None)
@@ -243,16 +256,16 @@ def _add_document_resources(server: MCPServer, env: Environment, add: Callable, 
                 lambda name=name, ident=ident: engine.run_document(env, name, {"id": ident}))
 
 
-def _add_resources(server: MCPServer, env: Environment, trace) -> None:
-    """The environment's data as resources: describe, every rule when there is a rule tool, the documents when there
-    are document tools, and the derived entries in force when there is a derived layer."""
+def _add_resources(server: MCPServer, env: Environment, trace, offered: list[str], described: Callable) -> None:
+    """The environment's data as resources: describe, every rule when the rule tool is offered, a collection's
+    documents when its document tool is, and the derived entries in force when there is a derived layer."""
     def add(uri: str, name: str, description: str, run: Callable[[], dict]) -> None:
         server.add_resource(FunctionResource(uri=uri, name=name, description=description, mime_type=JSON,
                                              fn=lambda: _json(trace, uri, run)))
 
     add("environment://describe", "describe", "What describe returns: the environment's queries, decisions, "
-        "calculations, scenarios, collections, topics and derived slots.", lambda: describe(env))
-    if env.topics():
+        "calculations, scenarios, collections, topics and derived slots.", described)
+    if "rule" in offered:
         for name in sorted(name for name, decision in env.decisions.items() if decision.rule):
             add(f"rule://{name}", f"rule {name}",
                 f"What the rule tool returns for {name}: {env.decisions[name].description}",
@@ -261,34 +274,60 @@ def _add_resources(server: MCPServer, env: Environment, trace) -> None:
                         description="One rule, supplied or derived, with its origin and status, as the rule tool "
                                     "returns it.")(lambda name: _json(trace, f"rule://{name}",
                                                                       lambda: explain_rule(env, name)))
-    if env.collections and env.document_tools:
-        _add_document_resources(server, env, add, trace)
+    readable = [name for name in env.collections if f"document_{name}" in offered]
+    if readable:
+        _add_document_resources(server, env, add, trace, readable)
     if env.slots:
         add("derived://in-force", "derived entries in force", "The derived entries in force: each rule and fact "
             "read from the documents and admitted to decide, with its origin, status and source.",
-            lambda: in_force(env))
+            lambda: in_force(env, bool(readable)))
 
 
-def _add_prompt(server: MCPServer, env: Environment) -> None:
+def _add_prompt(server: MCPServer, env: Environment, offered: list[str] | None) -> None:
     """answer_question: the reference agent's instructions with this environment and a question."""
     @server.prompt(name="answer_question", description="Ask a question the way the reference agent does: its "
                    "instructions, this environment's name and description, and the question, in one message.")
     def answer_question(question: str) -> str:
-        return instructions.answer_question(env.name, env.description, question)
+        return instructions.answer_question(env.name, env.description, question, offered)
+
+
+def _instructions(env: Environment, offered: list[str]) -> str:
+    """The server's instructions, naming a scenario only when one is offered."""
+    comparing = any(name.startswith("scenario_") for name in offered)
+    return (f"Decisions for '{env.name}'. Call describe first. Every figure and verdict comes from these tools"
+            + (": run a scenario to compare alternatives rather than combining queries and decisions yourself."
+               if comparing else "."))
 
 
 def build_environment_server(env: Environment, trace: tracing.TraceWriter | None = None,
-                             auth: oauth.OAuth | None = None) -> MCPServer:
+                             auth: oauth.OAuth | None = None, serve: Serve = Serve()) -> MCPServer:
     """The MCP server for one environment. With `trace`, each call is written to the trace; with `auth`, HTTP
-    callers need a token."""
-    server = MCPServer("decision-server", instructions=(
-        f"Decisions for '{env.name}'. Call describe first. Every figure and verdict comes from these tools: run a "
-        "scenario to compare alternatives rather than combining queries and decisions yourself."),
-        log_level="WARNING", **oauth.server_options(auth))
+    callers need a token. `serve` chooses the tools offered (serving.py; an unknown one is a ScenarioError); every
+    tool here only reads, so read-only changes nothing but describe."""
+    found: list[tuple[str, str, Callable[[dict], dict], inspect.Signature]] = []
 
     def add(name: str, description: str, run: Callable[[dict], dict], signature: inspect.Signature) -> None:
-        server.add_tool(_tool(run, signature, trace, name), name=name, description=description,
-                        annotations=READ_ONLY)
+        found.append((name, description, run, signature))
+
+    _all_tools(env, add)
+    offered, left_out = serving.choose(serve, [name for name, *_ in found])
+    chosen = offered if left_out else None      # None: every tool, and everything as before
+    server = MCPServer("decision-server", instructions=_instructions(env, offered), log_level="WARNING",
+                       **oauth.server_options(auth))
+
+    def described(_: dict | None = None) -> dict:
+        return describe(env, chosen, left_out, serve.read_only)
+    for name, description, run, signature in found:
+        if name in offered:
+            server.add_tool(_tool(described if name == "describe" else run, signature, trace, name), name=name,
+                            description=description, annotations=READ_ONLY)
+    _add_resources(server, env, trace, offered, described)
+    _add_prompt(server, env, chosen)
+    return server
+
+
+def _all_tools(env: Environment, add: Callable) -> None:
+    """Every tool the environment can offer, each given to add(name, description, run, signature)."""
 
     for name, query in env.queries.items():
         add(f"query_{name}", query.description, lambda args, name=name: engine.run_query(env, name, args),
@@ -323,6 +362,3 @@ def build_environment_server(env: Environment, trace: tracing.TraceWriter | None
             lambda args: explain_rule(env, args["name"]), _signature({"name": "string"}))
     add("describe", "The environment: its queries, decisions, calculations and scenarios, with their parameters.",
         lambda _: describe(env), _signature({}))
-    _add_resources(server, env, trace)
-    _add_prompt(server, env)
-    return server

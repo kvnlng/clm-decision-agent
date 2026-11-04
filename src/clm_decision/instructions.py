@@ -28,7 +28,22 @@ def agent_system() -> str:
     return _SYSTEM
 
 
-def answer_question(name: str, description: str, question: str) -> str:
+# The lines that name a tool, by what must be offered for them to stay: a scenario tool, or rules
+_NEEDS = {"- To compare alternatives, run the scenario tool": lambda names: any(name.startswith("scenario_")
+                                                                              for name in names),
+          "- If describe lists topics, call rules": lambda names: "rules" in names}
+
+
+def _naming_only(offered: list[str]) -> str:
+    """The instructions without the lines that name a tool not offered."""
+    kept = [line for line in _SYSTEM.split("\n")
+            if not any(line.startswith(start) and not needs(offered) for start, needs in _NEEDS.items())]
+    return "\n".join(kept)
+
+
+def answer_question(name: str, description: str, question: str, offered: list[str] | None = None) -> str:
     """The agent's instructions, the environment's name and description, and the question, as one message: an MCP
-    prompt has no system role."""
-    return f"{_SYSTEM}\n\nThe environment is '{name}': {description}\n\nThe question: {question}"
+    prompt has no system role. With `offered`, the tools the server offers, lines naming any other tool are left
+    out."""
+    system = _SYSTEM if offered is None else _naming_only(offered)
+    return f"{system}\n\nThe environment is '{name}': {description}\n\nThe question: {question}"

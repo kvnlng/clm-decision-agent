@@ -15,6 +15,7 @@ from clm_decision import server
 from clm_decision.decision import decide, routed_text
 from clm_decision.record import load_records
 from clm_decision.scenario import load_scenario
+from clm_decision.serving import Serve
 from clm_decision.tools import load_tools
 
 TEXT = "my app crashes"
@@ -273,3 +274,83 @@ async def test_correct_with_an_option_not_offered_saves_nothing(offered):
     assert result.is_error and "'voucher' was not among the options" in result.content[0].text
     assert on_tech.is_error and "routes.Tech has no options" in on_tech.content[0].text
     assert not scenario.record_path.exists()
+
+
+@pytest.mark.anyio
+async def test_tools_offers_only_those_and_describe(parts):
+    chosen = server.build_server(*parts, review=True, serve=Serve(tools=("decide*",), exclude_tools=("decide_many",)))
+    assert await tool_names(chosen) == ["decide", "describe"]
+
+
+@pytest.mark.anyio
+async def test_describe_says_which_tools_were_left_out(parts):
+    async with Client(server.build_server(*parts, review=False, serve=Serve(exclude_tools=("check_call",)))) as client:
+        described = (await client.call_tool("describe", {})).structured_content
+    assert described["left_out"] == ["check_call"] and "read_only" not in described
+
+
+@pytest.mark.anyio
+async def test_by_default_describe_says_nothing_of_selection_or_read_only(parts):
+    async with Client(server.build_server(*parts, review=False)) as client:
+        described = (await client.call_tool("describe", {})).structured_content
+    assert "left_out" not in described and "read_only" not in described
+
+
+@pytest.mark.anyio
+async def test_a_read_only_server_decides_without_acting(write_scenario):
+    scenario = load_scenario(write_scenario())
+    urgent = {"urgent": {"type": "noul", "noul": 0.9}}
+    router = FakeRouter(decision("Billing", answers=urgent), asks=[urgent, urgent])
+    fake_tools.CALLS.clear()
+    async with Client(server.build_server(scenario, router, load_tools(scenario), review=False,
+                                          serve=Serve(read_only=True))) as client:
+        made = (await client.call_tool("decide", {"text": TEXT})).structured_content
+        many = (await client.call_tool("decide_many", {"requests": [{"text": TEXT}]})).structured_content
+        described = (await client.call_tool("describe", {})).structured_content
+        hints = {tool.name: tool.annotations.read_only_hint for tool in (await client.list_tools()).tools}
+        said = client.instructions
+    assert made["actions"] == [{"tool": "act", "status": "skipped", "reason": "read-only server"}]
+    assert many["decisions"][0]["actions"] == made["actions"]
+    assert "act" not in [name for name, _ in fake_tools.CALLS]
+    assert described["read_only"] is True and all(hints.values())
+    assert "read-only" in said and "may run the scenario's acting tools" not in said
+
+
+@pytest.mark.parametrize("argv", [["--read-only", "--review"], ["--review"]])
+def test_read_only_with_review_stops_with_one_line(write_scenario, argv, capsys, monkeypatch):
+    monkeypatch.setattr(server, "load", lambda path: pytest.fail("CLM was loaded"))
+    text = BASE_TOML + ("\n[serve]\nread_only = true\n" if argv == ["--review"] else "")
+    assert server.main([str(write_scenario(text)), *argv]) == 2
+    assert capsys.readouterr().err.strip() == \
+        "error: a read-only server cannot offer review mode: correct writes the record"
+
+
+def test_an_unknown_tool_stops_before_clm_loads(write_scenario, capsys, monkeypatch):
+    monkeypatch.setattr(server, "load", lambda path: pytest.fail("CLM was loaded"))
+    assert server.main([str(write_scenario()), "--tools", "decide,correct"]) == 2
+    assert capsys.readouterr().err.strip() == \
+        "error: tools: 'correct' matches no tool; the tools are: decide, decide_many, check_call, describe"
+
+
+def test_a_bad_serve_table_stops_with_one_line(write_scenario, capsys):
+    assert server.main([str(write_scenario(BASE_TOML + "\n[serve]\ntools = \"decide\"\n"))]) == 2
+    assert capsys.readouterr().err.strip().startswith("error: serve.tools: a list of tool names")
+
+
+def test_the_command_line_replaces_the_files_selection(write_scenario, monkeypatch):
+    built = {}
+
+    class Ran:  # pylint: disable=too-few-public-methods
+        """A server that only notes how it was run."""
+
+        def run(self, transport):
+            built["transport"] = transport
+
+    def build(*args, **kwargs):  # pylint: disable=unused-argument
+        built.update(kwargs)
+        return Ran()
+    monkeypatch.setattr(server, "load", lambda path: ("scenario", "router", "tools"))
+    monkeypatch.setattr(server, "build_server", build)
+    text = BASE_TOML + '\n[serve]\ntools = ["decide"]\nexclude_tools = ["check_call"]\n'
+    assert server.main([str(write_scenario(text)), "--tools", "decide_many", "--read-only"]) == 0
+    assert built["serve"] == Serve(("decide_many",), ("check_call",), True) and built["transport"] == "stdio"
