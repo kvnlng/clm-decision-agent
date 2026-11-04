@@ -184,6 +184,20 @@ async def test_a_large_collection_is_not_listed_but_can_be_read(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_a_collection_loaded_with_another_model_is_not_listed_and_reading_says_why():
+    other = store()
+    other.replace("handbook", [json.loads(line) for line in (HANDBOOK / "handbook.jsonl").read_text().splitlines()],
+                  [], {"built_at": "2026-11-03T12:00:00Z", "source": "test", "model": "other-model",
+                       "dimensions": 26})
+    env = load_environment(HANDBOOK / "environment.toml", store=other, embedder=FakeEmbedder())
+    async with Client(build_environment_server(env)) as client:
+        listed = {str(resource.uri) for resource in (await client.list_resources()).resources}
+        with pytest.raises(MCPError, match="was loaded with other-model"):
+            await client.read_resource("document://handbook/hb-welcome")
+    assert not any(uri.startswith("document://") for uri in listed)
+
+
+@pytest.mark.anyio
 async def test_no_document_tools_means_no_document_resources():
     env = dataclasses.replace(load(), document_tools=False)
     async with Client(build_environment_server(env)) as client:
@@ -192,6 +206,16 @@ async def test_no_document_tools_means_no_document_resources():
         described = await read(client, "environment://describe")
     assert not any(uri.startswith("document://") for uri in listed | templates)
     assert "resources" not in described["collections"]["handbook"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("arguments", [None, {}, {"question": ""}, {"question": "  \n"}])
+async def test_the_prompt_refuses_a_missing_or_blank_question_in_one_line_without_a_traceback(arguments, caplog):
+    async with Client(build_environment_server(load())) as client:
+        with pytest.raises(MCPError) as refused:
+            await client.get_prompt("answer_question", arguments)
+    assert str(refused.value.message) == "answer_question needs a question: give it the question to ask"
+    assert not [record for record in caplog.records if record.exc_info or record.levelname == "ERROR"]
 
 
 def test_the_fake_store_lists_ids_in_order_up_to_the_limit():

@@ -105,7 +105,7 @@ def _resolved(env: Environment, collection: str, cell: str) -> list[dict]:
     return found
 
 
-def _built(env: Environment, name: str) -> dict:
+def build_record(env: Environment, name: str) -> dict:
     """The collection's build record, after checking it holds something, loaded with the model the file names."""
     collection = _part(env.collections, "collection", name)
     built = env.store.built(name)
@@ -256,7 +256,7 @@ class Steps:
     def search(self, collection: str, text: str, filters: dict | None = None, limit: int = 10) -> list[dict]:
         """The passages closest to the text, by meaning and words, that the filters allow: evidence to read, which
         decides nothing by itself."""
-        built = _built(self.env, collection)
+        built = build_record(self.env, collection)
         if not isinstance(text, str) or not text.strip():
             raise StepError(f"search {collection}: there is no text to search for")
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= MAX_SEARCH:
@@ -277,7 +277,7 @@ class Steps:
 
     def document(self, collection: str, id: str, passage: str | None = None) -> dict:  # pylint: disable=redefined-builtin
         """A document with its passages, or one passage, as stored: for checking what a citation says."""
-        built = _built(self.env, collection)
+        built = build_record(self.env, collection)
         tracing.add("document")
         found = self.env.store.document(collection, id, passage)
         if not found:
@@ -289,7 +289,7 @@ class Steps:
         return found
 
     def _citations(self, collection: str, id: str, depth: int, direction: str) -> list[dict]:  # pylint: disable=redefined-builtin
-        built = _built(self.env, collection)
+        built = build_record(self.env, collection)
         if not isinstance(depth, int) or isinstance(depth, bool) or not 1 <= depth <= MAX_DEPTH:
             raise StepError(f"{direction} {collection}: depth must be from 1 to {MAX_DEPTH}, not {depth!r}")
         if not self.env.store.exists(collection, id):

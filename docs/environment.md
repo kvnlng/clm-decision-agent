@@ -571,8 +571,10 @@ so a client or a person can see everything it offers ([serving.md](serving.md#in
 - **One implementation, two doors.** Each resource is read by the code its tool uses, as JSON, and fails with the
   tool's one-line reason.
 - **Documents** are offered only when the document tools are (`tools = true`). The templates always work; each
-  document is also listed when its collection holds at most 100 documents when the server starts. The document
-  template's description says so.
+  document is also listed when its collection holds at most 100 documents when the server starts, and only when
+  the document tools could read it: a collection that holds nothing, or was loaded with another embedding model, is
+  not listed, and reading one of its documents gives the tools' reason. The document template's description says
+  so.
 - **The whole derived layer**, with entries not in force, is not a resource: the portal reads it from the files.
 - **Every resource read is traced** like a tool call, named by its URI, failed reads too.
 - **Graph facts stay `query_` tools:** a query takes parameters and runs your code, so it is not a fixed piece of data.
@@ -580,7 +582,8 @@ so a client or a person can see everything it offers ([serving.md](serving.md#in
   reference agent, let a model fetch only that way. Resources are for clients and people that browse or attach data.
 
 **The prompt**, `answer_question(question)`, is the reference agent's instructions with the environment's name and
-description and the question, in one user message, so any MCP client asks the way the agent does. Both take the text
+description and the question, in one user message, so any MCP client asks the way the agent does. The question is
+required: a missing or blank one is refused with one error line. Both take the text
 from `instructions.py`.
 
 **Context:**

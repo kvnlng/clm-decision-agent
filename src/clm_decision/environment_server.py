@@ -16,8 +16,10 @@ from typing import Any, Callable
 import pydantic_core
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ResourceError, ToolError
+from mcp.server.mcpserver.prompts import Prompt
 from mcp.server.mcpserver.resources import FunctionResource
-from mcp.types import ToolAnnotations
+from mcp.shared.exceptions import MCPError
+from mcp.types import INVALID_PARAMS, ToolAnnotations
 
 from . import derived
 from . import engine
@@ -251,6 +253,10 @@ def _add_document_resources(server: MCPServer, env: Environment, add: Callable, 
     server.resource("document://{collection}/{id}/{passage}", name="passage", mime_type=JSON,
                     description="One passage of a document, by its label, as document_COLLECTION returns it.")(passage)
     for name in collections:
+        try:
+            engine.build_record(env, name)
+        except engine.StepError:
+            continue        # it holds nothing, or another model's vectors: reading a document says which
         ids = env.store.ids(name, LISTED_DOCUMENTS + 1)
         for ident in ids if len(ids) <= LISTED_DOCUMENTS else ():
             found = env.store.document(name, ident, None)
@@ -285,12 +291,24 @@ def _add_resources(server: MCPServer, env: Environment, trace, offered: list[str
             lambda: in_force(env, readable))
 
 
+class _QuestionPrompt(Prompt):
+    """A prompt whose question is required and not blank: refused with one error line before the SDK renders it,
+    which would log a traceback for a missing argument and accept an empty one."""
+
+    async def render(self, arguments, context):
+        question = (arguments or {}).get("question")
+        if not isinstance(question, str) or not question.strip():
+            raise MCPError(INVALID_PARAMS, f"{self.name} needs a question: give it the question to ask")
+        return await super().render(arguments, context)
+
+
 def _add_prompt(server: MCPServer, env: Environment, offered: list[str] | None) -> None:
     """answer_question: the reference agent's instructions with this environment and a question."""
-    @server.prompt(name="answer_question", description="Ask a question the way the reference agent does: its "
-                   "instructions, this environment's name and description, and the question, in one message.")
     def answer_question(question: str) -> str:
         return instructions.answer_question(env.name, env.description, question, offered)
+    server.add_prompt(_QuestionPrompt.from_function(
+        answer_question, name="answer_question", description="Ask a question the way the reference agent does: its "
+        "instructions, this environment's name and description, and the question, in one message."))
 
 
 def _instructions(env: Environment, offered: list[str] | None) -> str:
