@@ -14,7 +14,7 @@ from mcp import Client
 
 from clm_decision import server
 from clm_decision.call import connect
-from clm_decision.decision_agent import AgentError, ClaudeChat, OllamaChat, answer, main, server_params
+from clm_decision.decision_agent import NO_TOOLS_SYSTEM, AgentError, ClaudeChat, OllamaChat, answer, main, server_params
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
 
@@ -287,3 +287,30 @@ def test_the_agent_writes_the_record_beside_the_answer(tmp_path, monkeypatch):
     record = json.loads((tmp_path / "run.record.json").read_text())
     assert record["question"] == "Should we?" and record["scenarios"][0]["best"] == {"region_b_share": 0.5}
     assert "## The agent's explanation (not checked)" in (tmp_path / "run.record.md").read_text()
+
+
+def test_no_tools_sends_no_tools_and_its_own_prompt(tmp_path, monkeypatch):
+    claude = FakeClaude(message(text("I don't know Meridian's plan.")))
+    monkeypatch.setattr("anthropic.AsyncAnthropic", lambda: claude)
+    out = tmp_path / "run.answer.json"
+    assert main([str(tmp_path / "nowhere.toml"), "What is my match?", "--no-tools", "--out", str(out)]) == 0
+    assert "tools" not in claude.requests[0] and claude.requests[0]["system"] == NO_TOOLS_SYSTEM
+    result = json.loads(out.read_text())
+    assert result["calls"] == [] and result["tools"] is False
+
+
+def test_no_tools_flags_every_figure_not_in_the_question(tmp_path, monkeypatch):
+    claude = FakeClaude(message(text("Meridian adds $3,400 a year.")))
+    monkeypatch.setattr("anthropic.AsyncAnthropic", lambda: claude)
+    out = tmp_path / "run.answer.json"
+    assert main([str(tmp_path / "nowhere.toml"), "What is my match?", "--no-tools", "--out", str(out)]) == 0
+    assert json.loads(out.read_text())["unsupported"] == ["$3,400"]
+
+
+@pytest.mark.anyio
+async def test_no_tools_on_ollama_sends_no_tools():
+    ollama = FakeOllama(said("I don't know."))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(ollama)) as http:
+        result = await answer(None, QUESTION, OllamaChat(http, "gemma4:26b", system=NO_TOOLS_SYSTEM))
+    assert result["answer"] == "I don't know." and result["calls"] == []
+    assert ollama.requests[0]["tools"] == [] and ollama.requests[0]["messages"][0]["content"] == NO_TOOLS_SYSTEM

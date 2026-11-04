@@ -51,6 +51,9 @@ its to_ask is not given in the question, stop: list each missing item with the r
 scenario. Never fill in a missing item yourself.
 - Say which figures are estimates, with their range and source, and report each kept branch's warnings, headroom \
 and the approvals it needs."""
+# For --no-tools: the question alone, as an employee might ask a general chatbot
+NO_TOOLS_SYSTEM = ("You answer an employee's question about their employer's policies and benefits. If you do not "
+                   "know something, say so.")
 
 
 class AgentError(RuntimeError):
@@ -101,8 +104,8 @@ def _content(call: dict) -> str:
 class ClaudeChat:
     """Claude through the Anthropic SDK: streamed, with adaptive thinking."""
 
-    def __init__(self, client, model: str = MODEL):
-        self.client, self.model = client, model
+    def __init__(self, client, model: str = MODEL, system: str = SYSTEM):
+        self.client, self.model, self.system = client, model, system
 
     def tools(self, listed) -> list[dict]:
         """The server's tools as Anthropic tool definitions, with the server's own schemas."""
@@ -115,7 +118,8 @@ class ClaudeChat:
 
     async def turn(self, messages: list[dict], tools: list[dict]) -> Turn:
         """One streamed reply."""
-        async with self.client.messages.stream(model=self.model, max_tokens=16000, system=SYSTEM, tools=tools,
+        async with self.client.messages.stream(model=self.model, max_tokens=16000, system=self.system,
+                                               **({"tools": tools} if tools else {}),
                                                thinking={"type": "adaptive"}, messages=messages) as stream:
             reply = await stream.get_final_message()
         text = "\n".join(block.text for block in reply.content if block.type == "text").strip()
@@ -136,8 +140,8 @@ class ClaudeChat:
 class OllamaChat:
     """A local model through Ollama's /api/chat."""
 
-    def __init__(self, http, model: str = LOCAL_MODEL, url: str = OLLAMA_URL):
-        self.http, self.model, self.url = http, model, url.rstrip("/")
+    def __init__(self, http, model: str = LOCAL_MODEL, url: str = OLLAMA_URL, system: str = SYSTEM):
+        self.http, self.model, self.url, self.system = http, model, url.rstrip("/"), system
 
     def tools(self, listed) -> list[dict]:
         """The server's tools as Ollama function definitions."""
@@ -146,7 +150,7 @@ class OllamaChat:
 
     def start(self, question: str) -> list[dict]:
         """The instructions as a system message, then the question."""
-        return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": question}]
+        return [{"role": "system", "content": self.system}, {"role": "user", "content": question}]
 
     async def turn(self, messages: list[dict], tools: list[dict]) -> Turn:
         """One reply; raises AgentError when Ollama or the model is not there."""
@@ -196,11 +200,11 @@ async def _run(session: Client, use: Use) -> dict:
     return {"tool": use.name, "arguments": use.input, "result": result.structured_content, "error": None}
 
 
-async def answer(session: Client, question: str, chat: Chat) -> dict:
-    """Ask the model the question with the session's tools -> {"question", "answer", "calls", "unsupported",
-    "stopped", "model"}. A reply cut off (max_tokens, or the context window full) or refused stops the loop without
-    running the tools it asked for."""
-    tools = chat.tools((await session.list_tools()).tools)
+async def answer(session: Client | None, question: str, chat: Chat) -> dict:
+    """Ask the model the question with the session's tools, or none without a session -> {"question", "answer",
+    "calls", "unsupported", "stopped", "model"}. A reply cut off (max_tokens, or the context window full) or refused
+    stops the loop without running the tools it asked for."""
+    tools = chat.tools((await session.list_tools()).tools) if session else []
     messages = chat.start(question)
     calls: list[dict] = []
     stopped, text = None, ""
@@ -229,10 +233,11 @@ async def answer(session: Client, question: str, chat: Chat) -> dict:
 
 
 async def _main(args, refused: list[int]) -> int:
+    system = NO_TOOLS_SYSTEM if args.no_tools else SYSTEM
     async with contextlib.AsyncExitStack() as stack:
         if args.backend == "ollama":
             chat = OllamaChat(await stack.enter_async_context(httpx.AsyncClient()), args.model or LOCAL_MODEL,
-                              args.ollama_url)
+                              args.ollama_url, system)
         else:
             try:
                 import anthropic  # pylint: disable=import-outside-toplevel
@@ -240,8 +245,9 @@ async def _main(args, refused: list[int]) -> int:
                 print(f"error: Claude needs the agent extra ({missing.name} is missing): pip install "
                       "'clm-decision-agent[agent]', or use --backend ollama", file=sys.stderr)
                 return 2
-            chat = ClaudeChat(anthropic.AsyncAnthropic(), args.model or MODEL)
-        session = await stack.enter_async_context(Client(connect(args.environment, refused)))
+            chat = ClaudeChat(anthropic.AsyncAnthropic(), args.model or MODEL, system)
+        session = None if args.no_tools else await stack.enter_async_context(
+            Client(connect(args.environment, refused)))
         started = time.perf_counter()
         try:
             result = await answer(session, args.question, chat)
@@ -249,6 +255,7 @@ async def _main(args, refused: list[int]) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 2
         result["seconds"] = round(time.perf_counter() - started, 1)
+        result["tools"] = not args.no_tools
     print(result["answer"] or "(no answer)")
     if result["stopped"]:
         print(f"\nStopped early: {result['stopped']}.")
@@ -282,6 +289,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--backend", choices=("claude", "ollama"), default="claude")
     parser.add_argument("--model", help=f"default: {MODEL} with claude, {LOCAL_MODEL} with ollama")
     parser.add_argument("--ollama-url", default=OLLAMA_URL)
+    parser.add_argument("--no-tools", action="store_true",
+                        help="ask the question alone, with no tools: the environment only places runs/")
     parser.add_argument("--out", help="where to write the result as JSON (default: the environment's runs/ folder, "
                                       "or runs/ here for a URL)")
     args = parser.parse_args(argv)
