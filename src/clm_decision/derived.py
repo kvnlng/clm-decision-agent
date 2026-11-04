@@ -3,7 +3,8 @@
 It lives in `derived/derived.json` beside the environment file, with any decision tables it derived in
 `derived/rules/`. Each entry has a status: proposed when written, checked once it passed the mechanical check,
 then approved or rejected by a person; a conflict with a supplied fact is open until a person resolves it. Only
-this module changes a status, and every change records who made it, when, and why.
+this module changes a status, and every change records who made it and when: set_status a person's decision, with
+why, and set_check the mechanical check's result, recorded as made by clm-derive check.
 """
 from __future__ import annotations
 
@@ -74,5 +75,28 @@ def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str
         raise DerivedError(f"{name} is proposed: it is approved only once clm-derive check has checked it")
     entry.update(status=status, decided_by=by, note=note,
                  decided_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    write(folder, layer)
+    return entry
+
+
+CHECKER = "clm-derive check"
+
+
+def set_check(folder: str | Path, kind: str, name: str, check: dict) -> dict:
+    """Record the mechanical check's result on a proposed or checked entry, with when and by clm-derive check, and
+    return the entry: one that passed becomes checked, one that failed proposed. An approved or rejected entry is a
+    person's decision and is never changed here, nor are the fields recording it."""
+    if kind not in ("decisions", "facts"):
+        raise DerivedError(f"{kind!r}: only decisions or facts are checked")
+    layer = read(folder)
+    entry = layer[kind].get(name)
+    if entry is None:
+        raise DerivedError(f"no {kind} entry named {name!r}")
+    if entry.get("status") not in ("proposed", "checked"):
+        raise DerivedError(f"{name} is {entry.get('status')}: only proposed or checked entries are checked")
+    passed = check.get("passed") is True
+    entry.update(status="checked" if passed else "proposed",
+                 check={"passed": passed, "failures": list(check.get("failures") or []),
+                        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "by": CHECKER})
     write(folder, layer)
     return entry

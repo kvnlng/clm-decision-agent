@@ -78,3 +78,46 @@ def test_unknown_entries_and_statuses_are_refused(tmp_path):
         derived.set_status(tmp_path, "decisions", "carryover_limit", "fine", by="kevin")
     with pytest.raises(derived.DerivedError, match="by"):
         derived.set_status(tmp_path, "decisions", "carryover_limit", "approved", by="")
+
+
+def test_set_check_moves_a_passing_proposed_entry_to_checked_and_records_who(tmp_path):
+    layer = _layer()
+    layer["decisions"]["carryover_limit"].update(status="proposed", check=None)
+    derived.write(tmp_path, layer)
+    entry = derived.set_check(tmp_path, "decisions", "carryover_limit", {"passed": True, "failures": []})
+    assert entry["status"] == "checked"
+    assert entry["check"]["by"] == "clm-derive check" and entry["check"]["at"] and entry["check"]["passed"]
+    assert derived.read(tmp_path)["decisions"]["carryover_limit"]["status"] == "checked"
+
+
+def test_set_check_moves_a_failing_checked_entry_back_to_proposed(tmp_path):
+    derived.write(tmp_path, _layer())
+    entry = derived.set_check(tmp_path, "decisions", "carryover_limit", {"passed": False, "failures": ["no 7"]})
+    assert entry["status"] == "proposed" and entry["check"]["failures"] == ["no 7"]
+
+
+def test_set_check_never_touches_approved_or_rejected_entries(tmp_path):
+    derived.write(tmp_path, _layer())
+    derived.set_status(tmp_path, "decisions", "carryover_limit", "approved", by="kevin", note="ok")
+    with pytest.raises(derived.DerivedError, match="approved"):
+        derived.set_check(tmp_path, "decisions", "carryover_limit", {"passed": False, "failures": ["x"]})
+    derived.set_status(tmp_path, "facts", "k401_2026.match_cap", "rejected", by="kevin")
+    with pytest.raises(derived.DerivedError, match="rejected"):
+        derived.set_check(tmp_path, "facts", "k401_2026.match_cap", {"passed": True, "failures": []})
+    layer = derived.read(tmp_path)
+    assert layer["decisions"]["carryover_limit"]["status"] == "approved"
+    assert layer["decisions"]["carryover_limit"]["decided_by"] == "kevin"
+
+
+def test_set_check_keeps_the_decision_fields(tmp_path):
+    layer = _layer()
+    layer["decisions"]["carryover_limit"].update(decided_by="kevin", decided_at="2026-11-04", note="corrected")
+    derived.write(tmp_path, layer)
+    entry = derived.set_check(tmp_path, "decisions", "carryover_limit", {"passed": True, "failures": []})
+    assert (entry["decided_by"], entry["decided_at"], entry["note"]) == ("kevin", "2026-11-04", "corrected")
+
+
+def test_set_check_refuses_conflicts(tmp_path):
+    derived.write(tmp_path, _layer())
+    with pytest.raises(derived.DerivedError, match="decisions or facts"):
+        derived.set_check(tmp_path, "conflicts", "k401_2026.match_cap", {"passed": True, "failures": []})
