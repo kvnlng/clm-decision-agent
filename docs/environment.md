@@ -471,6 +471,36 @@ status and why, and a step that calls an unfilled slot fails with that reason, s
 other questions still load. An admitted fact fills its node's property only where the graph has none; a query that
 read it carries `origin: "derived"` and the fact's name.
 
+### A second reading
+
+The check proves every figure is in the quote; it cannot prove a figure is in the right place ("100% of the first
+3%" read as a tier of 100% of pay passes it). A **second reading** looks for that:
+
+```toml
+[derived]
+second_reader = { backend = "ollama", model = "qwen3:14b" }   # or backend = "claude"; absent: no second reading
+```
+
+With it, `run` and `check` give that model each entry's cited document (the edition in force, whole) and its slot,
+never the first answer, and compare what it derives: a decision over a grid of inputs (every bound in either table,
+one either side, and 0; never a negative number; both booleans; for a string, each value named and one not), on
+the slot's outputs; a fact within 0.5%. Any difference fails the check, so the entry stays proposed, with a failure
+saying where: `a second reading by MODEL disagrees: at years_of_service=4, 7 against 10` (the first reading, then
+the second). A second reading that cannot be used (the model is unreachable, its answer is not in the schema, or its
+table does not parse) fails the check too, as `could not be made`: agreement is required, so its absence never
+passes. The record is kept in the entry as `check.second_reading = {model, agreed, differences}` (and `error` when it
+could not be made), and `check` prints how many agreed. It is made on every entry checked, including one the
+mechanical check already fails, and again at every `check`, so it is redone from the new edition when a document
+changes. It is never sent back to the first model as a retry. The second reader must not be the model that derived
+the layer: `run` and `check` refuse it, since it would repeat its own reading. Without `second_reader`, `describe`
+and `check` say there is no second reading and the check is as before.
+
+**Agreement is necessary, not sufficient.** Two models can make the same mistake: in the handbook example, qwen3:14b
+read the second tier as 50% of pay just as gemma4 had, and the wrong entry passed both. A weak second reader costs
+false alarms instead: granite4:micro flagged 5 of gemma4's 9 right entries, and gemma4 reading Claude's right layer
+flagged 3 of 11. Claude reading gemma4's layer caught both wrong tiers and flagged none, but sends the documents to
+Claude. A person still approves every entry ([examples/handbook](../examples/handbook/README.md#a-second-reading)).
+
 `clm-server --admit-derived proposed,checked,approved` admits unapproved entries too, for testing only; `describe`
 says so. A rejected entry never decides: neither the file nor the flag can admit one. No tool of the decision server changes a status.
 

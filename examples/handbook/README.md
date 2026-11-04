@@ -118,6 +118,47 @@ checked-but-wrong counts, 0 and 2.
   JSON schema, it generated over 100,000 tokens on the first slot without answering.
 - Deriving the 11 slots took under a minute with gemma4 and about two minutes with Claude.
 
+## A second reading
+
+The mechanical check proves each figure is in the quote, not that it is in the right place. `clm-derive check` can
+also make a **second reading** ([docs/environment.md](../../docs/environment.md#a-second-reading)): another model,
+given the cited document and the slot but never the first answer, derives each entry again, and an entry the two
+readings disagree on fails the check (tables over the grid above, figures within 0.5%). A second reading that cannot
+be used, such as a table that does not parse, fails it too. `environment_derived.toml` names no second reader, so the
+committed layer is checked exactly as before.
+
+`measure.py second FIRST BACKEND MODEL` read each kept layer again, asking no first model and leaving the kept layer
+as it was, and counted against the second key. "Flagged" is a right entry the second reading did not agree with: a
+false alarm a person must look at. One run each; a difference of one is noise.
+
+| First reader | Second reader | Wrong entries caught | Right entries flagged | Pass both | Pass both but wrong |
+|---|---|---|---|---|---|
+| gemma4:26b | Claude (claude-opus-5-5) | **2 of 2** | 0 of 9 | 7 of 11 | 0 |
+| gemma4:26b | granite4:micro | 2 of 2 | **5 of 9** | 3 of 11 | 0 |
+| gemma4:26b | qwen3:14b | **1 of 2** | 2 of 9 | 6 of 11 | **1** |
+| Claude (claude-opus-5-5) | gemma4:26b | none to catch | **3 of 11** | 8 of 11 | 0 |
+
+- **Claude as second reader caught both of gemma4's wrong tiers** ("100 against 3", "50 against 3") and agreed with
+  every right entry. That is not fully local: the documents go to Claude.
+- **granite4:micro caught both, at the cost of five false alarms.** It read the two widths right (3 and 3), but
+  read both rates as 3 as well, so it disagreed with all four tier figures, two of them right; three of its tables
+  had no row for some years or days, and its vesting table gave other percentages. 5 of gemma4's 9 right entries
+  were flagged, 4 of them ones the mechanical check passes. Too weak to be useful, so one more local model was
+  pulled, as the design allowed.
+- **qwen3:14b (9.3 GB) made gemma4's mistake on the second tier, and agreed with it.** It caught the first tier
+  (100 against 3) but read the second tier as 50% of pay, as gemma4 had, so a wrong entry passed both checks. It
+  flagged a right rate (reading 3 as the rate) and wrote one table the code cannot parse (`>& 4`). **Agreement is not
+  proof**: two readers can make the same mistake, and here one did. A fully local second reading did not close the
+  gap in this run.
+- **gemma4 reading Claude's right layer raised 3 false alarms.** It confused the tiers' rates and widths both ways
+  (a first rate of 3, a second width of 50) and wrote a tuition table with `any value` in a cell, which does not
+  parse. A person would have had to look at three right entries to approve them.
+- What a person still reviews: every entry, since only approval lets one decide. The second reading changes which
+  ones they are told to look at: with Claude reading gemma4's layer, the four that fail (the two wrong tiers, and the
+  carryover and tuition tables the mechanical check already failed) say where the readings differ.
+- The tables came from the layers as derived for the measurement above; nothing was derived again by a first
+  reader. Timings were not recorded.
+
 ## What was measured
 
 `measure.py run` asked each question once in each setup, on Claude (claude-opus-5-5) and on gemma4:26b through

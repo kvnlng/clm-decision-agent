@@ -97,6 +97,14 @@ The H100 decided the whole day at 50.1 a second.
   where the key says $3,220). The check catches figures that are not in the document, not figures put in the wrong
   place: that is the person's part. gemma4 also needed thinking off (with it, under a JSON schema, it ran past
   100,000 tokens without answering).
+- **A second reading by another model caught the misplaced figures when Claude read, and only partly when a local
+  model did.** `clm-derive check` can have a second model derive each entry again from its document, without the
+  first answer; a disagreement fails the check. On gemma4's layer, Claude caught both wrong tiers and flagged none
+  of the 9 right entries. Fully local it did not close the gap: granite4:micro caught both but flagged 5 right
+  entries (it read the rates as 3); qwen3:14b caught one and agreed with the other, making gemma4's own mistake, so
+  a wrong figure passed both checks. gemma4 reading Claude's all-right layer raised 3 false alarms of 11. Agreement
+  is not proof, and every entry still needs a person. One run each.
+  ([examples/handbook](../examples/handbook/README.md#a-second-reading))
 - **The handbook alone, with the calculations, was nearly enough for Claude and not for gemma4.** With no rules,
   Claude gave 16 of 17 and recognised the superseded 2024 edition as replaced; gemma4 gave 10 of 17 and one wrong
   figure, passing the match's rates to the calculation wrongly.
