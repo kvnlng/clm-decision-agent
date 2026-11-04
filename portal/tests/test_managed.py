@@ -50,12 +50,24 @@ class FakePopen:
 
 
 def stand_in():
-    server = MCPServer("stand-in")
+    server = MCPServer("stand-in", instructions="Call describe first.")
 
     @server.tool()
     def describe() -> dict:
         """What the environment offers."""
         return {"name": "stand-in"}
+
+    @server.resource("environment://describe", name="describe", description="What describe returns.")
+    def described() -> str:
+        return "{}"
+
+    @server.resource("rule://{name}", name="rule", description="One rule.")
+    def rule(name: str) -> str:
+        return name
+
+    @server.prompt(name="answer_question", description="Ask the way the agent does.")
+    def answer_question(question: str) -> str:
+        return question
     return server
 
 
@@ -83,6 +95,18 @@ async def test_the_server_runs_on_loopback_on_a_free_port_with_its_own_key(tmp_p
     first = popen.started[0].env["CLM_PORTAL_SERVER_KEY"]
     await server.restart()
     assert popen.started[0].stopped and popen.started[1].env["CLM_PORTAL_SERVER_KEY"] != first
+
+
+@pytest.mark.anyio
+async def test_offered_lists_instructions_tools_resources_templates_and_prompts(tmp_path):
+    server = managed_server(FakePopen(), tmp_path)
+    await server.start()
+    offered = await server.offered()
+    assert offered["instructions"] == "Call describe first."
+    assert [tool.name for tool in offered["tools"]] == ["describe"]
+    assert [str(resource.uri) for resource in offered["resources"]] == ["environment://describe"]
+    assert [template.uri_template for template in offered["templates"]] == ["rule://{name}"]
+    assert [prompt.name for prompt in offered["prompts"]] == ["answer_question"]
 
 
 @pytest.mark.anyio

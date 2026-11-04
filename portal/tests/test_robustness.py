@@ -58,7 +58,7 @@ def test_wrongly_typed_derived_fields_are_load_errors_and_the_rest_is_shown(clie
     assert review.status_code == 200 and FACT in review.text
     assert "derived facts.k401_2026.match_cap.source" in review.text
     assert post(client, "/review/decisions/carryover_limit/correct", token, {"dmn": GOOD_DMN}).status_code == 400
-    found = layer.configuration(environment, [], None, None)
+    found = layer.configuration(environment, {}, None, None)
     assert any("carryover_limit.dmn" in error for error in found["errors"])
 
 

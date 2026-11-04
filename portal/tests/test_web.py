@@ -100,6 +100,11 @@ def test_configuration_shows_every_tool_rule_and_graph_row(client):
                  "Full years of service.", "handbook", "2026-11-01T09:30:00+00:00", "handbook.jsonl"):
         assert text in page, text
     assert "/passage?collection=handbook&amp;id=hb-401k" in page
+    for text in ("Instructions", "Decisions for &#x27;Tiny handbook&#x27;. Call describe first.", "Resources",
+                 "environment://describe", "What describe returns.", "Resource templates",
+                 "document://{collection}/{id}", "One document of a collection.", "Prompts", "answer_question",
+                 "Ask a question the way the reference agent does.", "question"):
+        assert text in page, text
     assert "/passage?collection=handbook&amp;id=hb-leave&amp;passage=%282%29" in page
 
 

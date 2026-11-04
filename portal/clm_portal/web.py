@@ -173,6 +173,29 @@ def _rule(rule: dict) -> str:
     return f'<section class="rule">{body}</section>'
 
 
+def offered_sections(found: dict) -> str:
+    """What the portal's server reports: its instructions, tools, resources, resource templates and prompts."""
+    def listed(heading: list[str], rows: list[list[str]], none: str) -> str:
+        return table(heading, rows) if rows else f'<p class="muted">{none}</p>'
+    return "".join((
+        f'<h2>Instructions</h2><p>{esc(found["instructions"]) or "None."}</p>',
+        "<h2>Tools</h2>" + table(["tool", "description", "parameters"],
+                                 [[f"<code>{esc(tool['name'])}</code>", esc(tool["description"]),
+                                   esc(", ".join(tool["parameters"]))] for tool in found["tools"]]),
+        "<h2>Resources</h2>" + listed(
+            ["resource", "name", "description"],
+            [[f"<code>{esc(item['uri'])}</code>", esc(item["name"]), esc(item["description"])]
+             for item in found["resources"]], "No resources."),
+        "<h2>Resource templates</h2>" + listed(
+            ["template", "name", "description"],
+            [[f"<code>{esc(item['uri_template'])}</code>", esc(item["name"]), esc(item["description"])]
+             for item in found["templates"]], "No resource templates."),
+        "<h2>Prompts</h2>" + listed(
+            ["prompt", "description", "arguments"],
+            [[f"<code>{esc(item['name'])}</code>", esc(item["description"]), esc(", ".join(item["arguments"]))]
+             for item in found["prompts"]], "No prompts.")))
+
+
 def configuration_body(found: dict, running: bool) -> str:
     """The Configuration page's sections."""
     parts = [f'<p>{esc(found["description"])}</p>']
@@ -180,12 +203,10 @@ def configuration_body(found: dict, running: bool) -> str:
         items = "".join(f"<li><pre>{esc(error)}</pre></li>" for error in found["errors"])
         parts.append(f'<section class="errors"><h2>Load errors</h2><ul>{items}</ul></section>')
     if running:
-        tools = table(["tool", "description", "parameters"],
-                      [[f"<code>{esc(tool['name'])}</code>", esc(tool["description"]),
-                        esc(", ".join(tool["parameters"]))] for tool in found["tools"]])
+        parts.append(offered_sections(found))
     else:
-        tools = '<p class="muted">The portal\'s server is not running, so its tools are not listed.</p>'
-    parts.append(f"<h2>Tools</h2>{tools}")
+        parts.append('<h2>Tools</h2><p class="muted">The portal\'s server is not running, so its instructions, tools, '
+                     'resources and prompts are not listed.</p>')
     parts.append("<h2>Rules</h2>" + ("".join(_rule(rule) for rule in found["rules"]) or "<p>No rules.</p>"))
     if found["information"]:
         parts.append("<h2>Information</h2>" + table(
@@ -216,23 +237,23 @@ def built_text(built: dict | None) -> str:
     return esc(", ".join(f"{key}: {shown_value(value)}" for key, value in built.items()))
 
 
-async def server_view(portal: Portal) -> tuple[list, dict | None, str | None]:
-    """The server's tools and its describe, or the reason they are not available."""
+async def server_view(portal: Portal) -> tuple[dict, dict | None, str | None]:
+    """What the server offers and its describe, or the reason they are not available."""
     if not portal.server.running:
-        return [], None, portal.server.error or "The portal's server is not running."
+        return {}, None, portal.server.error or "The portal's server is not running."
     try:
-        tools = await portal.server.tools()
+        offered = await portal.server.offered()
         described = await portal.server.call("describe", {})
     except (ToolFailed, OSError, RuntimeError) as error:
-        return [], None, f"The portal's server did not answer: {error}"
-    return tools, described, None
+        return {}, None, f"The portal's server did not answer: {error}"
+    return offered, described, None
 
 
 async def configuration_page(request: Request) -> Response:
     """GET /: the whole configuration, read only."""
     portal, session = request.app.state.portal, request.state.session
-    tools, described, error = await server_view(portal)
-    found = layer.configuration(portal.environment, tools, described, error)
+    offered, described, error = await server_view(portal)
+    found = layer.configuration(portal.environment, offered, described, error)
     return page(portal, session, found["name"], configuration_body(found, not error))
 
 

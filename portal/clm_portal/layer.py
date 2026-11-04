@@ -160,10 +160,11 @@ def read_layer(environment: Path, errors: list[str]) -> dict:
     return shown
 
 
-def configuration(environment: Path, tools: list, described: dict | None, error: str | None) -> dict:
-    """Everything the Configuration page shows: the environment's name and description, its server's tools, every
-    rule (supplied and derived, with origin and status), the information items, the graph, the collections with when
-    each was built, and every problem found reading them."""
+def configuration(environment: Path, offered: dict, described: dict | None, error: str | None) -> dict:
+    """Everything the Configuration page shows: the environment's name and description, what its server offers (as
+    ManagedServer.offered lists it: instructions, tools, resources, resource templates and prompts; {} when it is not
+    running), every rule (supplied and derived, with origin and status), the information items, the graph, the
+    collections with when each was built, and every problem found reading them."""
     environment = Path(environment)
     errors = [error] if error else []
     try:
@@ -180,8 +181,17 @@ def configuration(environment: Path, tools: list, described: dict | None, error:
     built = (described or {}).get("collections", {})
     return {
         "name": about.get("name", environment.parent.name), "description": about.get("description", ""),
+        "instructions": offered.get("instructions") or "",
         "tools": [{"name": tool.name, "description": tool.description or "",
-                   "parameters": list((tool.input_schema or {}).get("properties", {}))} for tool in tools],
+                   "parameters": list((tool.input_schema or {}).get("properties", {}))}
+                  for tool in offered.get("tools", [])],
+        "resources": [{"uri": str(item.uri), "name": item.name, "description": item.description or ""}
+                      for item in offered.get("resources", [])],
+        "templates": [{"uri_template": item.uri_template, "name": item.name, "description": item.description or ""}
+                      for item in offered.get("templates", [])],
+        "prompts": [{"name": item.name, "description": item.description or "",
+                     "arguments": [argument.name for argument in item.arguments or []]}
+                    for item in offered.get("prompts", [])],
         "rules": rules,
         "information": [{"name": name, **table} for name, table in data.get("information", {}).items()],
         "graph": _graph(environment, errors) if "graph" in data else {"note": "no graph", "nodes": None,

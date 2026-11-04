@@ -121,7 +121,19 @@ def environment(tmp_path) -> Path:
 
 
 def stand_in() -> MCPServer:
-    server = MCPServer("stand-in")
+    server = MCPServer("stand-in", instructions="Decisions for 'Tiny handbook'. Call describe first.")
+
+    @server.resource("environment://describe", name="describe", description="What describe returns.")
+    def described() -> str:
+        return "{}"
+
+    @server.resource("document://{collection}/{id}", name="document", description="One document of a collection.")
+    def document(collection: str, id: str) -> str:  # pylint: disable=redefined-builtin
+        return f"{collection}/{id}"
+
+    @server.prompt(name="answer_question", description="Ask a question the way the reference agent does.")
+    def answer_question(question: str) -> str:
+        return question
 
     @server.tool()
     def describe() -> dict:
@@ -160,6 +172,7 @@ class FakeServer:  # pylint: disable=too-many-instance-attributes
     call are the real ManagedServer's, over the stand-in; with `unreachable` set it is running but not answering."""
 
     tools = managed.ManagedServer.tools
+    offered = managed.ManagedServer.offered
     call = managed.ManagedServer.call
 
     def __init__(self, error: str | None = None):
