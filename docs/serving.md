@@ -139,7 +139,10 @@ uv run clm-server examples/service_desk/scenario.toml --read-only
 - `--tools NAME,NAME` offers only those tools, and `describe`; `--exclude-tools NAME,NAME` removes those. Exclusion
   wins over inclusion. A name ending in `*` matches every tool starting with the rest (`query_*`, `search_*`,
   `scenario_*`); `describe` cannot be excluded.
-- A name or pattern that matches no tool stops start-up with one line naming it and the tools there are.
+- Choosing tools limits what agents are offered; it is not an access boundary. The key or OAuth is: give a caller
+  you would not trust with a tool no access to the server.
+- A name or pattern that matches no tool stops start-up with one line naming it and the tools there are. For a
+  scenario, `correct` and `agreement` count as its tools with or without `--review`, so a file can exclude them.
 - What is not offered is gone everywhere: from the tool list; from `describe`, which lists the left-out tools under
   `left_out` so an agent does not look for them; from the resources that stand for the same thing (rule resources
   with the `rule` tool, a collection's documents with `document_COLLECTION`); and from the `answer_question` prompt

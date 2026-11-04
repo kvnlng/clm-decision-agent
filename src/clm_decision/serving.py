@@ -79,12 +79,13 @@ def _check(patterns: tuple[str, ...], names: list[str], where: str) -> None:
             raise ScenarioError(f"{where}: '{pattern}' matches no tool; the tools are: {', '.join(names)}")
 
 
-def choose(serve: Serve, names: list[str]) -> tuple[list[str], list[str]]:
-    """-> (the tools offered, the tools left out), each in the order of `names`; raises ScenarioError."""
+def choose(serve: Serve, names: list[str], known: list[str] | None = None) -> tuple[list[str], list[str]]:
+    """-> (the tools offered, the tools left out), each in the order of `names`; raises ScenarioError. Each name
+    and pattern must match one of `known` (default: `names`), the tools the server can offer in any mode."""
     if ALWAYS in serve.exclude_tools:
         raise ScenarioError(f"exclude_tools: {ALWAYS} is always offered, since an agent starts with it")
-    _check(serve.tools or (), names, "tools")
-    _check(serve.exclude_tools, names, "exclude_tools")
+    _check(serve.tools or (), known or names, "tools")
+    _check(serve.exclude_tools, known or names, "exclude_tools")
     offered = [name for name in names if name == ALWAYS or (
         (serve.tools is None or any(_matches(pattern, name) for pattern in serve.tools))
         and not any(_matches(pattern, name) for pattern in serve.exclude_tools))]

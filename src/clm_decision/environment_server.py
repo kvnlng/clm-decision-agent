@@ -211,11 +211,10 @@ def _json(trace, uri: str, run: Callable[[], dict]) -> str:
             raise ResourceError(f"{type(error).__name__}: {error}") from error
 
 
-def in_force(env: Environment, quotes: bool | None = None) -> dict:
+def in_force(env: Environment, readable: list[str] | None = None) -> dict:
     """The derived entries admitted to decide, each with its origin, status and source; the source's quote only when
-    the document tools are offered (or as `quotes` says). The whole layer, with entries not in force, is the
-    portal's."""
-    quotes = env.document_tools if quotes is None else quotes
+    the document tools are offered, and with `readable`, only when the entry's collection is among them. The whole
+    layer, with entries not in force, is the portal's."""
     entries = {}
     for name in env.admitted:
         slot = env.slots[name]
@@ -226,6 +225,7 @@ def in_force(env: Environment, quotes: bool | None = None) -> dict:
             entry = env.derived_facts[slot.node][slot.property]
             status, source = entry.get("status"), entry.get("source")
             more = {"node": slot.node, "property": slot.property, "value": entry.get("value")}
+        quotes = env.document_tools if readable is None else slot.collection in readable
         cited = {key: value for key, value in (source or {}).items() if quotes or key != "quote"}
         entries[name] = {"kind": slot.kind, "origin": "derived", "status": status, "source": cited, **more}
     return {"admit": list(env.admit), "entries": entries}
@@ -234,14 +234,19 @@ def in_force(env: Environment, quotes: bool | None = None) -> dict:
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def _add_document_resources(server: MCPServer, env: Environment, add: Callable, trace, collections: list[str]) -> None:
     """Templates for a document and a passage, and every document of a small enough collection listed, for the
-    collections named."""
+    collections named; any other collection reads as one the environment does not have."""
+    def read(collection: str, args: dict) -> dict:
+        if collection not in collections:
+            raise engine.StepError(f"no collection '{collection}' (the environment has: "
+                                   f"{', '.join(sorted(collections))})")
+        return engine.run_document(env, collection, args)
+
     def document(collection: str, id: str) -> str:  # pylint: disable=redefined-builtin
-        return _json(trace, f"document://{collection}/{id}",
-                     lambda: engine.run_document(env, collection, {"id": id}))
+        return _json(trace, f"document://{collection}/{id}", lambda: read(collection, {"id": id}))
 
     def passage(collection: str, id: str, passage: str) -> str:  # pylint: disable=redefined-builtin
         return _json(trace, f"document://{collection}/{id}/{passage}",
-                     lambda: engine.run_document(env, collection, {"id": id, "passage": passage}))
+                     lambda: read(collection, {"id": id, "passage": passage}))
     server.resource("document://{collection}/{id}", name="document", mime_type=JSON,
                     description="One document of a collection with its passages, as document_COLLECTION returns it. "
                                 "Each document is also listed when its collection holds at most "
@@ -280,7 +285,7 @@ def _add_resources(server: MCPServer, env: Environment, trace, offered: list[str
     if env.slots:
         add("derived://in-force", "derived entries in force", "The derived entries in force: each rule and fact "
             "read from the documents and admitted to decide, with its origin, status and source.",
-            lambda: in_force(env, bool(readable)))
+            lambda: in_force(env, readable))
 
 
 def _add_prompt(server: MCPServer, env: Environment, offered: list[str] | None) -> None:

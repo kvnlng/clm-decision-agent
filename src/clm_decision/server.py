@@ -94,6 +94,18 @@ def _corrected(scenario: Scenario, tools: dict[str, Callable], text: str, route:
     return more
 
 
+def _instructions(scenario: Scenario, offered: list[str], read_only: bool) -> str:
+    """The server's instructions, naming only the deciding tool offered: decide, else decide_many, else neither."""
+    start = f"Decisions for the scenario '{scenario.path.stem}'. Call describe to see the routes and questions"
+    tool = next((name for name in ("decide", "decide_many") if name in offered), None)
+    if tool is None:
+        return f"{start}."
+    what = "the text of a request" if tool == "decide" else "the texts of requests"
+    acting = f"{tool} runs no acting tool: the server is read-only." if read_only else \
+        f"{tool} may run the scenario's acting tools."
+    return f"{start}, then {tool} with {what}. {acting}"
+
+
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments,too-many-locals
 def build_server(scenario: Scenario, router, tools: dict[str, Callable], review: bool,  # pylint: disable=too-many-arguments
                  trace: tracing.TraceWriter | None = None, auth: oauth.OAuth | None = None,
@@ -103,13 +115,9 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
     tools offered and whether the server is read-only (serving.py); read-only with review is a ScenarioError."""
     if serve.read_only and review:
         raise ScenarioError(NO_REVIEW)
-    offered, left_out = serving.choose(serve, tool_names(review))
-    acting = ("decide runs no acting tool: the server is read-only." if serve.read_only
-              else "decide may run the scenario's acting tools.")
-    server = MCPServer("decision-server", instructions=(
-        f"Decisions for the scenario '{scenario.path.stem}'. Call describe to see the routes and questions, "
-        f"then decide with the text of a request. {acting}"),
-        log_level="WARNING", **oauth.server_options(auth))
+    offered, left_out = serving.choose(serve, tool_names(review), tool_names(True))
+    server = MCPServer("decision-server", instructions=_instructions(scenario, offered, serve.read_only),
+                       log_level="WARNING", **oauth.server_options(auth))
     deciding = READ_ONLY if serve.read_only else CHANGES
     # CLM runs on one model and calls arrive on worker threads, so its calls take turns
     router = _OneAtATime(router, threading.Lock())
@@ -316,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
             raise ScenarioError(NO_REVIEW)
         if not is_environment(args.scenario):
             # Checked before CLM loads, which takes a while
-            serving.choose(serve, tool_names(args.review))
+            serving.choose(serve, tool_names(args.review), tool_names(True))
         loaded = load_any(args.scenario, args.admit_derived.split(",") if args.admit_derived else None)
         trace = tracing.TraceWriter(args.trace, text=args.trace_text, read_only=serve.read_only) \
             if args.trace else None

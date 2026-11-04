@@ -325,11 +325,37 @@ def test_read_only_with_review_stops_with_one_line(write_scenario, argv, capsys,
         "error: a read-only server cannot offer review mode: correct writes the record"
 
 
+@pytest.mark.anyio
+async def test_the_instructions_name_only_the_deciding_tools_offered(parts):
+    async with Client(server.build_server(*parts, review=False)) as client:
+        plain = client.instructions
+    async with Client(server.build_server(*parts, review=False, serve=Serve(exclude_tools=("decide",)))) as client:
+        many = client.instructions
+    async with Client(server.build_server(*parts, review=False, serve=Serve(tools=("check_call",)))) as client:
+        neither = client.instructions
+    assert plain.endswith("then decide with the text of a request. decide may run the scenario's acting tools.")
+    assert many.endswith("then decide_many with the texts of requests. decide_many may run the scenario's acting "
+                         "tools.")
+    assert "decide" not in neither and neither.endswith("Call describe to see the routes and questions.")
+
+
+def test_a_review_tool_may_be_excluded_without_review(write_scenario, monkeypatch):
+    monkeypatch.setattr(server, "load", lambda path: ("scenario", "router", "tools"))
+    monkeypatch.setattr(server, "build_server", lambda *args, **kwargs: type("Ran", (), {"run": lambda *a: None})())
+    assert server.main([str(write_scenario(BASE_TOML + '\n[serve]\nexclude_tools = ["correct"]\n'))]) == 0
+
+
+@pytest.mark.anyio
+async def test_a_server_without_review_accepts_excluding_a_review_tool(parts):
+    excluding = server.build_server(*parts, review=False, serve=Serve(exclude_tools=("correct", "agreement")))
+    assert await tool_names(excluding) == ["check_call", "decide", "decide_many", "describe"]
+
+
 def test_an_unknown_tool_stops_before_clm_loads(write_scenario, capsys, monkeypatch):
     monkeypatch.setattr(server, "load", lambda path: pytest.fail("CLM was loaded"))
-    assert server.main([str(write_scenario()), "--tools", "decide,correct"]) == 2
-    assert capsys.readouterr().err.strip() == \
-        "error: tools: 'correct' matches no tool; the tools are: decide, decide_many, check_call, describe"
+    assert server.main([str(write_scenario()), "--tools", "decide,nope"]) == 2
+    assert capsys.readouterr().err.strip() == "error: tools: 'nope' matches no tool; the tools are: decide, " \
+        "decide_many, check_call, describe, correct, agreement"
 
 
 def test_a_bad_serve_table_stops_with_one_line(write_scenario, capsys):

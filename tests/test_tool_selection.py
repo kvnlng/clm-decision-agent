@@ -2,10 +2,11 @@
 list, describe, the resources and the prompt, and the scenarios still run. The handbook, with a stand-in store."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import dataclasses
 import shutil
 
 import pytest
-from mcp import Client
+from mcp import Client, MCPError
 from test_environment_resources import HANDBOOK, copied, load, read
 
 from clm_decision import instructions, server
@@ -143,3 +144,34 @@ def test_clm_server_reads_an_environments_serve_table(tmp_path, capsys):
     toml.write_text(toml.read_text() + '\n[serve]\ntools = ["search_*"]\n')
     assert server.main([str(toml)]) == 2
     assert capsys.readouterr().err.strip().startswith("error: tools: 'search_*' matches no tool; the tools are: ")
+
+
+def with_secret(env):
+    """The environment with a second collection, `secret`, holding one document."""
+    env.store.replace("secret", [{"id": "secret-1", "title": "Secret", "citation": "Secret § 1", "metadata": {},
+                                  "passages": [{"label": "(1)", "text": "Hidden."}]}], [],
+                      env.store.built("handbook"))
+    return dataclasses.replace(env, collections={**env.collections, "secret": env.collections["handbook"]})
+
+
+@pytest.mark.anyio
+async def test_a_left_out_collection_cannot_be_read_through_the_templates():
+    env = with_secret(load())
+    async with Client(build_environment_server(env)) as client:
+        assert (await read(client, "document://secret/secret-1"))["document"]["id"] == "secret-1"
+    async with Client(build_environment_server(env, serve=Serve(tools=("describe", "document_handbook")))) as client:
+        for uri in ("document://secret/secret-1", "document://secret/secret-1/(1)"):
+            with pytest.raises(MCPError, match=r"no collection 'secret' \(the environment has: handbook\)"):
+                await client.read_resource(uri)
+        assert (await read(client, "document://handbook/hb-welcome"))["document"]["id"] == "hb-welcome"
+
+
+@pytest.mark.anyio
+async def test_derived_quotes_come_only_from_collections_whose_document_tool_is_offered(tmp_path):
+    env = with_secret(copied(tmp_path, {}))
+    async with Client(build_environment_server(env, serve=Serve(exclude_tools=("document_handbook",)))) as client:
+        found = await read(client, "derived://in-force")
+    assert found["entries"] and all("quote" not in entry["source"] for entry in found["entries"].values())
+    async with Client(build_environment_server(env, serve=Serve(exclude_tools=("document_secret",)))) as client:
+        found = await read(client, "derived://in-force")
+    assert all(entry["source"]["quote"] for entry in found["entries"].values())
