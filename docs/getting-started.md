@@ -140,8 +140,8 @@ from **Disconnected** to **Connected**, and the server's name, `decision-server`
 server's one-line reason, such as a mistake in the environment file.
 
 **3. Tools.** Open **Tools**. The list has every tool the server offers (18 for tariff). Choose one, for
-example `query_components_of`: its description, whether it is read-only, and a box for each input appear. Type `PX` as the
-product and press **Execute Tool**. The result is the JSON an agent would get: the rows, and the steps that produced
+example `query_components_of`: its description, whether it is read-only, and a box for each input appear.
+Type `PX` as the product and press **Execute Tool**. The result is the JSON an agent would get: the rows, and the steps that produced
 them.
 
 **4. Resources.** Open **Resources**. Under **URIs** are the things a client can read without calling a tool: for
