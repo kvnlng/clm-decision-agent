@@ -316,9 +316,19 @@ async def test_no_tools_on_ollama_sends_no_tools():
     assert ollama.requests[0]["tools"] == [] and ollama.requests[0]["messages"][0]["content"] == NO_TOOLS_SYSTEM
 
 
-def test_system_says_when_a_rule_was_derived():
-    from clm_decision.decision_agent import SYSTEM  # pylint: disable=import-outside-toplevel
-    assert "origin is derived" in SYSTEM and "not approved" in SYSTEM
+DERIVED_LINE = ("- A rule or fact whose origin is derived was read from the documents by a model and checked "
+                "mechanically, not written by the owner: say so, name its source, and say when it is not approved.")
+
+
+@pytest.mark.anyio
+async def test_system_says_when_a_rule_was_derived(mcp_server):
+    claude = FakeClaude(message(text("Nothing to add.")))
+    await ask(mcp_server, claude)
+    ollama = FakeOllama(said("Nothing to add."))
+    await ask_ollama(mcp_server, ollama)
+    # What each model is sent, not only the constant: the whole line, so a weakened one fails too
+    assert DERIVED_LINE in claude.requests[0]["system"].split("\n")
+    assert DERIVED_LINE in ollama.requests[0]["messages"][0]["content"].split("\n")
 
 
 def test_system_is_the_shared_instructions_byte_for_byte():

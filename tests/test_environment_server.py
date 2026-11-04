@@ -171,15 +171,29 @@ def test_admit_derived_flag_reaches_the_environment(monkeypatch, capsys):
     assert server.main([str(EXAMPLE)]) == 2 and seen["admit"] is None
 
 
+# Arguments every tool of test_derived_load's environment accepts, so each call runs rather than being refused
+GIVEN = {"employee": "e1", "topic": "benefits", "name": "carry", "id": "hb-leave", "text": "unused days",
+         "years": 3, "x": 1}
+
+
 @pytest.mark.anyio
-async def test_no_tool_changes_a_status(tmp_path):
+async def test_no_tool_changes_a_status(tmp_path, monkeypatch):
     from test_derived_load import entry, load, make  # pylint: disable=import-outside-toplevel
     path = make(tmp_path, decision=entry("checked"))
     before = (tmp_path / "derived" / "derived.json").read_text(encoding="utf-8")
-    async with Client(build_environment_server(load(path))) as client:
+
+    def refuse(*args, **options):
+        raise AssertionError("a tool wrote the derived layer")
+    env = load(path, admit=["checked", "approved"])
+    for name in ("write", "set_status", "set_check", "set_stale"):
+        monkeypatch.setattr(f"clm_decision.derived.{name}", refuse)
+    async with Client(build_environment_server(env)) as client:
         tools = (await client.list_tools()).tools
-        for tool in tools:
-            await client.call_tool(tool.name, {})
+        results = {tool.name: await client.call_tool(tool.name, {name: GIVEN[name]
+                                                                 for name in tool.input_schema.get("required", [])})
+                   for tool in tools}
+    assert "decision_carry" in results and "scenario_s" in results
+    assert not [name for name, result in results.items() if result.is_error]
     assert all(tool.annotations.read_only_hint for tool in tools)
     assert not [tool.name for tool in tools if any(word in tool.name for word in ("status", "approve", "check"))]
     assert (tmp_path / "derived" / "derived.json").read_text(encoding="utf-8") == before
