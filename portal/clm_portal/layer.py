@@ -20,6 +20,7 @@ DECISION_FIELDS = {"description", "dmn", "function", "params", "collection", "ru
                    "decided_by", "decided_at", "note"}
 TEXT_FIELDS = ("description", "dmn", "function", "collection", "status", "decided_by", "decided_at", "note", "node",
                "property", "target", "name")
+COLLECTION_TOOLS = ("search", "document", "cites", "cited_by")     # each collection's tools are KIND_COLLECTION
 
 
 def read_toml(environment: Path) -> dict:
@@ -160,6 +161,14 @@ def read_layer(environment: Path, errors: list[str]) -> dict:
     return shown
 
 
+def left_out(described: dict | None, collection: str) -> bool:
+    """Whether the server's [serve] setting leaves out every tool of the collection: describe then drops it and
+    names its tools in left_out."""
+    if not described or collection in (described.get("collections") or {}):
+        return False
+    return any(f"{kind}_{collection}" in (described.get("left_out") or []) for kind in COLLECTION_TOOLS)
+
+
 def configuration(environment: Path, described: dict | None, error: str | None) -> dict:
     """Everything the Configuration page shows: the environment's name and description, every rule (supplied and
     derived, with origin and status), the information items, the graph, the collections with when each was built,
@@ -185,7 +194,7 @@ def configuration(environment: Path, described: dict | None, error: str | None) 
         "graph": _graph(environment, errors) if "graph" in data else {"note": "no graph", "nodes": None,
                                                                       "edges": None},
         "collections": [{"name": name, "description": table.get("description", ""),
-                         "built": (built.get(name) or {}).get("built")}
+                         "built": (built.get(name) or {}).get("built"), "left_out": left_out(described, name)}
                         for name, table in data.get("collections", {}).items()],
         "errors": errors,
     }

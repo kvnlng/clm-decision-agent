@@ -60,7 +60,19 @@ class Portal:  # pylint: disable=too-few-public-methods
         self.environment, self.server, self.jobs, self.find = Path(environment), server, jobs, find
         self.options = options or {}
         self.sessions: dict[str, Session] = {}
-        self.make_model = make_model
+        self.make_model = self._model
+
+    def started_url(self) -> str:
+        """The model URL the portal started with (--model-url, or Ollama's by default)."""
+        return (self.options.get("model_url") or chat.OLLAMA_V1).rstrip("/")
+
+    def model_key(self, url: str | None) -> str | None:
+        """LLM_API_KEY, only for the model URL the portal started with: a URL typed on the page never gets it."""
+        return os.environ.get(chat.LLM_KEY_ENV) if (url or chat.OLLAMA_V1).rstrip("/") == self.started_url() \
+            else None
+
+    def _model(self, backend: str, model: str | None, url: str | None, http: httpx.AsyncClient):
+        return make_model(backend, model, url, http, self.model_key(url))
 
     def session(self, ident: str | None) -> Session | None:
         """The live session with this id, if any."""
@@ -201,13 +213,15 @@ def configuration_body(found: dict, environment: Path) -> str:
     if found["collections"]:
         parts.append("<h2>Collections</h2>" + table(
             ["collection", "description", "built"],
-            [[esc(item["name"]), esc(item["description"]), built_text(item["built"])]
+            [[esc(item["name"]), esc(item["description"]), built_text(item["built"], item["left_out"])]
              for item in found["collections"]]))
     return "".join(parts)
 
 
-def built_text(built: dict | None) -> str:
-    """When and from what a collection was built."""
+def built_text(built: dict | None, left_out: bool = False) -> str:
+    """When and from what a collection was built, or that the server's [serve] setting leaves out its tools."""
+    if left_out:
+        return '<span class="muted">not offered: the server\'s [serve] setting leaves out its tools</span>'
     if not built:
         return '<span class="muted">not known (empty, or the server is not running)</span>'
     return esc(", ".join(f"{key}: {shown_value(value)}" for key, value in built.items()))
@@ -359,12 +373,13 @@ def review_actions(session: Session, item: dict) -> str:
     return "".join(forms)
 
 
-async def review_page(request: Request, message: str = "", status: int = 200) -> Response:
-    """GET /review: derived decisions, facts and conflicts, checked first."""
+async def review_page(request: Request, message: str = "", status: int = 200, failed: bool = False) -> Response:
+    """GET /review: derived decisions, facts and conflicts, checked first. The message is shown as an error when the
+    status is one, or when `failed` says so."""
     portal, session = request.app.state.portal, request.state.session
     found = layer.review(portal.environment)
     collection = layer.read_layer(portal.environment, []).get("collection")
-    parts = [f'<p class="{"failed" if status >= 400 else "passed"}">{esc(message)}</p>' if message else ""]
+    parts = [f'<p class="{"failed" if failed or status >= 400 else "passed"}">{esc(message)}</p>' if message else ""]
     parts += [f'<p class="failed">{esc(error)}</p>' for error in found["errors"]]
     parts.append(job_status(portal, "/review"))
     for title, items in found["groups"]:
@@ -424,18 +439,19 @@ async def review_action(request: Request) -> Response:
     job = await portal.jobs.start("clm-derive check", ["clm-derive", "check", str(portal.environment)],
                                   on_success=portal.server.restart)
     return await review_page(request, f"{name} corrected: it is proposed until clm-derive check passes it"
-                                      + ("" if job.running else f"; {job.output}") + ".")
+                                      + ("" if job.running else f"; {job.output}") + ".", failed=not job.running)
 
 
-def make_model(backend: str, model: str | None, url: str | None, http: httpx.AsyncClient):
-    """The chat's model for one question: OpenAI-style (Ollama by default) or Claude, with the chat's defaults."""
+def make_model(backend: str, model: str | None, url: str | None, http: httpx.AsyncClient, key: str | None = None):
+    """The chat's model for one question: OpenAI-style (Ollama by default), sending `key` if given, or Claude, with
+    the chat's defaults."""
     if backend == "claude":
         try:
             from anthropic import AsyncAnthropic  # pylint: disable=import-outside-toplevel
         except ImportError as error:
             raise chat.ClientError("Claude needs the anthropic package (clm-decision-agent[agent])") from error
         return chat.ClaudeModel(AsyncAnthropic(), model or chat.CLAUDE_MODEL)
-    return chat.OpenAIModel(http, model or chat.STARTER_MODEL, url or chat.OLLAMA_V1, os.environ.get(chat.LLM_KEY_ENV))
+    return chat.OpenAIModel(http, model or chat.STARTER_MODEL, url or chat.OLLAMA_V1, key)
 
 
 def _ask_settings(portal: Portal, form) -> tuple[str, str, str]:
@@ -456,9 +472,10 @@ def ask_body(portal: Portal, session: Session, message: str = "", draft: str = "
     options = "".join(f'<option value="{name}"{" selected" if name == backend else ""}>{label}</option>'
                       for name, label in (("openai", "OpenAI-style (Ollama by default)"), ("claude", "Claude")))
     testing = portal.server.testing
+    held, full = conversation.get("controls") or ("", False)
     return (f'{f"<p class=failed>{esc(message)}</p>" if message else ""}'
             '<p>Questions go to the model you choose, with the tools of the portal\'s own server. Every call and '
-            'result is shown. Tools run for real unless dry run is ticked.</p>'
+            'result is shown. Tools run for real unless dry run holds them back.</p>'
             f'{shown or "<p class=muted>No questions yet.</p>"}'
             f'<form method="post" action="/ask" class="stack">{csrf_field(session)}'
             f'<label>Question <textarea name="question" required>{esc(draft)}</textarea></label>'
@@ -467,7 +484,13 @@ def ask_body(portal: Portal, session: Session, message: str = "", draft: str = "
             f'{chat.CLAUDE_MODEL}"></label>'
             f'<label>Model URL (OpenAI-style) <input name="model_url" value="{esc(url)}" '
             f'placeholder="{chat.OLLAMA_V1}"></label>'
+            f'<p class="muted">{chat.LLM_KEY_ENV}, if set, is sent only to {esc(portal.started_url())}, the model '
+            'URL the portal started with; any other URL is called without it.</p>'
             '<label><input type="checkbox" name="dry_run"> Dry run: show every call, send none</label>'
+            f'<label>Dry run for only these tools, comma-separated; the others run <input name="dry_run_tools" '
+            f'value="{esc(held)}" placeholder="decide, decision_vesting"></label>'
+            f'<label><input type="checkbox" name="full"{" checked" if full else ""}> Full results: show each result '
+            f'whole, not shortened after {chat.SHOWN:,} characters</label>'
             '<button>Ask</button></form>'
             f'<form method="post" action="/ask/clear" class="inline">{csrf_field(session)}'
             '<button>New conversation</button></form>'
@@ -478,8 +501,9 @@ def ask_body(portal: Portal, session: Session, message: str = "", draft: str = "
             '</button></form>')
 
 
-async def ask_page(request: Request) -> Response:
-    """GET and POST /ask: the chat, one question at a time, kept per session."""
+async def ask_page(request: Request) -> Response:  # pylint: disable=too-many-locals
+    """GET and POST /ask: the chat, one question at a time, kept per session. Tools named for a dry run must be the
+    server's, or nothing is sent; the dry-run names and full results are kept for the next question."""
     portal, session = request.app.state.portal, request.state.session
     if request.method == "GET":
         return page(portal, session, "Ask", ask_body(portal, session))
@@ -494,8 +518,15 @@ async def ask_page(request: Request) -> Response:
     if session.ask.get("settings") != settings:
         session.ask = {"settings": settings, "messages": None, "turns": []}
     lines: list[str] = []
-    dry_run = chat.DryRun(frozenset({chat.ALL}) if form.get("dry_run") else frozenset())
+    if settings[0] == "openai" and os.environ.get(chat.LLM_KEY_ENV) and portal.model_key(settings[2]) is None:
+        lines.append(f"  [note: {chat.LLM_KEY_ENV} was not sent: {settings[2]} is not the model URL the portal "
+                     f"started with ({portal.started_url()})]")
+    named = [name.strip() for name in str(form.get("dry_run_tools", "")).split(",") if name.strip()]
+    full = bool(form.get("full"))
+    session.ask["controls"] = (", ".join(named), full)
+    dry_run = chat.DryRun(frozenset({chat.ALL}) if form.get("dry_run") else frozenset(named))
     mark = len(session.ask["messages"] or [])
+    unknown: list[str] = []
     try:
         async with httpx.AsyncClient() as http:
             model = portal.make_model(*settings, http)
@@ -503,8 +534,11 @@ async def ask_page(request: Request) -> Response:
                 session.ask["messages"] = model.start()
                 mark = len(session.ask["messages"])
             async with answering(), portal.server.client() as client:
-                tools = model.tools((await client.list_tools()).tools)
-                await chat.answer(client, model, tools, session.ask["messages"], question, dry_run, lines.append)
+                listed = (await client.list_tools()).tools
+                unknown = sorted(set(named) - {tool.name for tool in listed})
+                if not unknown:
+                    await chat.answer(client, model, model.tools(listed), session.ask["messages"], question,
+                                      dry_run, lines.append, full)
     except NotAnswering as error:
         if session.ask["messages"] is not None:
             del session.ask["messages"][mark:]
@@ -512,6 +546,11 @@ async def ask_page(request: Request) -> Response:
                                                                        "in a moment.", question))
     except (chat.ClientError, httpx.HTTPError, OSError, RuntimeError) as error:
         lines.append(f"  [error: {error}]")
+    if unknown:
+        return page(portal, session, "Ask", ask_body(
+            portal, session, f"Dry run names {', '.join(unknown)}, which the server does not have, so nothing was "
+                             "sent: a mistyped name would let that tool run. Your question is kept.", question),
+            status=400)
     session.ask["turns"].append((question, lines))
     return page(portal, session, "Ask", ask_body(portal, session))
 
@@ -551,7 +590,8 @@ def documents_body(portal: Portal, session: Session, described: dict | None, mes
     """Each collection with when it was built, and the forms that load and derive."""
     found = collections(portal)
     built = (described or {}).get("collections", {})
-    rows = [[esc(name), esc(table_.get("description", "")), built_text((built.get(name) or {}).get("built"))]
+    rows = [[esc(name), esc(table_.get("description", "")),
+             built_text((built.get(name) or {}).get("built"), layer.left_out(described, name))]
             for name, table_ in found.items()]
     choose = "".join(f'<option value="{esc(name)}">{esc(name)}</option>' for name in found)
     files = "".join(f'<option value="{esc(name)}">{esc(name)}</option>' for name in jsonl_files(portal))
@@ -593,12 +633,15 @@ async def documents_page(request: Request, message: str = "", status: int = 200)
                 status=status, changes=True)
 
 
-async def _start(request: Request, name: str, argv: list[str]) -> Response:
+async def _start(request: Request, name: str, argv: list[str], prepare=None) -> Response:
+    """Start a job; `prepare`, such as saving an upload, runs only once the job holds the lock."""
     portal = request.app.state.portal
     try:
-        job = await portal.jobs.start(name, argv, on_success=portal.server.restart)
+        job = await portal.jobs.start(name, argv, on_success=portal.server.restart, prepare=prepare)
     except Busy as error:
         return await documents_page(request, str(error), 409)
+    except OSError as error:
+        return await documents_page(request, f"the file cannot be saved: {error}", 500)
     if not job.running:
         return await documents_page(request, job.output, 409)
     return await documents_page(request, f"Started {name}.")
@@ -621,16 +664,17 @@ async def documents_load(request: Request) -> Response:
         if target.exists() and not form.get("overwrite"):
             return await documents_page(request, f"{name} is already in the folder; tick overwrite to replace it",
                                         409)
-        if portal.jobs.lock.locked():
-            return await documents_page(request, "a job or another change is running; wait for it to finish", 409)
-        target.write_bytes(await upload.read())
+        content = await upload.read()
+
+        def prepare() -> None:
+            target.write_bytes(content)
     else:
         name = str(form.get("file", ""))
         if name not in jsonl_files(portal):
             return await documents_page(request, "choose a .jsonl file in the folder, or upload one", 400)
-        target = folder / name
+        target, prepare = folder / name, None
     return await _start(request, f"clm-load-documents {collection}",
-                        ["clm-load-documents", str(portal.environment), collection, str(target)])
+                        ["clm-load-documents", str(portal.environment), collection, str(target)], prepare)
 
 
 async def documents_derive(request: Request) -> Response:
@@ -722,10 +766,11 @@ async def _body(receive) -> bytes | None:
 
 
 class Guard:  # pylint: disable=too-few-public-methods
-    """Host, Origin, sign-in and CSRF checks in front of every route."""
+    """Host, Origin, sign-in and CSRF checks in front of every route. `public`, when given, is the origin a
+    TLS-terminating proxy serves the page at, which a POST may also come from."""
 
-    def __init__(self, app, portal: Portal, hosts: set[str]):
-        self.app, self.portal, self.hosts = app, portal, hosts
+    def __init__(self, app, portal: Portal, hosts: set[str], public: str | None = None):
+        self.app, self.portal, self.hosts, self.public = app, portal, hosts, public
 
     async def __call__(self, scope, receive, send):  # pylint: disable=too-many-return-statements
         if scope["type"] != "http":
@@ -737,7 +782,8 @@ class Guard:  # pylint: disable=too-few-public-methods
             await PlainTextResponse("This portal answers only at its own address.", 400)(scope, receive, send)
             return
         post = scope["method"] not in ("GET", "HEAD")
-        if post and request.headers.get("origin") != f"http://{host}":
+        origin = request.headers.get("origin")
+        if post and origin != f"http://{host}" and (self.public is None or origin != self.public):
             await PlainTextResponse("Refused: the request did not come from the portal's page.", 403)(
                 scope, receive, send)
             return
@@ -766,20 +812,42 @@ class Guard:  # pylint: disable=too-few-public-methods
         await self.app(scope, receive, send)
 
 
-def allowed_hosts(host: str, port: int) -> set[str]:
-    """The Host headers the portal answers: its bound address, and localhost when bound to 127.0.0.1."""
+def allowed_hosts(host: str, port: int, public: str | None = None) -> set[str]:
+    """The Host headers the portal answers: its bound address, localhost when bound to 127.0.0.1, and the public
+    origin's host, for a proxy that passes the browser's Host on."""
     shown = f"[{host}]" if ":" in host else host
     hosts = {f"{shown}:{port}"}
     if host == "127.0.0.1":
         hosts.add(f"localhost:{port}")
+    if public:
+        hosts.add(urllib.parse.urlsplit(public).netloc)
     return hosts
+
+
+def public_origin(text: str) -> str:
+    """An origin a TLS-terminating proxy serves the page at, as a browser sends it in Origin: lower case, without a
+    default port or a trailing /. ValueError, saying what is wrong, when it is not scheme://host[:port]."""
+    try:
+        found = urllib.parse.urlsplit(text.strip())
+        port = found.port
+    except ValueError as error:
+        raise ValueError(f"--public-origin {text}: {error}") from error
+    extra = found.path not in ("", "/") or any((found.query, found.fragment, found.username, found.password))
+    if found.scheme.lower() not in ("http", "https") or not found.hostname or extra:
+        raise ValueError(f"--public-origin {text}: give only the scheme, host and port the browser uses, such as "
+                         "https://portal.example.org")
+    scheme, host = found.scheme.lower(), found.hostname.lower()
+    host = f"[{host}]" if ":" in host else host
+    default = {"http": 80, "https": 443}[scheme]
+    return f"{scheme}://{host}" + (f":{port}" if port not in (None, default) else "")
 
 
 def routes() -> list:
     """Every route of the page."""
     return [Route("/sign-in", sign_in, methods=["GET", "POST"]), Route("/sign-out", sign_out, methods=["POST"]),
             Route("/", configuration_page), Route("/passage", passage_page), Route("/review", review_page),
-            Route("/review/{kind}/{name}/{action}", review_action, methods=["POST"]),
+            # A derived fact's name holds its graph node's id, which may hold "/": the name is the rest of the path
+            Route("/review/{kind}/{name:path}/{action}", review_action, methods=["POST"]),
             Route("/ask", ask_page, methods=["GET", "POST"]), Route("/ask/clear", ask_clear, methods=["POST"]),
             Route("/ask/testing", ask_testing, methods=["POST"]), Route("/documents", documents_page),
             Route("/documents/load", documents_load, methods=["POST"]),
@@ -787,8 +855,9 @@ def routes() -> list:
             Mount("/static", StaticFiles(directory=STATIC), name="static")]
 
 
-def create_app(portal: Portal, key: str, host: str, port: int):
-    """The page, behind its checks; it starts the portal's server with it and stops it after."""
+def create_app(portal: Portal, key: str, host: str, port: int, public: str | None = None):
+    """The page, behind its checks; it starts the portal's server with it and stops it after. `public` is the
+    origin a TLS-terminating proxy serves it at, if any, as public_origin() keeps it."""
     @contextlib.asynccontextmanager
     async def lifespan(_app):
         await portal.server.start()
@@ -798,4 +867,4 @@ def create_app(portal: Portal, key: str, host: str, port: int):
             portal.server.stop()
     app = Starlette(routes=routes(), lifespan=lifespan)
     app.state.portal, app.state.key = portal, key
-    return Guard(app, portal, allowed_hosts(host, port))
+    return Guard(app, portal, allowed_hosts(host, port, public), public)

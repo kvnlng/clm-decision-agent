@@ -27,7 +27,8 @@ held in memory, so restarting the portal signs everyone out.
 |---|---|---|
 | `--host` | `127.0.0.1` | Any other address prints a warning: the portal is plain HTTP. Give the address you will type in the browser, not `0.0.0.0`: a request for any other address is refused |
 | `--port` | `8400` | |
-| `--backend`, `--model`, `--model-url` | as the chat | Ask's starting model, changeable on the page |
+| `--public-origin URL` | none | Behind a proxy that ends TLS: the address the browser uses, such as `https://portal.example.org`. A form may also come from it, and a request may name its host |
+| `--backend`, `--model`, `--model-url` | as the chat | Ask's starting model, changeable on the page. `LLM_API_KEY` is sent only to this `--model-url` (Ollama's by default); a URL typed on the page is called without it, and the page says so |
 
 The portal starts **its own decision server**, `clm-server ENVIRONMENT --http` on 127.0.0.1 at a free port, with a
 key made at each start and given only to that process. It never uses port 8000 or `DECISION_SERVER_KEY`, so it never
@@ -35,7 +36,8 @@ touches the server agents use. It needs the environment's folder on disk, so it 
 It passes no tool selection of its own, but `clm-server` reads the file's `[serve]` table
 ([environment.md](../docs/environment.md#serving-settings)), so the portal's server offers the same tools as the
 agents' one; Ask sees only those. If `[serve]` leaves out a collection's `document_` tool, a cited passage on the
-Review page shows an error instead.
+Review page shows an error instead. If it leaves out every tool of a collection, Configuration and Documents say
+the collection is not offered, rather than when it was built.
 
 ### What it shows and what it changes
 
@@ -46,8 +48,10 @@ Review page shows an error instead.
   information items; the graph's nodes and edges (a graph in Neo4j is named, not shown); the collections and when each
   was built; and every load error, such as why its server did not start. It is read from the files, not by loading
   the environment, so it shows them even when the server does not start.
-- **Ask**: the chat in a page, with the same models, every call and result shown, and dry run as a tick. The
-  conversation is kept for your session. **Testing** restarts the portal's server with `--admit-derived
+- **Ask**: the chat in a page, with the same models and every call and result shown. As in the chat, dry run can
+  hold back every tool (a tick) or only the tools you name, and **Full results** shows results whole rather than
+  shortened after 1,500 characters. A name the server does not have sends nothing, so a typo cannot let a tool
+  run. The conversation is kept for your session. **Testing** restarts the portal's server with `--admit-derived
   proposed,checked,approved`, so unapproved derived rules decide; while it is on, every page says so. It is off at
   every start.
 - **Review**: derived decisions, facts and conflicts, each beside its cited passage (or its quote, when the server
@@ -69,10 +73,11 @@ with any key or password replaced by `***`, and when it succeeds the portal rest
 **The server agents use is yours to restart.** It reads the files at start, so after approving changes, restart it
 (or redeploy from git) to pick them up.
 
-**Security:** the key is in `CLM_PORTAL_KEY`, separate from the agents' key. The session cookie is `HttpOnly` and
+**Security:** the key is in `CLM_PORTAL_KEY`, separate from the agents' key; the portal does not start with a key
+shorter than 16 characters. The session cookie is `HttpOnly` and
 `SameSite=Strict`; every form carries a per-session token; a POST from any other origin, or a request whose `Host`
 is not the portal's address, is refused. On an address other than 127.0.0.1 the portal is plain HTTP: put it behind
-TLS.
+TLS, and give the proxy's address in `--public-origin`.
 
 ## The chat
 
