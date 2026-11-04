@@ -72,7 +72,9 @@ async def test_an_unknown_rule_says_which_rules_there_are():
 async def test_the_derived_layer_is_a_resource_only_when_the_environment_has_one():
     async with Client(build_environment_server(load("environment_derived.toml"))) as client:
         found = await read(client, "derived://layer")
+        rule = await read(client, "rule://match_eligible")
     assert found == derived.read(HANDBOOK) and found["decisions"]
+    assert rule["origin"] == "derived" and rule["status"] == "approved" and rule["source"]["document"]
     async with Client(build_environment_server(load())) as client:
         listed = {str(resource.uri) for resource in (await client.list_resources()).resources}
     assert "derived://layer" not in listed

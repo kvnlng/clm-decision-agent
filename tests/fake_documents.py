@@ -54,7 +54,7 @@ class FakeStore:
         passages = [p for p in document["passages"] if passage is None or p["label"] == passage]
         return {key: document[key] for key in ("id", "citation", "title", "metadata")} | {"passages": passages}
 
-    def _walk(self, collection: str, id: str, depth: int, forward: bool) -> list[dict]:  # pylint: disable=redefined-builtin
+    def _walk(self, collection: str, id: str, depth: int, forward: bool) -> list[dict]:  # pylint: disable=redefined-builtin,too-many-locals
         documents = self._documents(collection)
         links = [(source["id"], cite["id"] if isinstance(cite, dict) else cite,
                   cite.get("passage") if isinstance(cite, dict) else None)
