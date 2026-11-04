@@ -27,7 +27,7 @@ held in memory, so restarting the portal signs everyone out.
 |---|---|---|
 | `--host` | `127.0.0.1` | Any other address prints a warning: the portal is plain HTTP. Give the address you will type in the browser, not `0.0.0.0`: a request for any other address is refused |
 | `--port` | `8400` | |
-| `--public-origin URL` | none | Behind a proxy that ends TLS: the address the browser uses, such as `https://portal.example.org`. A form may also come from it, and a request may name its host |
+| `--public-origin URL` | none | Behind a proxy that ends TLS: the address the browser uses, such as `https://portal.example.org`. A form may also come from it, and a request may name its host; at that host only this exact origin is accepted. With `https://` the session cookie is `Secure` |
 | `--backend`, `--model`, `--model-url` | as the chat | Ask's starting model, changeable on the page. `LLM_API_KEY` is sent only to this `--model-url` (Ollama's by default); a URL typed on the page is called without it, and the page says so |
 
 The portal starts **its own decision server**, `clm-server ENVIRONMENT --http` on 127.0.0.1 at a free port, with a

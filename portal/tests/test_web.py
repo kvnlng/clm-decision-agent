@@ -83,13 +83,29 @@ def test_a_public_origin_behind_a_tls_proxy_is_allowed_only_when_named(portal, m
                     base_url=ORIGIN) as client:
         assert client.post("/sign-in", data=form, headers=proxied).status_code == 200
         assert client.post("/sign-in", data=form, headers=rewritten).status_code == 200
-        assert post(client, "/sign-out", sign_in(client)).status_code == 200
         assert client.post("/sign-in", data=form, headers={"Origin": "https://evil.example",
                                                           "Host": "portal.example"}).status_code == 403
         assert client.get("/sign-in", headers={"Host": "evil.example"}).status_code == 400
 
 
-@pytest.mark.parametrize("given, kept", [("https://portal.example/", PUBLIC), ("HTTPS://Portal.Example:443", PUBLIC),
+def test_behind_https_the_cookie_is_secure_and_only_the_exact_origin_is_accepted(portal, monkeypatch):
+    monkeypatch.setattr(web, "WRONG_KEY_WAIT", 0.01)
+    form = {"key": KEY, "name": "Kevin"}
+    with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400, public=PUBLIC), base_url=ORIGIN) as client:
+        response = client.post("/sign-in", data=form, headers={"Origin": PUBLIC, "Host": "portal.example"})
+        assert "secure" in response.headers["set-cookie"].lower()
+        assert client.post("/sign-in", data=form, headers={"Origin": "http://portal.example",
+                                                          "Host": "portal.example"}).status_code == 403
+    with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400), base_url=ORIGIN) as client:
+        assert "secure" not in client.post("/sign-in", data=form, headers={"Origin": ORIGIN}).headers[
+            "set-cookie"].lower()
+    with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400, public="http://10.0.0.5:8080"),
+                    base_url=ORIGIN) as client:
+        assert "secure" not in client.post("/sign-in", data=form, headers={"Origin": ORIGIN}).headers[
+            "set-cookie"].lower()
+
+
+@pytest.mark.parametrize("given, kept",[("https://portal.example/", PUBLIC), ("HTTPS://Portal.Example:443", PUBLIC),
                                          ("https://portal.example:8443", "https://portal.example:8443"),
                                          ("http://10.0.0.5:8080", "http://10.0.0.5:8080")])
 def test_a_public_origin_is_kept_as_a_browser_sends_it(given, kept):
