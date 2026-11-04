@@ -21,6 +21,7 @@ from mcp.types import ToolAnnotations
 
 from . import derived
 from . import engine
+from . import instructions
 from . import oauth
 from . import tracing
 from .dmn import DmnError
@@ -250,6 +251,14 @@ def _add_resources(server: MCPServer, env: Environment) -> None:
             lambda: derived.read(env.path.resolve().parent))
 
 
+def _add_prompt(server: MCPServer, env: Environment) -> None:
+    """answer_question: the reference agent's instructions with this environment and a question."""
+    @server.prompt(name="answer_question", description="Ask a question the way the reference agent does: its "
+                   "instructions, this environment's name and description, and the question, in one message.")
+    def answer_question(question: str) -> str:
+        return instructions.answer_question(env.name, env.description, question)
+
+
 def build_environment_server(env: Environment, trace: tracing.TraceWriter | None = None,
                              auth: oauth.OAuth | None = None) -> MCPServer:
     """The MCP server for one environment. With `trace`, each call is written to the trace; with `auth`, HTTP
@@ -297,4 +306,5 @@ def build_environment_server(env: Environment, trace: tracing.TraceWriter | None
     add("describe", "The environment: its queries, decisions, calculations and scenarios, with their parameters.",
         lambda _: describe(env), _signature({}))
     _add_resources(server, env)
+    _add_prompt(server, env)
     return server

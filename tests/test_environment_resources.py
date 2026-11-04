@@ -10,7 +10,7 @@ import pytest
 from fake_documents import FakeEmbedder, FakeStore
 from mcp import Client, MCPError
 
-from clm_decision import derived, environment_server
+from clm_decision import derived, environment_server, instructions
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
 
@@ -135,3 +135,18 @@ async def test_no_document_tools_means_no_document_resources():
 def test_the_fake_store_lists_ids_in_order_up_to_the_limit():
     assert store().ids("handbook", 3) == ["hb-401k-2024", "hb-401k-2026", "hb-dress"]
     assert store().ids("nothing", 3) == []
+
+
+@pytest.mark.anyio
+async def test_the_prompt_is_the_agents_instructions_with_the_environment_and_the_question():
+    env = load()
+    async with Client(build_environment_server(env)) as client:
+        prompts = (await client.list_prompts()).prompts
+        got = await client.get_prompt("answer_question", {"question": "Am I eligible for the match?"})
+    assert [prompt.name for prompt in prompts] == ["answer_question"]
+    assert [(argument.name, argument.required) for argument in prompts[0].arguments] == [("question", True)]
+    assert len(got.messages) == 1 and got.messages[0].role == "user"
+    text = got.messages[0].content.text
+    assert text == instructions.answer_question(env.name, env.description, "Am I eligible for the match?")
+    assert text.startswith(instructions.agent_system() + "\n\n")
+    assert f"'{env.name}'" in text and env.description in text and text.endswith("Am I eligible for the match?")

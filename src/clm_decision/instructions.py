@@ -26,3 +26,9 @@ written by the owner: say so, name its source, and say when it is not approved."
 def agent_system() -> str:
     """The instructions the reference agent gives its model."""
     return _SYSTEM
+
+
+def answer_question(name: str, description: str, question: str) -> str:
+    """The agent's instructions, the environment's name and description, and the question, as one message: an MCP
+    prompt has no system role."""
+    return f"{_SYSTEM}\n\nThe environment is '{name}': {description}\n\nThe question: {question}"
