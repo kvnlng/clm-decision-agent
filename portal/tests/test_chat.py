@@ -1,4 +1,4 @@
-"""Tests for the portal's command-line chat, against a stand-in MCP server and a stand-in model; neither needs a network or a key."""
+"""Tests for the portal's chat, against a stand-in MCP server and a stand-in model; neither needs a network or a key."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import json

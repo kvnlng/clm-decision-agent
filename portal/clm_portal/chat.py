@@ -245,7 +245,7 @@ def banner(url: str, model: str, dry_run: DryRun) -> str:
         tools = f"Dry run for {', '.join(sorted(dry_run.tools))}, not sent. Every other tool will run for real."
     else:
         tools = "Tools will run for real, including any that act. --dry-run holds them back."
-    return (f"Server: {url}\nModel: {model}\n{tools}\nType a question; /tools lists the tools; /quit leaves.")
+    return f"Server: {url}\nModel: {model}\n{tools}\nType a question; /tools lists the tools; /quit leaves."
 
 
 @contextlib.asynccontextmanager
