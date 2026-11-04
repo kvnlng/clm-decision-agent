@@ -116,6 +116,15 @@ async def test_the_servers_instructions_name_only_tools_that_are_offered():
 
 
 @pytest.mark.anyio
+async def test_without_a_selection_the_instructions_are_as_before_even_with_no_scenarios():
+    async with Client(build_environment_server(load("environment_documents_only.toml"))) as client:
+        said = client.instructions
+    assert said == ("Decisions for 'Employee handbook (documents only)'. Call describe first. Every figure and verdict "
+                    "comes from these tools: run a scenario to compare alternatives rather than combining queries and "
+                    "decisions yourself.")
+
+
+@pytest.mark.anyio
 async def test_read_only_changes_no_tool_and_describe_says_so():
     tools, _, described, _ = await listing(build_environment_server(load(), serve=Serve(read_only=True)))
     plain, _, _, _ = await listing(build_environment_server(load()))

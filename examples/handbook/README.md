@@ -50,7 +50,7 @@ uv run clm-agent examples/handbook/environment.toml "I work at Meridian Logistic
 today is 1 December 2026. What is the company match on my 401(k), and what is the maximum?"
 ```
 
-## The six setups
+## The setups
 
 - **No tools**: `clm-agent --no-tools`, the question alone, with a short prompt: answer the employee's question, and
   say so when you do not know. This stands for an employee asking a general chatbot.

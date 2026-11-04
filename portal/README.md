@@ -35,7 +35,7 @@ touches the server agents use. It needs the environment's folder on disk, so it 
 It passes no tool selection of its own, but `clm-server` reads the file's `[serve]` table
 ([environment.md](../docs/environment.md#serving-settings)), so the portal's server offers the same tools as the
 agents' one; Ask sees only those. If `[serve]` leaves out a collection's `document_` tool, a cited passage on the
-Review page says it cannot be read.
+Review page shows an error instead.
 
 ### What it shows and what it changes
 

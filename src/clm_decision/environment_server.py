@@ -291,9 +291,9 @@ def _add_prompt(server: MCPServer, env: Environment, offered: list[str] | None) 
         return instructions.answer_question(env.name, env.description, question, offered)
 
 
-def _instructions(env: Environment, offered: list[str]) -> str:
-    """The server's instructions, naming a scenario only when one is offered."""
-    comparing = any(name.startswith("scenario_") for name in offered)
+def _instructions(env: Environment, offered: list[str] | None) -> str:
+    """The server's instructions; with a selection (`offered`), naming a scenario only when one is offered."""
+    comparing = offered is None or any(name.startswith("scenario_") for name in offered)
     return (f"Decisions for '{env.name}'. Call describe first. Every figure and verdict comes from these tools"
             + (": run a scenario to compare alternatives rather than combining queries and decisions yourself."
                if comparing else "."))
@@ -303,7 +303,8 @@ def build_environment_server(env: Environment, trace: tracing.TraceWriter | None
                              auth: oauth.OAuth | None = None, serve: Serve = Serve()) -> MCPServer:
     """The MCP server for one environment. With `trace`, each call is written to the trace; with `auth`, HTTP
     callers need a token. `serve` chooses the tools offered (serving.py; an unknown one is a ScenarioError); every
-    tool here only reads, so read-only changes nothing but describe."""
+    tool here only reads, so read-only changes nothing but describe. A tool that writes, if one is ever added, must
+    not run when serve.read_only is set."""
     found: list[tuple[str, str, Callable[[dict], dict], inspect.Signature]] = []
 
     def add(name: str, description: str, run: Callable[[dict], dict], signature: inspect.Signature) -> None:
@@ -312,7 +313,7 @@ def build_environment_server(env: Environment, trace: tracing.TraceWriter | None
     _all_tools(env, add)
     offered, left_out = serving.choose(serve, [name for name, *_ in found])
     chosen = offered if left_out else None      # None: every tool, and everything as before
-    server = MCPServer("decision-server", instructions=_instructions(env, offered), log_level="WARNING",
+    server = MCPServer("decision-server", instructions=_instructions(env, chosen), log_level="WARNING",
                        **oauth.server_options(auth))
 
     def described(_: dict | None = None) -> dict:
