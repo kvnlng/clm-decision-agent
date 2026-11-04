@@ -1,7 +1,10 @@
 """Tests for Ask: the chat in a page, against the stand-in server and a scripted model, and the testing switch."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
-from clm_portal import web
+import httpx
+import pytest
+
+from clm_portal import chat, web
 from conftest import post, sign_in
 from test_chat import reply, scripted
 
@@ -41,6 +44,39 @@ def test_a_follow_up_keeps_the_conversation_per_session(client, portal):
     page = post(client, "/ask", other, {"question": "Three", "backend": "openai"}).text
     assert [item["content"] for item in seen[2]["messages"] if item["role"] == "user"] == ["Three"]
     assert "One" not in page and "Third" in page
+
+
+LLM_KEY = "the-model-key-not-a-secret"
+
+
+@pytest.mark.anyio
+async def test_the_model_key_goes_only_to_the_model_url_the_portal_started_with(portal, monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", LLM_KEY)
+    async with httpx.AsyncClient() as http:
+        assert portal.make_model("openai", "", "", http).key == LLM_KEY
+        assert portal.make_model("openai", "", chat.OLLAMA_V1 + "/", http).key == LLM_KEY
+        assert portal.make_model("openai", "", "http://elsewhere/v1", http).key is None
+        portal.options = {"model_url": "http://started/v1"}
+        assert portal.make_model("openai", "", "http://started/v1", http).key == LLM_KEY
+        assert portal.make_model("openai", "", chat.OLLAMA_V1, http).key is None
+
+
+def test_ask_says_when_the_model_key_is_not_sent(client, portal, monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", LLM_KEY)
+    portal.options = {"model_url": "http://started/v1"}
+    portal.make_model = lambda *args: scripted([reply("One"), reply("Two")])
+    token = sign_in(client)
+    assert "sent only to http://started/v1" in client.get("/ask").text
+    page = post(client, "/ask", token, {"question": "Here?", "backend": "openai", "model_url": "http://started/v1"})
+    assert "was not sent" not in page.text
+    page = post(client, "/ask", token, {"question": "There?", "backend": "openai", "model_url": "http://other/v1"})
+    assert "LLM_API_KEY was not sent: http://other/v1 is not the model URL the portal started with" in page.text
+    assert LLM_KEY not in page.text
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 
 
 def test_testing_mode_restarts_the_server_and_every_page_says_so(client, server):

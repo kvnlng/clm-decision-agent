@@ -60,7 +60,19 @@ class Portal:  # pylint: disable=too-few-public-methods
         self.environment, self.server, self.jobs, self.find = Path(environment), server, jobs, find
         self.options = options or {}
         self.sessions: dict[str, Session] = {}
-        self.make_model = make_model
+        self.make_model = self._model
+
+    def started_url(self) -> str:
+        """The model URL the portal started with (--model-url, or Ollama's by default)."""
+        return (self.options.get("model_url") or chat.OLLAMA_V1).rstrip("/")
+
+    def model_key(self, url: str | None) -> str | None:
+        """LLM_API_KEY, only for the model URL the portal started with: a URL typed on the page never gets it."""
+        return os.environ.get(chat.LLM_KEY_ENV) if (url or chat.OLLAMA_V1).rstrip("/") == self.started_url() \
+            else None
+
+    def _model(self, backend: str, model: str | None, url: str | None, http: httpx.AsyncClient):
+        return make_model(backend, model, url, http, self.model_key(url))
 
     def session(self, ident: str | None) -> Session | None:
         """The live session with this id, if any."""
@@ -428,15 +440,16 @@ async def review_action(request: Request) -> Response:
                                       + ("" if job.running else f"; {job.output}") + ".", failed=not job.running)
 
 
-def make_model(backend: str, model: str | None, url: str | None, http: httpx.AsyncClient):
-    """The chat's model for one question: OpenAI-style (Ollama by default) or Claude, with the chat's defaults."""
+def make_model(backend: str, model: str | None, url: str | None, http: httpx.AsyncClient, key: str | None = None):
+    """The chat's model for one question: OpenAI-style (Ollama by default), sending `key` if given, or Claude, with
+    the chat's defaults."""
     if backend == "claude":
         try:
             from anthropic import AsyncAnthropic  # pylint: disable=import-outside-toplevel
         except ImportError as error:
             raise chat.ClientError("Claude needs the anthropic package (clm-decision-agent[agent])") from error
         return chat.ClaudeModel(AsyncAnthropic(), model or chat.CLAUDE_MODEL)
-    return chat.OpenAIModel(http, model or chat.STARTER_MODEL, url or chat.OLLAMA_V1, os.environ.get(chat.LLM_KEY_ENV))
+    return chat.OpenAIModel(http, model or chat.STARTER_MODEL, url or chat.OLLAMA_V1, key)
 
 
 def _ask_settings(portal: Portal, form) -> tuple[str, str, str]:
@@ -468,6 +481,8 @@ def ask_body(portal: Portal, session: Session, message: str = "", draft: str = "
             f'{chat.CLAUDE_MODEL}"></label>'
             f'<label>Model URL (OpenAI-style) <input name="model_url" value="{esc(url)}" '
             f'placeholder="{chat.OLLAMA_V1}"></label>'
+            f'<p class="muted">{chat.LLM_KEY_ENV}, if set, is sent only to {esc(portal.started_url())}, the model '
+            'URL the portal started with; any other URL is called without it.</p>'
             '<label><input type="checkbox" name="dry_run"> Dry run: show every call, send none</label>'
             '<button>Ask</button></form>'
             f'<form method="post" action="/ask/clear" class="inline">{csrf_field(session)}'
@@ -495,6 +510,9 @@ async def ask_page(request: Request) -> Response:
     if session.ask.get("settings") != settings:
         session.ask = {"settings": settings, "messages": None, "turns": []}
     lines: list[str] = []
+    if settings[0] == "openai" and os.environ.get(chat.LLM_KEY_ENV) and portal.model_key(settings[2]) is None:
+        lines.append(f"  [note: {chat.LLM_KEY_ENV} was not sent: {settings[2]} is not the model URL the portal "
+                     f"started with ({portal.started_url()})]")
     dry_run = chat.DryRun(frozenset({chat.ALL}) if form.get("dry_run") else frozenset())
     mark = len(session.ask["messages"] or [])
     try:
