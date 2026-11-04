@@ -680,7 +680,7 @@ def _derived_decision(slot: Slot, entry: dict, folder: Path, functions: ModuleTy
     table = {key: entry[key] for key in ("description", "dmn", "rule") if key in entry}
     table["collection"] = entry.get("collection") or slot.collection
     decision = _decision(slot.name, table, folder / "derived", functions)
-    if decision.params != slot.inputs:
+    if decision.params != {item: _DMN_TYPES.get(kind, kind) for item, kind in slot.inputs.items()}:
         raise ScenarioError(f"its table's inputs {decision.params} are not the slot's {slot.inputs}")
     decision = Decision(decision.name, decision.description, decision.params, decision.table, None, decision.rule,
                         decision.collection, "derived", entry.get("status"), entry.get("source"))

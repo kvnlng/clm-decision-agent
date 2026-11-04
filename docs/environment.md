@@ -498,10 +498,13 @@ second_reader = { backend = "ollama", model = "qwen3:14b" }   # or backend = "cl
 With it, `run` and `check` give that model each entry's cited document, whole (not made when it is not in force), and its slot,
 never the first answer: it needs the document to find the passage, so it knows which document the first reading
 cited, but never the passages, quote, statement or rows it gave. Then they compare what it derives: a decision over
-a grid of inputs (every bound in either table and a point just either side of it, half the gap to the next bound but at most 1 away; one below the lowest bound,
-one above the highest, and 0, negative numbers included; both booleans; for a string, each value named and one
-not), on the slot's outputs, text in any case and without the spaces around it; a fact within 0.5%. Any difference fails the check, so the entry stays proposed, with a failure
-saying where: `a second reading by MODEL disagrees: at years_of_service=4, 7 against 10` (the first reading, then
+a grid of inputs, on the slot's outputs, text in any case and without the spaces around it; a fact within 0.5%.
+For a `number` input the grid takes every bound in either table and a point just either side of it, half the gap
+to the next bound but at most 1 away, one below the lowest bound, one above the highest, and 0, negative numbers
+included. For an `integer` input (declare counts such as years of service or days employed so) it takes whole
+numbers only: each bound and one either side, and none below 0 unless a bound is, so `<= 17` and `< 18` agree. It
+takes both booleans, and for a string each value named and one not. Any difference fails the check, so the entry
+stays proposed, with a failure saying where: `a second reading by MODEL disagrees: at years_of_service=4, 7 against 10` (the first reading, then
 the second). A second reading that cannot be used (the model is unreachable, its answer is not in the schema, or its
 table does not parse) fails the check too, as `could not be made`: agreement is required, so its absence never
 passes. The record is kept in the entry as `check.second_reading = {model, agreed, differences}` (and `error` when it

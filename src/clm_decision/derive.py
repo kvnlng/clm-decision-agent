@@ -303,7 +303,7 @@ def _read_again(env: Environment, slot: Slot, entry: dict, reader: Extractor, on
                 file = Path(folder) / f"{slot.name}.dmn"
                 file.write_text(render_dmn(slot, answer["rows"], ident), encoding="utf-8")
                 again = load_table(file)
-            differences = derive_check.table_differences(first, again, list(slot.outputs))
+            differences = derive_check.table_differences(first, again, list(slot.outputs), slot.inputs)
     except (KeyError, TypeError, AttributeError, DmnError) as error:
         raise DeriveError(f"its answer cannot be compared: {_first_line(error)}") from error
     return {"model": reader.model, "agreed": not differences, "differences": differences[:derive_check.KEPT]}

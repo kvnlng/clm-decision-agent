@@ -9,6 +9,7 @@ approves or rejects (derived.set_status).
 from __future__ import annotations
 
 import itertools
+import math
 import re
 from datetime import date
 from pathlib import Path
@@ -121,7 +122,8 @@ def _decision(env: Environment, slot: Slot, entry: dict) -> tuple[list[str], lis
         return [f"ontology: the DMN does not load: {error}"], []
     failures = []
     inputs = {name: _DMN_TYPES.get(kind.rsplit(":", 1)[-1], "any") for name, kind in zip(table.inputs, table.types)}
-    if inputs != slot.inputs:
+    # A table states only number; an integer input is one too
+    if inputs != {name: _DMN_TYPES.get(kind, kind) for name, kind in slot.inputs.items()}:
         failures.append(f"ontology: the table's inputs {inputs} are not the slot's {slot.inputs}")
     missing = [name for name in (*slot.outputs, "citation") if name not in table.outputs]
     if missing:
@@ -267,9 +269,20 @@ def _points(bounds: set[float]) -> list:
     return sorted(int(value) if value.is_integer() else value for value in rounded)
 
 
-def grid(first: Table, second: Table) -> list[dict]:
+def _whole_points(bounds: set[float]) -> list[int]:
+    """For an integer input: the whole numbers at and either side of each bound (a bound between two, both), one
+    below the lowest and one above the highest, and 0; none below 0 unless a bound is."""
+    values = {0}
+    for bound in bounds:
+        values |= {math.floor(bound) - 1, math.floor(bound), math.ceil(bound), math.ceil(bound) + 1}
+    lowest = min(bounds, default=0)
+    return sorted(value for value in values if value >= 0 or lowest < 0)
+
+
+def grid(first: Table, second: Table, kinds: dict[str, str] | None = None) -> list[dict]:
     """The inputs two tables are compared on, every combination of: for a number, the points around each bound in
-    either table (_points); both booleans; for a string, each value either table names and one neither does."""
+    either table (_points), or for an input `kinds` (the slot's inputs) names an integer, whole numbers only
+    (_whole_points); both booleans; for a string, each value either table names and one neither does."""
     axes = []
     for index, name in enumerate(first.inputs):
         kind = first.types[index].rsplit(":", 1)[-1]
@@ -278,7 +291,8 @@ def grid(first: Table, second: Table) -> list[dict]:
         elif kind == "string":
             axes.append(sorted(_strings(first, name) | _strings(second, name)) + ["(none of these)"])
         else:
-            axes.append(_points(_bounds(first, name) | _bounds(second, name)))
+            bounds = _bounds(first, name) | _bounds(second, name)
+            axes.append(_whole_points(bounds) if (kinds or {}).get(name) == "integer" else _points(bounds))
     return [dict(zip(first.inputs, values)) for values in itertools.product(*axes)]
 
 
@@ -297,12 +311,13 @@ def _compared(outputs):
     return {name: value.strip().casefold() if isinstance(value, str) else value for name, value in outputs.items()}
 
 
-def table_differences(first: Table, second: Table, names: list[str]) -> list[dict]:
+def table_differences(first: Table, second: Table, names: list[str],
+                      kinds: dict[str, str] | None = None) -> list[dict]:
     """Where two tables give different values of the named outputs on the grid, first's inputs deciding the grid's
-    axes, text compared in any case and without the spaces around it; a point where neither table has a row
-    agrees."""
+    axes and `kinds` (the slot's inputs) which are integers, text compared in any case and without the spaces around
+    it; a point where neither table has a row agrees."""
     differences = []
-    for inputs in grid(first, second):
+    for inputs in grid(first, second, kinds):
         one, other = _outputs(first, inputs, names), _outputs(second, inputs, names)
         if _compared(one) != _compared(other):
             differences.append({"inputs": inputs, "first": one, "second": other})

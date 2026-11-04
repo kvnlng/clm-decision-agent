@@ -25,7 +25,7 @@ collection = "handbook"
 
 [derived.decisions.carryover_limit]
 description = "How many unused days of paid time off carry into next year, from full years of service."
-inputs = { years_of_service = "number" }
+inputs = { years_of_service = "integer" }
 outputs = { carryover_limit = "number" }
 owner = "People Operations"
 governs = ["benefits"]
@@ -472,6 +472,30 @@ def test_the_grid_takes_points_between_bounds_less_than_one_apart(tmp_path):
     first = numbers_table(tmp_path, "a", [("< 0.5", 1), ("-", 0)])
     second = numbers_table(tmp_path, "b", [("< 0.7", 1), ("-", 0)])
     assert [item["inputs"]["n"] for item in derive_check.table_differences(first, second, ["k"])] == [0.5, 0.6]
+
+
+def integers_table(tmp_path, name, rows):
+    return rendered(tmp_path, name, {"n": "integer"}, {"k": "number"}, [({"n": test}, {"k": k}) for test, k in rows])
+
+
+@pytest.mark.parametrize("one, other", [
+    ([("<= 17", 1), (">= 18", 2)], [("< 18", 1), (">= 18", 2)]),
+    ([("< 2", 1), ("-", 0)], [("[0..2)", 1), ("-", 0)]),
+    ([("<= 0", 1), ("-", 0)], [("0", 1), ("-", 0)])])
+def test_integer_rules_that_agree_on_every_whole_number_agree(tmp_path, one, other):
+    first, second = integers_table(tmp_path, "a", one), integers_table(tmp_path, "b", other)
+    assert not derive_check.table_differences(first, second, ["k"], {"n": "integer"})
+    assert derive_check.table_differences(first, second, ["k"], {"n": "number"})
+
+
+def test_the_grid_for_an_integer_takes_whole_numbers_and_negatives_only_beside_a_negative_bound(tmp_path):
+    shifted = loaded(tmp_path, SHIFTED, "b")
+    assert [row["years_of_service"] for row in derive_check.grid(loaded(tmp_path, GOOD, "a"), shifted,
+                                                                  {"years_of_service": "integer"})] == [0, 3, 4, 5, 6]
+    below = integers_table(tmp_path, "c", [("< -5", 1), ("-", 0)])
+    assert [row["n"] for row in derive_check.grid(below, below, {"n": "integer"})] == [-6, -5, -4, 0]
+    half = integers_table(tmp_path, "d", [("< 2.5", 1), ("-", 0)])
+    assert [row["n"] for row in derive_check.grid(half, half, {"n": "integer"})] == [0, 1, 2, 3, 4]
 
 
 def test_the_grid_takes_points_below_zero(tmp_path):
