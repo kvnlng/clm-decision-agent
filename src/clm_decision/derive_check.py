@@ -200,10 +200,11 @@ def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondRea
     """Check every proposed or checked entry again, as after a correction, recording each result through
     derived.set_check, and send any entry but a rejected one whose cited document is no longer the edition it came
     from back to proposed (derived.set_stale); an approved one whose table changed since its check goes back to
-    proposed too, and is checked again at once. Otherwise approved and rejected entries are a person's decision and
-    are left alone. With `second` (kind, name, entry -> record, failures), each entry checked is also read again by
+    proposed too, and is checked again at once, as is, once, an approved one checked before table digests were kept
+    (counted as undigested), so its digest comes from a check. Otherwise approved and rejected entries are a
+    person's decision and are left alone. With `second` (kind, name, entry -> record, failures), each entry checked is also read again by
     a second model, whether or not the mechanical check passed it, and its failures join the check's. -> counts."""
-    counts = {"checked": 0, "proposed": 0, "stale": 0, "untouched": 0}
+    counts = {"checked": 0, "proposed": 0, "stale": 0, "untouched": 0, "undigested": 0}
     if second is not None:
         counts.update(agreed=0, disagreed=0, not_made=0)
     layer = derived.read(folder)
@@ -217,6 +218,11 @@ def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondRea
             if entry.get("status") == "approved" and derived.changed_since_check(folder, entry):
                 entry = derived.set_stale(folder, kind, name, "its DMN has changed since its check")
                 counts["stale"] += 1
+            elif entry.get("status") == "approved" and entry.get("dmn") and \
+                    not (entry.get("check") or {}).get("dmn_sha256"):
+                entry = derived.set_stale(folder, kind, name, "its check has no digest of its DMN, as it was made "
+                                                              "before digests were kept")
+                counts["undigested"] += 1
             if entry.get("status") not in ("proposed", "checked"):
                 counts["untouched"] += 1
                 continue

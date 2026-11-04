@@ -448,6 +448,9 @@ def _check(environment: str, folder: Path, on: date) -> int:
         return second_reading(env, env.slots[name], entry, reader, on)
     counts = derive_check.recheck(folder, env, on=on, second=second if reader else None)
     print(", ".join(f"{counts[status]} {status}" for status in ("checked", "proposed", "stale", "untouched")))
+    if counts["undigested"]:
+        print(f"{counts['undigested']} approved before table digests were kept: sent back to proposed and checked, to "
+              "be approved again")
     print(f"second reading by {reader.model}: {counts['agreed']} agreed, {counts['disagreed']} disagreed, "
           f"{counts['not_made']} not made" if reader else "no second reading: [derived] names no second_reader")
     return 0

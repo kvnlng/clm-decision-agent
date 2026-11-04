@@ -258,17 +258,32 @@ def layer_with(env, **entries) -> Path:
 
 def test_recheck_never_touches_approved_or_rejected(env):
     bad = fact(edition="2025-01-01")
-    folder = layer_with(env, carryover_limit=("decisions", decision(env, status="approved")),
+    approved = decision(env, status="approved")
+    approved["check"] = {"passed": True, "failures": [], "dmn_sha256": derived.dmn_digest(env.path.parent, approved)}
+    folder = layer_with(env, carryover_limit=("decisions", approved),
                         k401_2026__match_cap=("facts", {**bad, "status": "rejected"}),
                         k401_2026__first_tier_rate=("facts", fact(100, "Meridian matches 100% of the first 3%",
                                                                   ("(3)",), prop="first_tier_rate")))
     counts = derive_check.recheck(folder, env, on=ON)
     layer = derived.read(folder)
     assert layer["decisions"]["carryover_limit"]["status"] == "approved"
-    assert layer["decisions"]["carryover_limit"]["check"] is None
+    assert layer["decisions"]["carryover_limit"]["check"] == approved["check"]
     assert layer["facts"]["k401_2026.match_cap"]["status"] == "rejected"
     assert layer["facts"]["k401_2026.first_tier_rate"]["status"] == "checked"
-    assert counts == {"checked": 1, "proposed": 0, "stale": 0, "untouched": 2}
+    assert counts == {"checked": 1, "proposed": 0, "stale": 0, "untouched": 2, "undigested": 0}
+
+
+@pytest.mark.parametrize("old_check", [None, {"passed": True, "failures": []}])
+def test_an_approved_table_checked_before_digests_were_kept_is_sent_back_once_and_checked(env, old_check):
+    folder = layer_with(env, carryover_limit=("decisions", {**decision(env, status="approved"), "check": old_check,
+                                                            "decided_by": "kevin"}))
+    counts = derive_check.recheck(folder, env, on=ON)
+    entry = derived.read(folder)["decisions"]["carryover_limit"]
+    assert entry["status"] == "checked" and entry["decided_by"] == "kevin" and "no digest" in entry["note"]
+    assert entry["check"]["dmn_sha256"] == derived.dmn_digest(folder, entry)
+    assert counts["undigested"] == 1 and counts["checked"] == 1 and counts["stale"] == 0
+    derived.set_status(folder, "decisions", "carryover_limit", "approved", by="kevin")
+    assert derive_check.recheck(folder, env, on=ON)["untouched"] == 1
 
 
 def test_recheck_sends_an_approved_entry_on_a_replaced_edition_back_to_proposed(env):
@@ -314,7 +329,8 @@ def test_a_disagreeing_second_reading_fails_the_check_and_is_recorded(env):
     assert entry["status"] == "proposed" and not entry["check"]["passed"]
     assert entry["check"]["failures"] == ["a second reading by m disagrees: 6300 against 63"]
     assert entry["check"]["second_reading"]["agreed"] is False
-    assert counts == {"checked": 0, "proposed": 1, "stale": 0, "untouched": 0, "agreed": 0, "disagreed": 1,
+    assert counts == {"checked": 0, "proposed": 1, "stale": 0, "untouched": 0, "undigested": 0, "agreed": 0,
+                      "disagreed": 1,
                       "not_made": 0}
 
 

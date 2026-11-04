@@ -430,6 +430,19 @@ def test_a_different_model_family_may_read_again(first, again):
     derive.refuse_same_model(reader, first)
 
 
+def test_check_command_says_when_it_sent_back_an_approved_table_with_no_digest(path, capsys):
+    run(path, good())
+    approve_all(path.parent)
+    layer = derived.read(path.parent)
+    del layer["decisions"]["carryover_limit"]["check"]["dmn_sha256"]
+    derived.write(path.parent, layer)
+    assert derive.main(["check", str(path), "--as-of", "2026-12-01"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "1 checked, 0 proposed, 0 stale, 1 untouched"
+    assert out[1] == ("1 approved before table digests were kept: sent back to proposed and checked, to be approved "
+                      "again")
+
+
 def test_check_command_makes_the_second_reading_and_says_how_it_went(path, read_again, capsys):
     run(path, good())
     read_again.append(second(carryover_limit=[SHIFTED], k401_2026__match_cap=[CAP]))
