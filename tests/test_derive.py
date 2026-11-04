@@ -325,6 +325,12 @@ def test_the_second_reader_reads_the_cited_document_and_never_the_first_answer(p
     [(_, prompt)] = [item for item in read_again[-1].prompts if item[0] == "carryover_limit"]
     assert prompt.count("Document id: ") == 1 and "\nDocument id: hb-leave\n" in prompt
     assert "Your answer was" not in prompt and "Slot: carryover_limit\n" in prompt
+    # Exactly the prompt a first reading of that one document gets: its slot and the document whole, so neither the
+    # first answer's passages and quote nor its statement, reasons or rows reach the second reader
+    env = derive.load_environment(path, today=ON)
+    document = env.store.document("handbook", "hb-leave", None)
+    assert prompt == derive._prompt(env.slots["carryover_limit"], [document], ON)  # pylint: disable=protected-access
+    assert CARRYOVER["statement"] not in prompt and CARRYOVER["rows"][0]["reason"] not in prompt
 
 
 def test_a_second_reading_that_cannot_be_made_fails_the_check(path, read_again):
