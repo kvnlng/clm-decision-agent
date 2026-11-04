@@ -148,13 +148,37 @@ def check(env: Environment, kind: str, name: str, entry: dict, *, on: date) -> l
     return failures
 
 
+def _stale(env: Environment, name: str, entry: dict, on: date) -> str | None:
+    """Why the entry's cited document is no longer the edition it was derived from, or None."""
+    slot, source = env.slots.get(name), entry.get("source") or {}
+    if slot is None or not env.store or not source.get("document"):
+        return None
+    ident = source["document"]
+    document = env.store.document(slot.collection, ident, None)
+    if not document:
+        return f"the cited document {ident} is no longer in {slot.collection}"
+    if edition(document) != source.get("edition"):
+        return (f"the cited document has a newer edition: {ident} took effect on {edition(document)}, and the entry "
+                f"was derived from the {source.get('edition')} edition")
+    if not in_force(document, on):
+        return f"the cited document {ident} is not in force on {on}"
+    return None
+
+
 def recheck(folder: str | Path, env: Environment, *, on: date) -> dict:
     """Check every proposed or checked entry again, as after a correction, recording each result through
-    derived.set_check; approved and rejected entries are a person's decision and are left alone. -> counts."""
-    counts = {"checked": 0, "proposed": 0, "untouched": 0}
+    derived.set_check, and send any entry but a rejected one whose cited document is no longer the edition it came
+    from back to proposed (derived.set_stale). Otherwise approved and rejected entries are a person's decision and
+    are left alone. -> counts."""
+    counts = {"checked": 0, "proposed": 0, "stale": 0, "untouched": 0}
     layer = derived.read(folder)
     for kind in ("decisions", "facts"):
         for name, entry in layer[kind].items():
+            why = _stale(env, name, entry, on) if entry.get("status") != "rejected" else None
+            if why:
+                derived.set_stale(folder, kind, name, why)
+                counts["stale"] += 1
+                continue
             if entry.get("status") not in ("proposed", "checked"):
                 counts["untouched"] += 1
                 continue

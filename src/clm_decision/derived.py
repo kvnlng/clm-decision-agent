@@ -4,7 +4,8 @@ It lives in `derived/derived.json` beside the environment file, with any decisio
 `derived/rules/`. Each entry has a status: proposed when written, checked once it passed the mechanical check,
 then approved or rejected by a person; a conflict with a supplied fact is open until a person resolves it. Only
 this module changes a status, and every change records who made it and when: set_status a person's decision, with
-why, and set_check the mechanical check's result, recorded as made by clm-derive check.
+why; set_check the mechanical check's result, and set_stale an entry whose cited document is no longer
+the edition in force, both recorded as made by clm-derive check.
 """
 from __future__ import annotations
 
@@ -98,5 +99,25 @@ def set_check(folder: str | Path, kind: str, name: str, check: dict) -> dict:
     entry.update(status="checked" if passed else "proposed",
                  check={"passed": passed, "failures": list(check.get("failures") or []),
                         "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "by": CHECKER})
+    write(folder, layer)
+    return entry
+
+
+def set_stale(folder: str | Path, kind: str, name: str, failure: str) -> dict:
+    """Send an entry whose cited document is no longer the edition in force back to proposed, whatever its status
+    but rejected, recording the failure as clm-derive check's, and return the entry. Who decided and when are kept,
+    and the note gains the reason, so the record shows the approval was for the earlier edition."""
+    if kind not in ("decisions", "facts"):
+        raise DerivedError(f"{kind!r}: only decisions or facts are checked")
+    layer = read(folder)
+    entry = layer[kind].get(name)
+    if entry is None:
+        raise DerivedError(f"no {kind} entry named {name!r}")
+    if entry.get("status") == "rejected":
+        raise DerivedError(f"{name} is rejected: a person's rejection stands")
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    note = f"{CHECKER}, {now}: back to proposed from {entry.get('status')}: {failure}"
+    entry.update(status="proposed", note=f"{entry['note']}; {note}" if entry.get("note") else note,
+                 check={"passed": False, "failures": [failure], "at": now, "by": CHECKER})
     write(folder, layer)
     return entry

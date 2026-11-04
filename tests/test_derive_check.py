@@ -230,7 +230,16 @@ def test_recheck_never_touches_approved_or_rejected(env):
     assert layer["decisions"]["carryover_limit"]["check"] is None
     assert layer["facts"]["k401_2026.match_cap"]["status"] == "rejected"
     assert layer["facts"]["k401_2026.first_tier_rate"]["status"] == "checked"
-    assert counts == {"checked": 1, "proposed": 0, "untouched": 2}
+    assert counts == {"checked": 1, "proposed": 0, "stale": 0, "untouched": 2}
+
+
+def test_recheck_sends_an_approved_entry_on_a_replaced_edition_back_to_proposed(env):
+    stale = {**decision(env, status="approved", edition="2025-01-01"), "decided_by": "kevin"}
+    folder = layer_with(env, carryover_limit=("decisions", stale))
+    counts = derive_check.recheck(folder, env, on=ON)
+    entry = derived.read(folder)["decisions"]["carryover_limit"]
+    assert entry["status"] == "proposed" and entry["decided_by"] == "kevin"
+    assert "newer edition" in entry["check"]["failures"][0] and counts["stale"] == 1
 
 
 def test_recheck_accepts_a_null_check_after_a_correction(env):

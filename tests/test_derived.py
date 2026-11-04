@@ -117,6 +117,26 @@ def test_set_check_keeps_the_decision_fields(tmp_path):
     assert (entry["decided_by"], entry["decided_at"], entry["note"]) == ("kevin", "2026-11-04", "corrected")
 
 
+def test_set_stale_sends_an_approved_entry_back_to_proposed_keeping_who_decided(tmp_path):
+    derived.write(tmp_path, _layer())
+    derived.set_status(tmp_path, "decisions", "carryover_limit", "approved", by="kevin", note="matches § 5")
+    decided_at = derived.read(tmp_path)["decisions"]["carryover_limit"]["decided_at"]
+    entry = derived.set_stale(tmp_path, "decisions", "carryover_limit", "the cited document has a newer edition")
+    assert entry["status"] == "proposed" and entry["check"]["passed"] is False
+    assert entry["check"]["failures"] == ["the cited document has a newer edition"]
+    assert entry["check"]["by"] == "clm-derive check"
+    assert (entry["decided_by"], entry["decided_at"]) == ("kevin", decided_at)
+    assert entry["note"].startswith("matches § 5") and "newer edition" in entry["note"]
+    assert derived.read(tmp_path)["decisions"]["carryover_limit"]["status"] == "proposed"
+
+
+def test_set_stale_never_touches_a_rejected_entry(tmp_path):
+    derived.write(tmp_path, _layer())
+    derived.set_status(tmp_path, "facts", "k401_2026.match_cap", "rejected", by="kevin")
+    with pytest.raises(derived.DerivedError, match="rejected"):
+        derived.set_stale(tmp_path, "facts", "k401_2026.match_cap", "newer edition")
+
+
 def test_set_check_refuses_conflicts(tmp_path):
     derived.write(tmp_path, _layer())
     with pytest.raises(derived.DerivedError, match="decisions or facts"):
