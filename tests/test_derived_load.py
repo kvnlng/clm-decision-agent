@@ -265,6 +265,14 @@ def test_decision_steps_and_rule_info_carry_origin(tmp_path):
     assert info["source"]["document"] == "hb-leave"
 
 
+def test_a_decision_result_carries_its_origin_at_the_top(tmp_path):
+    env = load(make(tmp_path, decision=entry()))
+    result = run_decision(env, "carry", {"years": 3})
+    assert result["origin"] == "derived" and result["status"] == "approved"
+    supplied = run_decision(env, "other", {"x": 1})
+    assert supplied["origin"] == "supplied" and "status" not in supplied
+
+
 def test_a_query_reading_a_derived_fact_carries_origin(tmp_path):
     env = load(make(tmp_path, cap=fact()))
     [step] = run_query(env, "plan", {})["steps"]

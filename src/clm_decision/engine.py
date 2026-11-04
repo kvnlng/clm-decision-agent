@@ -318,10 +318,12 @@ def run_query(env: Environment, name: str, params: dict) -> dict:
 
 
 def run_decision(env: Environment, name: str, inputs: dict) -> dict:
-    """-> {"outputs", "fired", "steps"}."""
+    """-> {"outputs", "fired", "origin", "steps"}, with "status" too for a derived decision."""
     steps = Steps(env)
     outputs = steps.decide(name, **inputs)
-    return {"outputs": outputs, "fired": steps.steps[-1]["fired"], "steps": steps.steps}
+    last = steps.steps[-1]
+    return {"outputs": outputs, "fired": last["fired"], "origin": last["origin"],
+            **({"status": last["status"]} if "status" in last else {}), "steps": steps.steps}
 
 
 def run_judgement(env: Environment, name: str, inputs: dict) -> dict:
