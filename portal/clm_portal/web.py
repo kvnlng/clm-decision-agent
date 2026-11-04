@@ -343,11 +343,12 @@ async def review_item(portal: Portal, session: Session, item: dict, collection: 
 
 
 def review_actions(session: Session, item: dict) -> str:
-    """The buttons an entry allows: approve (only once checked and passed), reject, resolve, correct."""
+    """The buttons an entry allows: approve (once checked and passed, or rejected after passing, to undo the
+    rejection), reject, resolve, correct."""
     entry, kind = item["entry"], item["kind"]
     if kind == "conflicts":
         return action_form(session, item, "resolve", "Resolve") if entry.get("status") == "open" else ""
-    passed = bool((entry.get("check") or {}).get("passed")) and entry.get("status") == "checked"
+    passed = bool((entry.get("check") or {}).get("passed")) and entry.get("status") in ("checked", "rejected")
     forms = [action_form(session, item, "approve", "Approve", enabled=passed,
                          why="only an entry that passed clm-derive check can be approved"),
              action_form(session, item, "reject", "Reject")]

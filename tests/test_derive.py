@@ -130,6 +130,16 @@ def test_run_derives_nothing_when_every_slot_is_approved(path):
     assert not extractor.prompts and derived.read(path.parent)["model"] == "another"
 
 
+def test_the_command_says_which_slots_it_kept_and_when_it_derived_nothing(path, monkeypatch, capsys):
+    run(path, good())
+    approve_all(path.parent)
+    monkeypatch.setattr(derive, "_extractor", lambda args: good())
+    assert derive.main(["run", str(path), "handbook", "--as-of", "2026-12-01"]) == 0
+    out = capsys.readouterr().out
+    assert "carryover_limit: approved, kept" in out
+    assert "Nothing derived: every slot is approved or rejected on an unchanged edition" in out
+
+
 def test_fresh_run_rederives_every_slot(path):
     run(path, good())
     approve_all(path.parent)

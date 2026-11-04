@@ -330,8 +330,17 @@ def _command(args) -> int:
         print(", ".join(f"{count} {status}" for status, count in counts.items()))
         return 0
     extractor = _extractor(args)
-    for name, status in run(args.environment, args.collection, extractor, on, fresh=args.fresh).items():
-        print(f"{name}: {status}")
+    before = derived.read(folder)
+    statuses = run(args.environment, args.collection, extractor, on, fresh=args.fresh)
+    after = derived.read(folder)
+    kept = {name for name in statuses
+            if any(before[kind].get(name) is not None and before[kind].get(name) == after[kind].get(name)
+                   for kind in ("decisions", "facts"))}
+    for name, status in statuses.items():
+        print(f"{name}: {status}{', kept' if name in kept else ''}")
+    if statuses and kept == set(statuses):
+        print("Nothing derived: every slot is approved or rejected on an unchanged edition (--fresh derives them "
+              "again)")
     print(f"written to {derived.path(folder)}", file=sys.stderr)
     return 0
 

@@ -139,3 +139,13 @@ def test_review_groups_checked_first_then_proposed_then_decided(environment):
     assert [title for title, _ in groups][:3] == ["Checked", "Open conflicts", "Proposed"]
     fact = next(item for title, items in groups if title == "Proposed" for item in items)
     assert fact["supplied"] == "6300" and fact["graph_row"]["name"] == "401(k) plan"
+
+
+def test_a_rejected_entry_that_passed_its_check_can_be_approved_again(client, environment):
+    token = sign_in(client, "Kevin")
+    assert post(client, "/review/decisions/carryover_limit/reject", token).status_code == 200
+    page = client.get("/review").text
+    part = page[page.index('id="decisions-carryover_limit"'):]
+    assert "disabled" not in part[:part.index("</section>")].split("Approve")[0][-200:]
+    assert post(client, "/review/decisions/carryover_limit/approve", token).status_code == 200
+    assert layer_of(environment)["decisions"]["carryover_limit"]["status"] == "approved"
