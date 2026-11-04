@@ -319,3 +319,14 @@ async def test_no_tools_on_ollama_sends_no_tools():
 def test_system_says_when_a_rule_was_derived():
     from clm_decision.decision_agent import SYSTEM  # pylint: disable=import-outside-toplevel
     assert "origin is derived" in SYSTEM and "not approved" in SYSTEM
+
+
+def test_system_is_the_shared_instructions_byte_for_byte():
+    import hashlib  # pylint: disable=import-outside-toplevel
+    from clm_decision import instructions  # pylint: disable=import-outside-toplevel
+    from clm_decision.decision_agent import SYSTEM  # pylint: disable=import-outside-toplevel
+    # The text before it moved to instructions.py: 1532 characters with this digest
+    assert SYSTEM == instructions.agent_system()
+    assert len(SYSTEM) == 1532
+    assert hashlib.sha256(SYSTEM.encode()).hexdigest() == \
+        "d8c0b5e088f551f09c2fa1d40f2660c082793a18b3dff3c2875641ec7e67c881"

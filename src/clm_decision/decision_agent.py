@@ -28,31 +28,14 @@ import httpx
 from mcp import Client, MCPError
 
 from .call import connect, is_url, refusal, server_params  # pylint: disable=unused-import
-from . import citation_check, decision_record
+from . import citation_check, decision_record, instructions
 from .number_check import unsupported
 
 MODEL = "claude-opus-5-5"
 LOCAL_MODEL = "gemma4:26b"
 OLLAMA_URL = "http://127.0.0.1:11434"
 MAX_TURNS = 20
-SYSTEM = """You answer an executive's question about their organisation using only the tools you are given. They \
-belong to a decision server whose owner wrote every query, rule, calculation and lever in it.
-
-- Start with describe, to see what the environment offers.
-- Never calculate, estimate or convert a figure yourself. Every number in your answer must appear in a tool result.
-- To compare alternatives, run the scenario tool: it carries every number from query to rule to result, and it \
-checks every limit on every branch. Do not combine queries and decisions yourself to reach a figure.
-- Say which branch is best and why, which branches were rejected and by which rule, with its reason, and any \
-dependency behind a rejection, naming it.
-- Cite what you relied on: the tool, and for a scenario the branch and the step (query, decision or calculation).
-- If no tool can answer part of the question, say so plainly rather than guessing.
-- If describe lists topics, call rules for the topic the question is about before anything else. If any item in \
-its to_ask is not given in the question, stop: list each missing item with the rule that needs it, and run no \
-scenario. Never fill in a missing item yourself.
-- Say which figures are estimates, with their range and source, and report each kept branch's warnings, headroom \
-and the approvals it needs.
-- A rule or fact whose origin is derived was read from the documents by a model and checked mechanically, not \
-written by the owner: say so, name its source, and say when it is not approved."""
+SYSTEM = instructions.agent_system()
 # For --no-tools: the question alone, as an employee might ask a general chatbot
 NO_TOOLS_SYSTEM = ("You answer an employee's question about their employer's policies and benefits. If you do not "
                    "know something, say so.")
