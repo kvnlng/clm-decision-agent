@@ -198,3 +198,8 @@ class PostgresStore:
         """Whether the collection holds a document with this id."""
         return bool(self._rows("SELECT 1 FROM documents WHERE collection = %s AND id = %s",
                                (collection, citation_id)))
+
+    def ids(self, collection: str, limit: int) -> list[str]:
+        """The first `limit` document ids of the collection, in order."""
+        return [row[0] for row in self._rows("SELECT id FROM documents WHERE collection = %s ORDER BY id LIMIT %s",
+                                             (collection, limit))]

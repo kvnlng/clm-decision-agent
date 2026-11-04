@@ -66,6 +66,9 @@ class DocumentStore(Protocol):
     def exists(self, collection: str, citation_id: str) -> bool:
         """Whether the collection holds a document with this id."""
 
+    def ids(self, collection: str, limit: int) -> list[str]:
+        """The first `limit` document ids of the collection, in order."""
+
 
 class Embedder(Protocol):  # pylint: disable=too-few-public-methods
     """Turns texts into vectors with a named model."""

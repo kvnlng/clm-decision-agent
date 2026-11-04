@@ -146,6 +146,12 @@ def test_document_gives_its_passages(store):
 
 
 @pytest.mark.postgres
+def test_ids_are_in_order_up_to_the_limit(store):
+    assert store.ids("cases", 3) == ["case-a", "case-b", "ny-1"]
+    assert store.ids("nothing", 3) == []
+
+
+@pytest.mark.postgres
 def test_replace_removes_what_was_there(store):
     assert store.built("cases")["documents"] == 4
     store.replace("cases", DOCUMENTS[:1], vectors(DOCUMENTS[:1]), built())

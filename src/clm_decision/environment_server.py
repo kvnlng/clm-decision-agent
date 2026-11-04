@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+from urllib.parse import quote
 from typing import Any, Callable
 
 import pydantic_core
@@ -28,6 +29,7 @@ from .scenario import ScenarioError
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
 JSON = "application/json"
+LISTED_DOCUMENTS = 100      # a collection with at most this many documents lists each as a resource
 _ANNOTATIONS = {"string": str, "number": float, "integer": int, "boolean": bool, "list": list[Any], "any": Any}
 _RESULT = dict[str, Any]
 
@@ -82,10 +84,17 @@ def describe(env: Environment) -> dict:
                                  "approvals": list(scenario.approvals)}
                           for name, scenario in env.scenarios.items()},
             **({"collections": {name: {"description": collection.description, "filters": collection.filters,
-                                       "built": env.store.built(name)}
+                                       "built": env.store.built(name),
+                                       **({"resources": _resources_note(name)} if env.document_tools else {})}
                                 for name, collection in env.collections.items()}} if env.collections else {}),
             **({"topics": env.topics()} if env.topics() else {}),
             **({"derived": _derived(env)} if env.slots else {})}
+
+
+def _resources_note(name: str) -> str:
+    return (f"Each document is document://{name}/ID and each passage document://{name}/ID/PASSAGE, as document_{name} "
+            f"returns them; the documents are listed as resources when the collection holds at most "
+            f"{LISTED_DOCUMENTS} documents when the server starts.")
 
 
 def _derived(env: Environment) -> dict:
@@ -195,8 +204,29 @@ def _json(run: Callable[[], dict]) -> str:
         raise ResourceError(f"{type(error).__name__}: {error}") from error
 
 
+def _add_document_resources(server: MCPServer, env: Environment, add: Callable) -> None:
+    """Templates for a document and a passage, and every document of a small enough collection listed."""
+    def document(collection: str, id: str) -> str:  # pylint: disable=redefined-builtin
+        return _json(lambda: engine.run_document(env, collection, {"id": id}))
+
+    def passage(collection: str, id: str, passage: str) -> str:  # pylint: disable=redefined-builtin
+        return _json(lambda: engine.run_document(env, collection, {"id": id, "passage": passage}))
+    server.resource("document://{collection}/{id}", name="document", mime_type=JSON,
+                    description="One document of a collection with its passages, as document_COLLECTION returns "
+                                "it.")(document)
+    server.resource("document://{collection}/{id}/{passage}", name="passage", mime_type=JSON,
+                    description="One passage of a document, by its label, as document_COLLECTION returns it.")(passage)
+    for name in env.collections:
+        ids = env.store.ids(name, LISTED_DOCUMENTS + 1)
+        for ident in ids if len(ids) <= LISTED_DOCUMENTS else ():
+            found = env.store.document(name, ident, None)
+            add(f"document://{name}/{quote(ident, safe='')}", found["title"], found["citation"],
+                lambda name=name, ident=ident: engine.run_document(env, name, {"id": ident}))
+
+
 def _add_resources(server: MCPServer, env: Environment) -> None:
-    """The environment's data as resources: describe, every rule, and the derived layer when there is one."""
+    """The environment's data as resources: describe, every rule, the documents when there are document tools, and
+    the derived layer when there is one."""
     def add(uri: str, name: str, description: str, run: Callable[[], dict]) -> None:
         server.add_resource(FunctionResource(uri=uri, name=name, description=description, mime_type=JSON,
                                              fn=lambda: _json(run)))
@@ -212,6 +242,8 @@ def _add_resources(server: MCPServer, env: Environment) -> None:
         server.resource("rule://{name}", name="rule", mime_type=JSON,
                         description="One rule, supplied or derived, with its origin and status, as the rule tool "
                                     "returns it.")(lambda name: _json(lambda: explain_rule(env, name)))
+    if env.collections and env.document_tools:
+        _add_document_resources(server, env, add)
     if env.slots:
         add("derived://layer", "derived layer", "The derived layer as stored: every rule, fact and conflict derived "
             "from the documents, with its status, check and who decided it.",

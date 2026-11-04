@@ -2,6 +2,7 @@
 with a stand-in store so no PostgreSQL or Ollama is needed."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import dataclasses
 import json
 from pathlib import Path
 
@@ -9,7 +10,7 @@ import pytest
 from fake_documents import FakeEmbedder, FakeStore
 from mcp import Client, MCPError
 
-from clm_decision import derived
+from clm_decision import derived, environment_server
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
 
@@ -83,3 +84,54 @@ async def test_an_environment_without_rules_lists_no_rules():
         listed = {str(resource.uri) for resource in (await client.list_resources()).resources}
         templates = {template.uri_template for template in (await client.list_resource_templates()).resource_templates}
     assert listed == {"environment://describe"} and templates == set()
+
+
+@pytest.mark.anyio
+async def test_a_document_and_a_passage_read_as_the_document_tool_returns_them():
+    async with Client(build_environment_server(load())) as client:
+        whole = await client.call_tool("document_handbook", {"id": "hb-401k-2026"})
+        one = await client.call_tool("document_handbook", {"id": "hb-401k-2026", "passage": "(2)"})
+        assert await read(client, "document://handbook/hb-401k-2026") == whole.structured_content
+        assert await read(client, "document://handbook/hb-401k-2026/(2)") == one.structured_content
+        assert await read(client, "document://handbook/hb-401k-2026/%282%29") == one.structured_content
+        with pytest.raises(MCPError, match=r"collection handbook: no document hb-nothing"):
+            await client.read_resource("document://handbook/hb-nothing")
+
+
+@pytest.mark.anyio
+async def test_a_small_collection_lists_each_document_and_describe_says_the_limit():
+    async with Client(build_environment_server(load())) as client:
+        resources = {str(resource.uri): resource for resource in (await client.list_resources()).resources}
+        templates = {template.uri_template for template in (await client.list_resource_templates()).resource_templates}
+        described = await read(client, "environment://describe")
+    documents = sorted(uri for uri in resources if uri.startswith("document://"))
+    assert len(documents) == 13 and "document://handbook/hb-welcome" in documents
+    assert resources["document://handbook/hb-401k-2026"].description.startswith("Meridian")
+    assert {"document://{collection}/{id}", "document://{collection}/{id}/{passage}"} <= templates
+    note = described["collections"]["handbook"]["resources"]
+    assert f"at most {environment_server.LISTED_DOCUMENTS} documents" in note
+
+
+@pytest.mark.anyio
+async def test_a_large_collection_is_not_listed_but_can_be_read(monkeypatch):
+    monkeypatch.setattr(environment_server, "LISTED_DOCUMENTS", 12)
+    async with Client(build_environment_server(load())) as client:
+        listed = {str(resource.uri) for resource in (await client.list_resources()).resources}
+        found = await read(client, "document://handbook/hb-welcome")
+    assert not any(uri.startswith("document://") for uri in listed) and found["document"]["id"] == "hb-welcome"
+
+
+@pytest.mark.anyio
+async def test_no_document_tools_means_no_document_resources():
+    env = dataclasses.replace(load(), document_tools=False)
+    async with Client(build_environment_server(env)) as client:
+        listed = {str(resource.uri) for resource in (await client.list_resources()).resources}
+        templates = {template.uri_template for template in (await client.list_resource_templates()).resource_templates}
+        described = await read(client, "environment://describe")
+    assert not any(uri.startswith("document://") for uri in listed | templates)
+    assert "resources" not in described["collections"]["handbook"]
+
+
+def test_the_fake_store_lists_ids_in_order_up_to_the_limit():
+    assert store().ids("handbook", 3) == ["hb-401k-2024", "hb-401k-2026", "hb-dress"]
+    assert store().ids("nothing", 3) == []

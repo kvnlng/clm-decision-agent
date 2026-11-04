@@ -83,6 +83,9 @@ class FakeStore:
     def exists(self, collection: str, citation_id: str) -> bool:
         return citation_id in self._documents(collection)
 
+    def ids(self, collection: str, limit: int) -> list[str]:
+        return sorted(self._documents(collection))[:limit]
+
 
 class FakeEmbedder:
     """Letter counts as the vector; records the models and texts it was asked for."""
