@@ -464,8 +464,8 @@ decisions; never calculate; name the rejected branches, with reasons and the dep
 relied on; say plainly when no tool can answer part of the question.
 
 `--no-tools` asks the question alone, with no server and a short prompt of its own (answer the employee's question;
-say so when you do not know): the baseline of a model with no access to your data. Every figure in its answer is
-listed as one no tool returned.
+say so when you do not know): the baseline of a model with no access to your data. Every figure in its answer that is
+not in the question is listed as one no tool returned.
 
 The question, answer, every call, the model and the time taken go as JSON to the environment's git-ignored `runs/`
 (for a URL, `runs/` in the current folder). Claude's credentials are the Anthropic SDK's usual ones; none are stored.
