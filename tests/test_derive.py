@@ -8,6 +8,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import httpx
 import pytest
 from fake_documents import FakeEmbedder, FakeStore
 
@@ -219,6 +220,38 @@ def test_check_command_moves_a_corrected_entry_to_checked(path):
     assert derive.main(["check", str(path), "--as-of", "2026-12-01"]) == 0
     entry = derived.read(path.parent)["facts"]["k401_2026.match_cap"]
     assert entry["status"] == "checked" and entry["check"]["by"] == "clm-derive check"
+
+
+class FakeHttp:  # pylint: disable=too-few-public-methods
+    """Ollama's /api/chat, answering with the given content."""
+
+    def __init__(self, content: str):
+        self.content, self.bodies = content, []
+
+    def post(self, url, json):  # pylint: disable=redefined-outer-name
+        self.bodies.append(json)
+        return httpx.Response(200, json={"message": {"content": self.content}, "done_reason": "stop"},
+                              request=httpx.Request("POST", url))
+
+
+def test_ollama_is_asked_without_thinking_and_with_a_token_cap():
+    http = FakeHttp('{"value": 1}')
+    assert derive.OllamaExtractor(http=http).extract("system", "prompt", {"type": "object"}) == {"value": 1}
+    body = http.bodies[0]
+    assert body["think"] is False and body["options"]["num_predict"] > 0 and body["format"] == {"type": "object"}
+
+
+def test_an_answer_that_is_not_json_fails_the_check_without_stopping_the_run(path):
+    class Broken(Canned):  # pylint: disable=missing-class-docstring
+        def extract(self, system, prompt, schema):
+            if "Slot: k401_2026.match_cap\n" in prompt:
+                return derive.OllamaExtractor(http=FakeHttp('{"value": 63')).extract(system, prompt, schema)
+            return super().extract(system, prompt, schema)
+    run(path, Broken(carryover_limit=[CARRYOVER]))
+    layer = derived.read(path.parent)
+    assert layer["decisions"]["carryover_limit"]["status"] == "checked"
+    entry = layer["facts"]["k401_2026.match_cap"]
+    assert entry["status"] == "proposed" and "JSON" in entry["check"]["failures"][0] and entry["attempts"] == 2
 
 
 def test_claude_backend_without_the_agent_extra_says_so_in_one_line(path, monkeypatch, capsys):

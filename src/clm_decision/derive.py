@@ -34,6 +34,7 @@ from .environment import Environment, Slot, edition, in_force, load_environment
 from .scenario import ScenarioError, StepError
 
 RUN = "clm-derive run"
+MAX_TOKENS = 8192
 MAX_DOCUMENTS = 5
 _JSON = {"number": {"type": "number"}, "integer": {"type": "integer"}, "boolean": {"type": "boolean"},
          "string": {"type": "string"}, "list": {"type": "array", "items": {"type": "string"}}}
@@ -55,6 +56,10 @@ row whose tests are all -.
 
 class DeriveError(RuntimeError):
     """A model that cannot be reached or used; the message is one line saying what to do."""
+
+
+class AnswerError(DeriveError):
+    """A model's answer that is not JSON, as when it ran out of tokens: a failure of that answer, not of the run."""
 
 
 class Extractor(Protocol):  # pylint: disable=too-few-public-methods
@@ -94,7 +99,10 @@ class OllamaExtractor:  # pylint: disable=too-few-public-methods
 
     def extract(self, system: str, prompt: str, schema: dict) -> dict:
         """The answer; raises DeriveError in one line when Ollama or the model is not there."""
-        body = {"model": self.model, "stream": False, "format": schema, "options": {"temperature": 0},
+        # Without thinking: gemma4 thinking under a schema ran past 100,000 tokens without answering; the cap stops
+        # any runaway, and its cut-off answer fails as not JSON
+        body = {"model": self.model, "stream": False, "format": schema, "think": False,
+                "options": {"temperature": 0, "num_predict": MAX_TOKENS},
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}]}
         try:
             if self.http is None:
@@ -112,7 +120,7 @@ class OllamaExtractor:  # pylint: disable=too-few-public-methods
         try:
             return json.loads(response.json()["message"]["content"])
         except (KeyError, ValueError) as error:
-            raise DeriveError(f"{self.model} did not answer in JSON: {_first_line(error)}") from error
+            raise AnswerError(f"{self.model} did not answer in JSON: {_first_line(error)}") from error
 
 
 def _object(properties: dict) -> dict:
@@ -233,7 +241,10 @@ def _checked(entry: dict, failures: list[str], attempts: int) -> dict:
 
 def _attempt(env: Environment, slot: Slot, extractor: Extractor, prompt: str, on: date) -> tuple[dict, dict, list]:
     """One answer from the model, as an entry, with the check's failures."""
-    answer = extractor.extract(SYSTEM, prompt, answer_schema(slot))
+    try:
+        answer = extractor.extract(SYSTEM, prompt, answer_schema(slot))
+    except AnswerError as error:
+        return {}, _blank(slot), [f"answer: {error}"]
     try:
         entry = _entry(env, slot, answer)
         return answer, entry, derive_check.check(env, slot.kind, slot.name, entry, on=on)
