@@ -16,7 +16,7 @@ about patient care out of scope.
 | [registry](registry.md) | Listing a deployment in an MCP registry |
 | [data handling](data-handling.md) | Where text goes; read before using real text |
 | [findings](findings.md) | What the benchmark traces showed |
-| [test client](../client/README.md) | Chatting with a running server from the command line, for testing |
+| [portal](../portal/README.md) | Administering a server from a local page, and chatting with a running server |
 
 ## Your environment, and the decisions over it
 
@@ -115,17 +115,18 @@ you> I need access to the oncology registry for an audit, needed this week
 
 A mistake in either file stops start-up with one line naming the setting.
 
-## Testing it with the test client
+## Trying it in a chat
 
-With no MCP client of your own, or none you want to use, the [test client](../client/README.md) lets you chat with a
+With no MCP client of your own, or none you want to use, the [portal](../portal/README.md)'s chat lets you talk to a
 running server from the command line. A model answers from your tools and every call and result is printed, so you
-can see where each answer came from and judge it. It is for testing only and is not part of the package.
+can see where each answer came from and judge it. The portal is not part of the package; its page also shows an
+environment's whole configuration and reviews derived rules.
 
 ```bash
 ollama pull granite4:micro                                            # the small starter model, about 2.1 GB
 export DECISION_SERVER_KEY=<a long random key>
 uv run clm-server examples/tariff/environment.toml --http             # terminal 1
-uv run --project client clm-test-client http://127.0.0.1:8000/mcp     # terminal 2
+uv run --project portal clm-portal chat http://127.0.0.1:8000/mcp     # terminal 2
 ```
 
 - **Any model:** anything that speaks the OpenAI chat API, or Claude with `--backend claude`. A weak answer may be
