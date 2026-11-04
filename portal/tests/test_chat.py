@@ -1,4 +1,4 @@
-"""Tests for the test client, against a stand-in MCP server and a stand-in model; neither needs a network or a key."""
+"""Tests for the portal's chat, against a stand-in MCP server and a stand-in model; neither needs a network or a key."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import json
@@ -9,7 +9,8 @@ import pytest
 from mcp import Client
 from mcp.server import MCPServer
 
-import clm_test_client as tc
+import clm_portal
+from clm_portal import chat as tc
 
 
 class Tracker:
@@ -163,9 +164,9 @@ def test_a_long_result_is_shortened_unless_full_is_asked_for():
     assert tc.shown("x" * 5000, full=True) == "x" * 5000
 
 
-def test_the_banner_says_testing_only_and_names_the_model_and_whether_tools_run():
+def test_the_banner_names_the_model_and_whether_tools_run():
     text = tc.banner("http://server/mcp", "small at http://model/v1", tc.DryRun(frozenset()))
-    assert "testing only" in text.lower() and "small at http://model/v1" in text and "run for real" in text
+    assert "testing only" not in text.lower() and "small at http://model/v1" in text and "run for real" in text
     assert "not sent" in tc.banner("http://server/mcp", "small", tc.DryRun({tc.ALL}))
     assert "open_ticket" in tc.banner("http://server/mcp", "small", tc.DryRun({"open_ticket"}))
 
@@ -173,6 +174,14 @@ def test_the_banner_says_testing_only_and_names_the_model_and_whether_tools_run(
 def test_the_key_is_never_in_the_banner(monkeypatch):
     monkeypatch.setenv("DECISION_SERVER_KEY", "secret-value")
     assert "secret-value" not in tc.banner("http://server/mcp", "small", tc.DryRun(frozenset()))
+
+
+def test_chat_subcommand_takes_the_old_arguments():
+    args = clm_portal.parse(["chat", "http://server/mcp", "--backend", "claude", "--model", "m", "--model-url",
+                             "http://model/v1", "--dry-run", "open_ticket", "--dry-run", "--full"])
+    assert args.command == "chat" and args.url == "http://server/mcp" and args.backend == "claude"
+    assert args.model == "m" and args.model_url == "http://model/v1" and args.full
+    assert args.dry_run == ["open_ticket", tc.ALL]
 
 
 class FakeStream:

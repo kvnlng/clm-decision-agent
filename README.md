@@ -70,7 +70,7 @@ Small tests, said plainly ([docs/findings.md](docs/findings.md)):
 | `src/clm_decision/` | The framework, and the `clm-*` commands |
 | `examples/` | Four worked examples ([the list](examples/README.md)) |
 | `docs/` | The guides, starting with [getting started](docs/getting-started.md) |
-| `client/` | A command-line [test client](client/README.md), not part of the package |
+| `portal/` | [The portal](portal/README.md): a local page for administering a server, and a command-line chat; not part of the package |
 | `tests/` | `uv run pytest`; `uv run pytest -m slow` also loads CLM (`CLM_TEST_BACKEND=torch` for torch) |
 
 ## Licence

@@ -1,6 +1,6 @@
-"""A small command-line MCP client, for testing a decision server. Not for production.
+"""The portal's command-line chat with a running MCP server, through any model.
 
-    clm-test-client URL [--model M] [--model-url U] [--backend openai|claude] [--dry-run [TOOL]] [--full]
+    clm-portal chat URL [--model M] [--model-url U] [--backend openai|claude] [--dry-run [TOOL]] [--full]
 
 It connects to a running server, offers a model the server's tools, and prints every call and result, so you can see
 where an answer came from and judge it yourself. Tools run for real unless --dry-run holds them back.
@@ -245,8 +245,7 @@ def banner(url: str, model: str, dry_run: DryRun) -> str:
         tools = f"Dry run for {', '.join(sorted(dry_run.tools))}, not sent. Every other tool will run for real."
     else:
         tools = "Tools will run for real, including any that act. --dry-run holds them back."
-    return (f"For testing only: not for production or for real sensitive data.\nServer: {url}\nModel: {model}\n"
-            f"{tools}\nType a question; /tools lists the tools; /quit leaves.")
+    return f"Server: {url}\nModel: {model}\n{tools}\nType a question; /tools lists the tools; /quit leaves."
 
 
 @contextlib.asynccontextmanager
@@ -296,7 +295,8 @@ def _model(args, http: httpx.AsyncClient):
     try:
         from anthropic import AsyncAnthropic  # pylint: disable=import-outside-toplevel
     except ImportError as error:
-        raise ClientError("--backend claude needs the claude extra: uv run --project client --extra claude") from error
+        raise ClientError("--backend claude needs the anthropic package, which the portal installs with "
+                          "clm-decision-agent[agent]") from error
     return ClaudeModel(AsyncAnthropic(), args.model or CLAUDE_MODEL)
 
 
@@ -317,10 +317,8 @@ async def _run(args, refused: list[int]) -> int:
         return await _chat(args, http, refused)
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Command-line entry point; returns the process exit code."""
-    parser = argparse.ArgumentParser(description="Test a running MCP server by chatting with a model that uses its "
-                                                 "tools. For testing only.")
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """The chat's arguments, as `clm-portal chat` takes them."""
     parser.add_argument("url", help="the server's URL, such as http://127.0.0.1:8000/mcp")
     parser.add_argument("--backend", choices=("openai", "claude"), default="openai",
                         help="openai: anything that speaks the OpenAI chat API (default); claude: the Anthropic API")
@@ -329,7 +327,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", nargs="?", const=ALL, action="append", metavar="TOOL",
                         help="show this tool's calls without sending them; with no name, every tool's; repeatable")
     parser.add_argument("--full", action="store_true", help="print results in full")
-    args = parser.parse_args(argv)
+
+
+def run(args: argparse.Namespace) -> int:
+    """Chat until the user leaves; returns the process exit code."""
     refused: list[int] = []
     try:
         return anyio.run(_run, args, refused)
@@ -345,7 +346,3 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"error: cannot connect to {args.url}: {_cause(error)}", file=sys.stderr)
         return 2
-
-
-if __name__ == "__main__":
-    sys.exit(main())
