@@ -1,0 +1,155 @@
+# The handbook example with its rules and plan figures derived from the handbook instead of written by hand: the five
+# decisions and the plan's six terms are slots, filled by `clm-derive run` and admitted once approved (README.md,
+# docs/environment.md). The employees' records stay supplied, and the plan node keeps its id but not its figures.
+# Only the two-tier shape of the match is written by hand, in tiered_match. Not HR, tax or legal advice.
+
+[environment]
+name = "Employee handbook (derived rules)"
+description = """NOT HR, TAX OR LEGAL ADVICE: Meridian Logistics, its employees and its handbook are made up. An \
+employee's questions about their benefits, answered from Meridian's rules for the employee's own record as of a \
+date (give the date as 2026-12-01). The rules and the plan's terms were derived from the handbook by a model and \
+checked; describe lists them under derived. The 401(k) company match: run scenario_match. Carrying over unused \
+leave: scenario_carryover. Parental leave: scenario_parental_leave, with as_of the day the leave would start. \
+Tuition assistance: scenario_tuition. Anything else, such as an office's dress code: search and read the handbook \
+with the search_ and document_ tools. Cite the handbook by its section, as returned; an edition with \
+effective_until has been replaced."""
+functions = "handbook_functions"
+
+[graph]
+backend = "builtin"
+nodes = "graph/nodes_without_plan_figures.csv"
+edges = "graph/edges.csv"
+
+[documents]
+backend = "postgres"
+password_env = "CLM_DOCUMENTS_PASSWORD"
+
+[collections.handbook]
+description = """Meridian's employee handbook (made up), one document per policy, its numbered parts as passages \
+labelled "(1)", "(2)". Replaced editions are kept, with effective_until set."""
+embedding_model = "embeddinggemma"
+filters = { policy = "string", effective_from = "date", effective_until = "date" }
+
+[queries.employee]
+description = "An employee's record as of a date: state, office, hire date, days employed (the first day counts as day 1), full years of service, salary in dollars, 401(k) contribution in percent of pay, and unused leave in days."
+params = { employee = "string", as_of = "string" }
+function = "employee"
+
+[queries.plan_terms]
+description = "The 401(k) plan's terms: the IRS limit on employee contributions and the cap on the company match in dollars, and the match's two tiers (the percentage of pay in each and the rate it is matched at). Derived from the handbook."
+params = {}
+function = "plan_terms"
+
+[calculations.tiered_match]
+description = "The company match in dollars a year for a salary and a contribution in percent of pay: the first tier of pay matched at the first rate, the next tier at the second rate, capped."
+params = { salary = "number", contribution_percent = "number", first_tier_percent = "number", first_tier_rate = "number", second_tier_percent = "number", second_tier_rate = "number", match_cap = "number" }
+function = "tiered_match"
+
+[calculations.carryover_days]
+description = "Of the unused days, after taking some more this year, how many carry over and how many are forfeited."
+params = { balance = "number", days_taken = "number", limit = "number" }
+function = "carryover_days"
+
+[calculations.leave_pay]
+description = "Weekly pay during parental leave at full and reduced pay, and the total for the weeks taken, in dollars."
+params = { salary = "number", full_pay_weeks = "number", partial_pay_weeks = "number", partial_pay_percent = "number", weeks_taken = "number" }
+function = "leave_pay"
+
+[calculations.reimbursement]
+description = "The tuition repaid in dollars: a percentage of it, up to the yearly cap."
+params = { tuition = "number", percent = "number", annual_cap = "number" }
+function = "reimbursement"
+
+[derived]
+admit = ["approved"]
+collection = "handbook"
+
+[derived.decisions.match_eligible]
+description = "Whether the company match has begun for an employee, from their days of employment, counting the first day of employment."
+inputs = { days_employed = "number" }
+outputs = { allowed = "boolean" }
+owner = "People Operations (made up)"
+governs = ["benefits"]
+
+[derived.decisions.vesting]
+description = "The percentage of the company match an employee owns (is vested in), from their full years of service."
+inputs = { years_of_service = "number" }
+outputs = { vested_percent = "number" }
+owner = "People Operations (made up)"
+governs = ["benefits"]
+
+[derived.decisions.carryover_limit]
+description = "How many unused days of paid time off carry into next year, from full years of service."
+inputs = { years_of_service = "number" }
+outputs = { carryover_limit = "number" }
+owner = "People Operations (made up)"
+governs = ["benefits"]
+
+[derived.decisions.parental_eligible]
+description = "Whether an employee may start parental leave, and its weeks at full pay, its further weeks at reduced pay and the percentage of pay in those weeks, from days employed on the day it starts."
+inputs = { days_employed = "number" }
+outputs = { allowed = "boolean", full_pay_weeks = "number", partial_pay_weeks = "number", partial_pay_percent = "number" }
+owner = "People Operations (made up)"
+governs = ["benefits"]
+
+[derived.decisions.tuition_eligible]
+description = "Whether a course's tuition is repaid, the percentage repaid and the yearly cap in dollars, from full years of service and whether the manager agrees the course is related to the job."
+inputs = { years_of_service = "number", job_related = "boolean" }
+outputs = { allowed = "boolean", reimbursed_percent = "number", annual_cap = "number" }
+owner = "People Operations (made up)"
+governs = ["benefits"]
+
+[derived.facts.k401_2026.irs_limit]
+description = "The IRS limit on an employee's own elective deferrals to the plan for its plan year, in dollars."
+type = "number"
+
+[derived.facts.k401_2026.match_cap]
+description = "The plan's cap on the company match, in dollars a plan year."
+type = "number"
+
+[derived.facts.k401_2026.first_tier_percent]
+description = "The company match's first tier: the percentage of pay, from the first percent an employee contributes, matched at the first rate."
+type = "number"
+
+[derived.facts.k401_2026.first_tier_rate]
+description = "The rate, as a percentage, at which the company matches the first tier of pay an employee contributes."
+type = "number"
+
+[derived.facts.k401_2026.second_tier_percent]
+description = "The company match's second tier: the percentage of pay an employee contributes above the first tier that is matched at the second rate."
+type = "number"
+
+[derived.facts.k401_2026.second_tier_rate]
+description = "The rate, as a percentage, at which the company matches the second tier of pay an employee contributes."
+type = "number"
+
+[scenarios.match]
+description = "An employee's 401(k) company match: now, at each contribution rate, and the most it can be; with the match cap, the IRS limit and how much is vested."
+params = { employee = "string", as_of = "string" }
+levers = { contribution_percent = [3, 4, 5, 6, 8] }
+branch = "match_tiered"
+objective = "match_at_rate"
+limits = ["match_eligible"]
+
+[scenarios.carryover]
+description = "How many of an employee's unused days carry into next year, and how many are forfeited, if they take this many more days this year."
+params = { employee = "string", as_of = "string" }
+levers = { days_taken = [0, 2, 5] }
+branch = "carryover"
+objective = "carried_days"
+
+[scenarios.parental_leave]
+description = "Whether an employee may start parental leave on the date, its weeks at full and reduced pay, and the pay for the weeks taken."
+params = { employee = "string", as_of = "string" }
+levers = { weeks_taken = [11, 15] }
+branch = "parental_leave"
+objective = "total_pay"
+limits = ["parental_eligible"]
+
+[scenarios.tuition]
+description = "Whether a course's tuition is repaid, how much, and the yearly cap. Give the tuition in dollars and whether the manager agrees the course is job-related."
+params = { employee = "string", as_of = "string", tuition = "number", job_related = "boolean" }
+levers = { calendar_year = [2027] }
+branch = "tuition"
+objective = "reimbursed"
+limits = ["tuition_eligible"]

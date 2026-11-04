@@ -43,6 +43,31 @@ def plan(graph):
              "source": node["source"]}]
 
 
+PLAN_TERMS = ("irs_limit", "match_cap", "first_tier_percent", "first_tier_rate", "second_tier_percent",
+              "second_tier_rate")
+
+
+def plan_terms(graph):
+    """The plan's terms as the graph holds them, for environment_derived.toml, where they are derived facts: the IRS
+    limit, the match cap and the match's two tiers. A term not admitted fails the query, naming it."""
+    node = _node(graph, "k401_2026", "plan")
+    missing = [name for name in PLAN_TERMS if name not in node]
+    if missing:
+        raise LookupError(f"k401_2026 has no {', '.join(missing)}: no admitted derived fact")
+    return [{"year": node["year"], **{name: node[name] for name in PLAN_TERMS}}]
+
+
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def tiered_match(salary, contribution_percent, first_tier_percent, first_tier_rate, second_tier_percent,
+                 second_tier_rate, match_cap):
+    """A two-tier match, capped: the first tier of pay contributed matched at the first rate, the next tier at the
+    second. Only this shape is written here; the tiers, rates and cap are the plan's."""
+    first = min(contribution_percent, first_tier_percent)
+    second = min(max(contribution_percent - first_tier_percent, 0), second_tier_percent)
+    matched = salary * (first * first_tier_rate + second * second_tier_rate) / 100 / 100
+    return {"match": round(min(matched, match_cap), 2)}
+
+
 def company_match(salary, contribution_percent, match_cap):
     """100% of the first 3% of pay contributed and 50% of the next 3%, capped (handbook § 4(3) and (4))."""
     first = min(contribution_percent, 3)
@@ -87,6 +112,25 @@ def match(steps, params, levers):
     return {"match_at_rate": at_rate["match"], "current_percent": person["contribution_percent"],
             "company_match": now["match"], "most_match": most["match"], "match_cap": terms["match_cap"],
             "irs_limit": terms["irs_limit"], "vested_percent": vested["vested_percent"], "notice": NOTICE}
+
+
+def match_tiered(steps, params, levers):
+    """Question 1 for environment_derived.toml: as match, with the plan's terms and the match's tiers from the
+    graph, where derived facts fill them."""
+    [person] = steps.query("employee", employee=params["employee"], as_of=params["as_of"])
+    [terms] = steps.query("plan_terms")
+    steps.decide("match_eligible", days_employed=person["days_employed"])
+    vested = steps.decide("vesting", years_of_service=person["years_of_service"])
+    tiers = {name: terms[name] for name in PLAN_TERMS if name != "irs_limit"}
+
+    def matched(percent):
+        return steps.calculate("tiered_match", salary=person["salary"], contribution_percent=percent,
+                               **tiers)["match"]
+    at_rate, now = matched(levers["contribution_percent"]), matched(person["contribution_percent"])
+    most = matched(terms["first_tier_percent"] + terms["second_tier_percent"])
+    return {"match_at_rate": at_rate, "current_percent": person["contribution_percent"], "company_match": now,
+            "most_match": most, "match_cap": terms["match_cap"], "irs_limit": terms["irs_limit"],
+            "vested_percent": vested["vested_percent"], "notice": NOTICE}
 
 
 def carryover(steps, params, levers):
