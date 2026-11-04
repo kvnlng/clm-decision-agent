@@ -15,7 +15,9 @@ information, and the decision comes back with its reasons.
 
 The framework holds you to three principles:
 
-- **You write the rules; agents only choose.** Information reaches a decision only through your tools.
+- **You supply the rules, or they are derived and checked; agents only choose.** Information reaches a decision
+  only through your tools. A rule derived from your documents decides only once it passes its checks and a person
+  approves it, and every result says whether its rule was supplied or derived.
 - **Every decision is checkable.** Every step is traced, every figure checked, and a decision record kept.
 - **Small and local where you can.** CLM picks among options on a Mac or one GPU: cheap, and your data stays
   with you. Claude was more accurate in the benchmark.
@@ -53,6 +55,11 @@ One tool for each part you write, named after it, so the agent can explore the p
 | `search_<name>`, `document_<name>`, `cites_<name>`, `cited_by_<name>` | A collection of documents: the passages closest to a text, one document as stored, and the citations between them |
 | `rules`, `rule` | When the rules carry metadata: those governing a topic, with why each exists and what to ask for; one rule's rows |
 
+An environment's server also offers **resources**, read-only, from the same code as the tools: `describe`, each
+rule, each document and passage, and the derived rules in force; and one **prompt**, `answer_question`, the reference
+agent's instructions. The [MCP Inspector](docs/serving.md) lists and calls all of them. The reads stay tools too,
+since most agents fetch only through tools.
+
 ## What to expect
 
 Small tests, said plainly ([docs/findings.md](docs/findings.md)):
@@ -62,13 +69,16 @@ Small tests, said plainly ([docs/findings.md](docs/findings.md)):
   nothing to run, keeps data local and sends most of its mistakes to a person.
 - **A GPU makes CLM fast:** about 19 decisions a second on an A100 and 50 on an H100, against 3.6 on a Mac.
 - **CLM's probabilities are relative:** tune thresholds on labelled cases.
+- **Rules can be derived from your documents, but a person still reviews them:** Claude derived the handbook's 11
+  rules and facts and all matched the hand-written ones; a local model put two figures in the wrong place, which the
+  mechanical check missed and a second reading by Claude caught.
 
 ## Layout
 
 | Folder | Holds |
 |---|---|
 | `src/clm_decision/` | The framework, and the `clm-*` commands |
-| `examples/` | Four worked examples ([the list](examples/README.md)) |
+| `examples/` | Six worked examples ([the list](examples/README.md)) |
 | `docs/` | The guides, starting with [getting started](docs/getting-started.md) |
 | `portal/` | [The portal](portal/README.md): a local page for administering a server, and a command-line chat; not part of the package |
 | `tests/` | `uv run pytest`; `uv run pytest -m slow` also loads CLM (`CLM_TEST_BACKEND=torch` for torch) |

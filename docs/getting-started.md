@@ -112,6 +112,8 @@ you> I need access to the oncology registry for an audit, needed this week
   live in [Neo4j](environment.md#on-neo4j).
 - **Either:** `uv run clm-call <file>` lists the tools, and `uv run clm-call <file> <tool> '<json>'` calls one, with
   no agent. Give a running server's URL instead of a file to reach it.
+- **In a browser:** the MCP Inspector lists a running environment server's tools, resources and prompt and calls
+  them one at a time; the command is in [serving](serving.md).
 
 A mistake in either file stops start-up with one line naming the setting.
 
