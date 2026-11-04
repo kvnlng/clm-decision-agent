@@ -303,7 +303,7 @@ def _read_again(env: Environment, slot: Slot, entry: dict, reader: Extractor, on
                 file = Path(folder) / f"{slot.name}.dmn"
                 file.write_text(render_dmn(slot, answer["rows"], ident), encoding="utf-8")
                 again = load_table(file)
-            differences = derive_check.table_differences(first, again, list(slot.outputs))
+            differences = derive_check.table_differences(first, again, list(slot.outputs), slot.inputs)
     except (KeyError, TypeError, AttributeError, DmnError) as error:
         raise DeriveError(f"its answer cannot be compared: {_first_line(error)}") from error
     return {"model": reader.model, "agreed": not differences, "differences": differences[:derive_check.KEPT]}
@@ -375,15 +375,21 @@ def _unchanged(env: Environment, slot: Slot, entry: dict, on: date) -> bool:
 
 
 def _replace(folder: Path, layer: dict) -> None:
-    """Move each table the run wrote aside into derived/rules/, replacing the one there, and point its entry at it."""
+    """Point each entry whose table the run wrote aside at derived/rules/, write the layer aside too, then move the
+    tables into derived/rules/, replacing the ones there, and the layer straight after them."""
     rules = folder / "derived" / RULES
     rules.mkdir(parents=True, exist_ok=True)
+    moves = []
     for kind in ("decisions", "facts"):
         for entry in layer[kind].values():
             if str(entry.get("dmn") or "").startswith(f"{ASIDE}/"):
                 name = entry["dmn"].removeprefix(f"{ASIDE}/")
-                os.replace(folder / "derived" / entry["dmn"], rules / name)
+                moves.append((folder / "derived" / entry["dmn"], rules / name))
                 entry["dmn"] = f"{RULES}/{name}"
+    partial = derived.write_aside(folder, layer)
+    for source, target in moves:
+        os.replace(source, target)
+    os.replace(partial, derived.path(folder))
 
 
 def run(path: str | Path, collection: str, extractor: Extractor, on: date, *, fresh: bool = False) -> dict:
@@ -397,9 +403,9 @@ def run(path: str | Path, collection: str, extractor: Extractor, on: date, *, fr
     try:
         layer = _derive_all(env, collection, extractor, reader, on, fresh)
         _replace(folder, layer)
-        derived.write(folder, layer)
     finally:
         shutil.rmtree(folder / "derived" / ASIDE, ignore_errors=True)
+        derived.path(folder).with_suffix(".json.partial").unlink(missing_ok=True)
     return {name: layer[slot.kind][name]["status"] for name, slot in env.slots.items()
             if name in layer[slot.kind]}
 
@@ -448,6 +454,9 @@ def _check(environment: str, folder: Path, on: date) -> int:
         return second_reading(env, env.slots[name], entry, reader, on)
     counts = derive_check.recheck(folder, env, on=on, second=second if reader else None)
     print(", ".join(f"{counts[status]} {status}" for status in ("checked", "proposed", "stale", "untouched")))
+    if counts["undigested"]:
+        print(f"{counts['undigested']} approved before table digests were kept: sent back to proposed and checked, to "
+              "be approved again")
     print(f"second reading by {reader.model}: {counts['agreed']} agreed, {counts['disagreed']} disagreed, "
           f"{counts['not_made']} not made" if reader else "no second reading: [derived] names no second_reader")
     return 0

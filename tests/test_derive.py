@@ -168,6 +168,26 @@ def test_a_run_that_stops_part_way_leaves_the_previous_tables_and_layer_as_they_
     assert sorted(item.name for item in (path.parent / "derived").iterdir()) == ["derived.json", "rules"]
 
 
+# CARRYOVER with its last row's reason reworded: it passes the check too, as another table
+REWORDED = {**CARRYOVER, "rows": [CARRYOVER["rows"][0], {**CARRYOVER["rows"][1], "reason": "Up to 7 unused days."}]}
+
+
+def test_a_layer_that_cannot_be_written_leaves_the_previous_tables_as_they_were(path, monkeypatch):
+    run(path, good())
+    rules = path.parent / "derived" / "rules"
+    table, layer = (rules / "carryover_limit.dmn").read_bytes(), derived.read(path.parent)
+
+    def full(*args, **options):
+        raise OSError("no space left on device")
+    # Writing the layer fails once every slot is derived (no answer here fails its check, so none is retried)
+    monkeypatch.setattr(derived.json, "dumps", full)
+    with pytest.raises(OSError):
+        run(path, Canned(carryover_limit=[REWORDED], k401_2026__match_cap=[CAP]), fresh=True)
+    monkeypatch.undo()
+    assert (rules / "carryover_limit.dmn").read_bytes() == table and derived.read(path.parent) == layer
+    assert sorted(item.name for item in (path.parent / "derived").iterdir()) == ["derived.json", "rules"]
+
+
 def test_a_finished_run_replaces_the_tables_and_leaves_nothing_aside(path):
     run(path, good())
     run(path, Canned(carryover_limit=[SHIFTED], k401_2026__match_cap=[CAP]), fresh=True)
@@ -349,11 +369,10 @@ def test_a_second_reading_that_disagrees_leaves_the_entry_proposed_saying_where(
     layer = derived.read(path.parent)
     entry = layer["decisions"]["carryover_limit"]
     assert entry["status"] == "proposed" and entry["attempts"] == 1
-    assert entry["check"]["failures"] == ["a second reading by second disagrees: at years_of_service=4, 7 against 10; "
-                                          "at years_of_service=4.5, 7 against 10"]
+    # years_of_service is an integer, so the grid takes whole years only
+    assert entry["check"]["failures"] == ["a second reading by second disagrees: at years_of_service=4, 7 against 10"]
     assert entry["check"]["second_reading"]["differences"] == [
-        {"inputs": {"years_of_service": years}, "first": {"carryover_limit": 7}, "second": {"carryover_limit": 10}}
-        for years in (4, 4.5)]
+        {"inputs": {"years_of_service": 4}, "first": {"carryover_limit": 7}, "second": {"carryover_limit": 10}}]
     assert layer["facts"]["k401_2026.match_cap"]["check"]["failures"] == [
         "a second reading by second disagrees: 6300 against 6000"]
     assert len(first.prompts) == 2
@@ -429,6 +448,19 @@ def test_a_different_model_family_may_read_again(first, again):
     reader = second()
     reader.model = again
     derive.refuse_same_model(reader, first)
+
+
+def test_check_command_says_when_it_sent_back_an_approved_table_with_no_digest(path, capsys):
+    run(path, good())
+    approve_all(path.parent)
+    layer = derived.read(path.parent)
+    del layer["decisions"]["carryover_limit"]["check"]["dmn_sha256"]
+    derived.write(path.parent, layer)
+    assert derive.main(["check", str(path), "--as-of", "2026-12-01"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "1 checked, 0 proposed, 0 stale, 1 untouched"
+    assert out[1] == ("1 approved before table digests were kept: sent back to proposed and checked, to be approved "
+                      "again")
 
 
 def test_check_command_makes_the_second_reading_and_says_how_it_went(path, read_again, capsys):

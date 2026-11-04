@@ -477,8 +477,10 @@ one whose cited document has a newer edition (or has left the collection, or is 
 proposed, approved ones included, keeping who decided and adding the reason to the note. Each check records the
 sha256 of the table it checked (`check.dmn_sha256`). If the table is edited after that, `status` refuses to approve
 the entry and loading refuses to admit it, saying its DMN has changed since its check and to run `clm-derive check`
-again; `check` sends an approved one back to proposed and checks it at once. A check recorded before digests were
-kept is taken as it is. Loading admits an entry only when its status is in `admit`, its check passed, its table is
+again; `check` sends an approved one back to proposed and checks it at once. An approved table whose check was
+made before digests were kept is sent back and checked the same way, once, at the next `check`, which prints how
+many (`N approved before table digests were kept: sent back to proposed and checked, to be approved again`); until
+then it is taken as it is. Loading admits an entry only when its status is in `admit`, its check passed, its table is
 the one checked, its cited edition is still the one in force (a new edition is re-derived by `run`) and its table
 loads. Anything else leaves the slot **unfilled**: `describe` lists every slot under `derived` with its status
 (`not derived` when the layer has no entry for it) and why, and a step that calls an unfilled slot fails with that
@@ -498,10 +500,13 @@ second_reader = { backend = "ollama", model = "qwen3:14b" }   # or backend = "cl
 With it, `run` and `check` give that model each entry's cited document, whole (not made when it is not in force), and its slot,
 never the first answer: it needs the document to find the passage, so it knows which document the first reading
 cited, but never the passages, quote, statement or rows it gave. Then they compare what it derives: a decision over
-a grid of inputs (every bound in either table and a point just either side of it, half the gap to the next bound but at most 1 away; one below the lowest bound,
-one above the highest, and 0, negative numbers included; both booleans; for a string, each value named and one
-not), on the slot's outputs, text in any case and without the spaces around it; a fact within 0.5%. Any difference fails the check, so the entry stays proposed, with a failure
-saying where: `a second reading by MODEL disagrees: at years_of_service=4, 7 against 10` (the first reading, then
+a grid of inputs, on the slot's outputs, text in any case and without the spaces around it; a fact within 0.5%.
+For a `number` input the grid takes every bound in either table and a point just either side of it, half the gap
+to the next bound but at most 1 away, one below the lowest bound, one above the highest, and 0, negative numbers
+included. For an `integer` input (declare counts such as years of service or days employed so) it takes whole
+numbers only: each bound and one either side, and none below 0 unless a bound is, so `<= 17` and `< 18` agree. It
+takes both booleans, and for a string each value named and one not. Any difference fails the check, so the entry
+stays proposed, with a failure saying where: `a second reading by MODEL disagrees: at years_of_service=4, 7 against 10` (the first reading, then
 the second). A second reading that cannot be used (the model is unreachable, its answer is not in the schema, or its
 table does not parse) fails the check too, as `could not be made`: agreement is required, so its absence never
 passes. The record is kept in the entry as `check.second_reading = {model, agreed, differences}` (and `error` when it

@@ -66,35 +66,35 @@ collection = "handbook"
 
 [derived.decisions.match_eligible]
 description = "Whether the company match has begun for an employee, from their days of employment, counting the first day of employment."
-inputs = { days_employed = "number" }
+inputs = { days_employed = "integer" }
 outputs = { allowed = "boolean" }
 owner = "People Operations (made up)"
 governs = ["benefits"]
 
 [derived.decisions.vesting]
 description = "The percentage of the company match an employee owns (is vested in), from their full years of service."
-inputs = { years_of_service = "number" }
+inputs = { years_of_service = "integer" }
 outputs = { vested_percent = "number" }
 owner = "People Operations (made up)"
 governs = ["benefits"]
 
 [derived.decisions.carryover_limit]
 description = "How many unused days of paid time off carry into next year, from full years of service."
-inputs = { years_of_service = "number" }
+inputs = { years_of_service = "integer" }
 outputs = { carryover_limit = "number" }
 owner = "People Operations (made up)"
 governs = ["benefits"]
 
 [derived.decisions.parental_eligible]
 description = "Whether an employee may start parental leave, and its weeks at full pay, its further weeks at reduced pay and the percentage of pay in those weeks, from days employed on the day it starts."
-inputs = { days_employed = "number" }
+inputs = { days_employed = "integer" }
 outputs = { allowed = "boolean", full_pay_weeks = "number", partial_pay_weeks = "number", partial_pay_percent = "number" }
 owner = "People Operations (made up)"
 governs = ["benefits"]
 
 [derived.decisions.tuition_eligible]
 description = "Whether a course's tuition is repaid, the percentage repaid and the yearly cap in dollars, from full years of service and whether the manager agrees the course is related to the job."
-inputs = { years_of_service = "number", job_related = "boolean" }
+inputs = { years_of_service = "integer", job_related = "boolean" }
 outputs = { allowed = "boolean", reimbursed_percent = "number", annual_cap = "number" }
 owner = "People Operations (made up)"
 governs = ["benefits"]
