@@ -151,6 +151,31 @@ def test_fresh_run_rederives_every_slot(path):
     assert derived.read(path.parent)["decisions"]["carryover_limit"]["status"] == "checked"
 
 
+def test_a_run_that_stops_part_way_leaves_the_previous_tables_and_layer_as_they_were(path):
+    run(path, good())
+    rules = path.parent / "derived" / "rules"
+    table, layer = (rules / "carryover_limit.dmn").read_bytes(), derived.read(path.parent)
+
+    class Stops(Canned):  # pylint: disable=missing-class-docstring
+        def extract(self, system, prompt, schema):
+            if "Slot: k401_2026.match_cap\n" in prompt:
+                raise derive.DeriveError("cannot reach Ollama")
+            return super().extract(system, prompt, schema)
+    with pytest.raises(derive.DeriveError):
+        run(path, Stops(carryover_limit=[SHIFTED]), fresh=True)
+    assert (rules / "carryover_limit.dmn").read_bytes() == table and derived.read(path.parent) == layer
+    assert sorted(item.name for item in (path.parent / "derived").iterdir()) == ["derived.json", "rules"]
+
+
+def test_a_finished_run_replaces_the_tables_and_leaves_nothing_aside(path):
+    run(path, good())
+    run(path, Canned(carryover_limit=[SHIFTED], k401_2026__match_cap=[CAP]), fresh=True)
+    entry = derived.read(path.parent)["decisions"]["carryover_limit"]
+    assert entry["dmn"] == "rules/carryover_limit.dmn"
+    assert ">= 4" in (path.parent / "derived" / entry["dmn"]).read_text(encoding="utf-8").replace("&gt;", ">")
+    assert sorted(item.name for item in (path.parent / "derived").iterdir()) == ["derived.json", "rules"]
+
+
 def test_run_rederives_an_entry_whose_edition_changed(path):
     run(path, good())
     approve_all(path.parent)

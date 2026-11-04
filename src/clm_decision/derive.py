@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shutil
 import sys
 import tempfile
 from datetime import date, datetime, timezone
@@ -222,9 +224,12 @@ def _blank(slot: Slot) -> dict:
     return {**entry, "status": "proposed", "check": None, "decided_by": None, "decided_at": None, "note": None}
 
 
+RULES, ASIDE = "rules", "rules.partial"      # in derived/: the tables, and where a run writes them until it ends
+
+
 def _entry(env: Environment, slot: Slot, answer: dict) -> dict:
-    """The answer as a layer entry, its decision table written to derived/rules/; raises KeyError or TypeError for
-    an answer not in the schema."""
+    """The answer as a layer entry, its decision table written aside, to derived/rules.partial/, until the run ends
+    (_replace); raises KeyError or TypeError for an answer not in the schema."""
     given = answer["source"]
     document = env.store.document(slot.collection, str(given["document"]), None) or {}
     source = {"document": given["document"], "passages": list(given["passages"]), "quote": given["quote"],
@@ -232,11 +237,11 @@ def _entry(env: Environment, slot: Slot, answer: dict) -> dict:
     entry = {**_blank(slot), "source": source, "missing": list(answer.get("missing") or [])}
     if slot.kind == "facts":
         return {**entry, "value": answer["value"]}
-    rules = env.path.resolve().parent / "derived" / "rules"
-    rules.mkdir(parents=True, exist_ok=True)
-    (rules / f"{slot.name}.dmn").write_text(render_dmn(slot, answer["rows"], str(given["document"])),
+    aside = env.path.resolve().parent / "derived" / ASIDE
+    aside.mkdir(parents=True, exist_ok=True)
+    (aside / f"{slot.name}.dmn").write_text(render_dmn(slot, answer["rows"], str(given["document"])),
                                             encoding="utf-8")
-    return {**entry, "dmn": f"rules/{slot.name}.dmn", "collection": slot.collection,
+    return {**entry, "dmn": f"{ASIDE}/{slot.name}.dmn", "collection": slot.collection,
             "rule": {"statement": answer["statement"], "reason": answer["reason"], "owner": slot.owner,
                      "version": source["edition"] or "", "governs": list(slot.governs),
                      "cites": [given["document"]]}}
@@ -367,13 +372,40 @@ def _unchanged(env: Environment, slot: Slot, entry: dict, on: date) -> bool:
     return bool(document) and in_force(document, on) and edition(document) == source.get("edition")
 
 
-def run(path: str | Path, collection: str, extractor: Extractor, on: date, *,  # pylint: disable=too-many-locals
-        fresh: bool = False) -> dict:
+def _replace(folder: Path, layer: dict) -> None:
+    """Move each table the run wrote aside into derived/rules/, replacing the one there, and point its entry at it."""
+    rules = folder / "derived" / RULES
+    rules.mkdir(parents=True, exist_ok=True)
+    for kind in ("decisions", "facts"):
+        for entry in layer[kind].values():
+            if str(entry.get("dmn") or "").startswith(f"{ASIDE}/"):
+                name = entry["dmn"].removeprefix(f"{ASIDE}/")
+                os.replace(folder / "derived" / entry["dmn"], rules / name)
+                entry["dmn"] = f"{RULES}/{name}"
+
+
+def run(path: str | Path, collection: str, extractor: Extractor, on: date, *, fresh: bool = False) -> dict:
     """Derive every slot in the collection that is not approved or rejected on an unchanged edition, or every slot
-    with `fresh`, and write the layer with its conflicts. -> {slot: status}."""
+    with `fresh`, and write the layer with its conflicts. The tables are written aside and replace the old ones only
+    once every slot is derived, so a run that stops leaves the tables and the layer as they were. -> {slot: status}."""
     env = load_environment(path, today=on)
     reader = reader_for(env)
     refuse_same_model(reader, extractor.model)
+    folder = env.path.resolve().parent
+    try:
+        layer = _derive_all(env, collection, extractor, reader, on, fresh)
+        _replace(folder, layer)
+        derived.write(folder, layer)
+    finally:
+        shutil.rmtree(folder / "derived" / ASIDE, ignore_errors=True)
+    return {name: layer[slot.kind][name]["status"] for name, slot in env.slots.items()
+            if name in layer[slot.kind]}
+
+
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def _derive_all(env: Environment, collection: str, extractor: Extractor, reader: Extractor | None, on: date,
+                fresh: bool) -> dict:
+    """The layer run writes: each slot derived (and read again with `reader`) unless kept, with its conflicts."""
     folder = env.path.resolve().parent
     old = derived.empty(collection) if fresh else derived.read(folder)
     layer = {**old, "collection": collection, "model": extractor.model,
@@ -391,9 +423,7 @@ def run(path: str | Path, collection: str, extractor: Extractor, on: date, *,  #
         same = (before.get("supplied"), before.get("derived")) == (conflict["supplied"], conflict["derived"])
         layer["conflicts"][name] = before if same else conflict
     layer["conflicts"] = {name: item for name, item in layer["conflicts"].items() if name in found}
-    derived.write(folder, layer)
-    return {name: layer[slot.kind][name]["status"] for name, slot in env.slots.items()
-            if name in layer[slot.kind]}
+    return layer
 
 
 def _extractor(args) -> Extractor:
