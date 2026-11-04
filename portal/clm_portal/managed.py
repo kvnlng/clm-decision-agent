@@ -151,13 +151,21 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
     async def call(self, name: str, arguments: dict) -> dict:
         """One tool's result as a dict; ToolFailed with the server's message when it fails."""
         async with self.client() as client:
-            result = await client.call_tool(name, arguments)
-        text = "\n".join(block.text for block in result.content if block.type == "text")
-        if result.is_error:
-            raise ToolFailed(text or f"{name} failed")
-        if result.structured_content is not None:
-            return result.structured_content
-        return json.loads(text) if text else {}
+            return result_dict(name, await client.call_tool(name, arguments))
+
+
+def result_dict(name: str, result) -> dict:
+    """A tool's result as a dict; ToolFailed with the server's message when it failed."""
+    text = "\n".join(block.text for block in result.content if block.type == "text")
+    if result.is_error:
+        raise ToolFailed(text or f"{name} failed")
+    if result.structured_content is not None:
+        return result.structured_content
+    try:
+        found = json.loads(text) if text else {}
+    except json.JSONDecodeError as error:
+        raise ToolFailed(f"{name} did not answer with JSON") from error
+    return found if isinstance(found, dict) else {"result": found}
 
 
 class Busy(RuntimeError):
