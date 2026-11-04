@@ -12,6 +12,7 @@ from fake_documents import FakeEmbedder, FakeStore
 from test_derived_load import HEAD
 
 from clm_decision import derive_check, derived
+from clm_decision.dmn import load_table
 from clm_decision.environment import load_environment
 
 HANDBOOK = Path(__file__).parent.parent / "examples" / "handbook" / "handbook.jsonl"
@@ -296,3 +297,57 @@ def test_a_differing_supplied_value_is_an_open_conflict(env):
     assert found["k401_2026.year"] | {"source": None} == {
         "target": "facts", "name": "k401_2026.year", "supplied": 2026, "derived": 2024, "source": None,
         "status": "open", "decided_by": None, "decided_at": None, "note": None}
+
+
+def loaded(tmp_path, rows, name="t"):
+    file = tmp_path / f"{name}.dmn"
+    file.write_text(dmn(rows), encoding="utf-8")
+    return load_table(file)
+
+
+SHIFTED = [("&gt;= 4", 10, "x"), ("-", 7, "y")]
+
+
+def test_the_grid_takes_every_bound_one_either_side_and_zero_never_a_negative(tmp_path):
+    grid = derive_check.grid(loaded(tmp_path, GOOD, "a"), loaded(tmp_path, SHIFTED, "b"))
+    assert [row["years_of_service"] for row in grid] == [0, 3, 4, 5, 6]
+
+
+def test_two_tables_that_differ_at_a_bound_are_listed_there(tmp_path):
+    first, second = loaded(tmp_path, GOOD, "a"), loaded(tmp_path, SHIFTED, "b")
+    assert derive_check.table_differences(first, second, ["carryover_limit"]) == [
+        {"inputs": {"years_of_service": 4}, "first": {"carryover_limit": 7}, "second": {"carryover_limit": 10}}]
+
+
+def test_tables_that_differ_only_in_their_reasons_agree(tmp_path):
+    first = loaded(tmp_path, GOOD, "a")
+    second = loaded(tmp_path, [("&gt;= 5", 10, "other words"), ("&lt; 5", 7, "more")], "b")
+    assert not derive_check.table_differences(first, second, ["carryover_limit"])
+
+
+def test_two_tables_with_no_row_for_an_input_agree_there(tmp_path):
+    first, second = loaded(tmp_path, [("&gt;= 5", 10, "x")], "a"), loaded(tmp_path, [("&gt;= 5", 10, "y")], "b")
+    assert not derive_check.table_differences(first, second, ["carryover_limit"])
+
+
+def test_facts_agree_within_half_a_percent():
+    assert derive_check.same_value(6300, 6310) and not derive_check.same_value(6300, 6400)
+    assert derive_check.same_value(True, True) and not derive_check.same_value(3, 100)
+    assert not derive_check.same_value(True, 1) and derive_check.same_value("a", "a")
+
+
+def test_a_disagreement_says_where_and_what_each_reading_gives():
+    differences = [{"inputs": {"years_of_service": 4}, "first": {"carryover_limit": 7},
+                    "second": {"carryover_limit": 10}}]
+    assert derive_check.disagreement("gemma4:26b", differences) == (
+        "a second reading by gemma4:26b disagrees: at years_of_service=4, 7 against 10")
+    assert derive_check.disagreement("m", [{"first": 100, "second": 3}]) == (
+        "a second reading by m disagrees: 100 against 3")
+
+
+def test_a_long_disagreement_lists_three_points_and_counts_the_rest():
+    differences = [{"inputs": {"d": day}, "first": {"allowed": False, "weeks": 0},
+                    "second": {"allowed": True, "weeks": 12}} for day in range(5)]
+    point = "allowed false, weeks 0 against allowed true, weeks 12"
+    assert derive_check.disagreement("m", differences) == (
+        f"a second reading by m disagrees: at d=0, {point}; at d=1, {point}; at d=2, {point}; and at 2 more")

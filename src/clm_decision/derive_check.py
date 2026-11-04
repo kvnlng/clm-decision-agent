@@ -8,12 +8,13 @@ approves or rejects (derived.set_status).
 """
 from __future__ import annotations
 
+import itertools
 import re
 from datetime import date
 from pathlib import Path
 
 from . import derived
-from .dmn import DmnError, load_table
+from .dmn import DmnError, Table, evaluate, load_table
 from .environment import _CHECK_TYPE, _DMN_TYPES, Environment, Slot, edition, in_force
 
 _WORDS = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
@@ -195,6 +196,89 @@ def recheck(folder: str | Path, env: Environment, *, on: date) -> dict:
             done = derived.set_check(folder, kind, name, {"passed": not failures, "failures": failures})
             counts[done["status"]] += 1
     return counts
+
+
+CLOSE = 0.005           # two readings of a number agree within 0.5%, as the handbook's answer scoring does
+SHOWN = 3               # the points a disagreement's failure line lists
+KEPT = 20               # the points check.second_reading keeps
+
+
+def _bounds(table: Table, name: str) -> set[float]:
+    if name not in table.inputs:
+        return set()
+    column = table.inputs.index(name)
+    return {float(found) for row in table.rules for found in re.findall(r"-?\d+(?:\.\d+)?", row.entries[column])}
+
+
+def _strings(table: Table, name: str) -> set[str]:
+    if name not in table.inputs:
+        return set()
+    column = table.inputs.index(name)
+    return {found for row in table.rules for found in re.findall(r'"([^"]*)"', row.entries[column])}
+
+
+def grid(first: Table, second: Table) -> list[dict]:
+    """The inputs two tables are compared on, every combination of: for a number, each bound in either table, one
+    either side, and 0, never below 0 (a count of days or years); both booleans; for a string, each value either
+    table names and one neither does."""
+    axes = []
+    for index, name in enumerate(first.inputs):
+        kind = first.types[index].rsplit(":", 1)[-1]
+        if kind == "boolean":
+            axes.append([True, False])
+        elif kind == "string":
+            axes.append(sorted(_strings(first, name) | _strings(second, name)) + ["(none of these)"])
+        else:
+            bounds = _bounds(first, name) | _bounds(second, name)
+            values = {0.0} | bounds | {bound + 1 for bound in bounds} | {bound - 1 for bound in bounds}
+            axes.append(sorted(int(value) if value.is_integer() else value for value in values if value >= 0))
+    return [dict(zip(first.inputs, values)) for values in itertools.product(*axes)]
+
+
+def _outputs(table: Table, inputs: dict, names: list[str]):
+    try:
+        found = evaluate(table, {key: value for key, value in inputs.items() if key in table.inputs})["outputs"]
+    except DmnError:
+        return "no answer"
+    return {name: found.get(name) for name in names}
+
+
+def table_differences(first: Table, second: Table, names: list[str]) -> list[dict]:
+    """Where two tables give different values of the named outputs on the grid, first's inputs deciding the grid's
+    axes; a point where neither table has a row agrees."""
+    differences = []
+    for inputs in grid(first, second):
+        one, other = _outputs(first, inputs, names), _outputs(second, inputs, names)
+        if one != other:
+            differences.append({"inputs": inputs, "first": one, "second": other})
+    return differences
+
+
+def same_value(first, second) -> bool:
+    """Whether two readings of a fact agree: numbers within 0.5%, anything else equal and of the same kind."""
+    if _numeric(first) and _numeric(second):
+        return abs(first - second) <= CLOSE * max(abs(second), 1)
+    return type(first) is type(second) and first == second
+
+
+def _shown(value) -> str:
+    if isinstance(value, dict):
+        return (_shown(next(iter(value.values()))) if len(value) == 1
+                else ", ".join(f"{name} {_shown(item)}" for name, item in value.items()))
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return f"{value:g}" if _numeric(value) else str(value)
+
+
+def disagreement(model: str, differences: list[dict]) -> str:
+    """The failure line for a second reading that disagrees: where, and what the first reading gives against the
+    second, for the first few points."""
+    points = []
+    for item in differences[:SHOWN]:
+        where = ", ".join(f"{name}={_shown(value)}" for name, value in (item.get("inputs") or {}).items())
+        points.append((f"at {where}, " if where else "") + f"{_shown(item['first'])} against {_shown(item['second'])}")
+    more = f"; and at {len(differences) - SHOWN} more" if len(differences) > SHOWN else ""
+    return f"a second reading by {model} disagrees: " + "; ".join(points) + more
 
 
 def conflicts(env: Environment, layer: dict) -> dict:

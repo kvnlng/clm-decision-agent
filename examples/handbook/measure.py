@@ -36,7 +36,6 @@ The company, its people and its policies are made up. Not HR, tax or legal advic
 """
 import argparse
 import csv
-import itertools
 import json
 import re
 import shutil
@@ -46,7 +45,7 @@ from datetime import date
 from pathlib import Path
 
 from clm_decision import decision_agent, derive, derive_check, derived
-from clm_decision.dmn import DmnError, evaluate, load_table
+from clm_decision.dmn import DmnError, load_table
 from clm_decision.environment import load_environment
 from clm_decision.number_check import unsupported
 
@@ -218,50 +217,17 @@ def restore(backend: str) -> int:
     return 0
 
 
-def _bounds(table, name: str) -> set[float]:
-    if name not in table.inputs:
-        return set()
-    column = table.inputs.index(name)
-    return {float(found) for row in table.rules for found in re.findall(r"-?\d+(?:\.\d+)?", row.entries[column])}
-
-
-def grid(hand, mine) -> list[dict]:
-    """Every combination of: each bound in either table, one either side, and 0, for a number, none below 0 (every
-    input here is a count of days or years); both booleans."""
-    axes = []
-    for index, name in enumerate(hand.inputs):
-        if hand.types[index].endswith("boolean"):
-            axes.append([True, False])
-            continue
-        bounds = _bounds(hand, name) | _bounds(mine, name)
-        values = {0.0} | bounds | {bound + 1 for bound in bounds} | {bound - 1 for bound in bounds}
-        axes.append(sorted(int(value) if value.is_integer() else value for value in values if value >= 0))
-    return [dict(zip(hand.inputs, values)) for values in itertools.product(*axes)]
-
-
-def _outputs(table, inputs: dict, names: list[str]):
-    try:
-        found = evaluate(table, inputs)["outputs"]
-    except DmnError as error:
-        return f"error: {error}"
-    return {name: found.get(name) for name in names}
-
-
 def _compare_table(name: str, folder: Path) -> list[dict]:
-    """Where the derived table and the hand-written one give different outputs on the grid."""
+    """Where the derived table and the hand-written one give different outputs on the grid, compared as a second
+    reading is (derive_check.table_differences)."""
     hand = load_table(HERE / "rules" / f"{name}.dmn")
     try:
         mine = load_table(folder / "rules" / f"{name}.dmn")
     except DmnError as error:
         return [{"inputs": None, "hand": None, "derived": f"error: {error}"}]
     names = [output for output in hand.outputs if output not in ("reason", "citation")]
-    differences = []
-    for inputs in grid(hand, mine):
-        given = {key: value for key, value in inputs.items() if key in mine.inputs}
-        expected, found = _outputs(hand, inputs, names), _outputs(mine, given, names)
-        if expected != found:
-            differences.append({"inputs": inputs, "hand": expected, "derived": found})
-    return differences
+    return [{"inputs": item["inputs"], "hand": item["first"], "derived": item["second"]}
+            for item in derive_check.table_differences(hand, mine, names)]
 
 
 def _hand_facts() -> dict:
