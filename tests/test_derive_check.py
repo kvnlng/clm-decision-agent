@@ -314,6 +314,48 @@ def test_an_agreeing_second_reading_lets_a_passing_entry_be_checked(env):
     assert counts["agreed"] == 1
 
 
+def test_a_recorded_disagreement_keeps_failing_when_the_second_reader_is_removed(env):
+    folder = layer_with(env, k401_2026__match_cap=("facts", fact()))
+    derive_check.recheck(folder, env, on=ON, second=reading(False))
+    derive_check.recheck(folder, env, on=ON)
+    entry = derived.read(folder)["facts"]["k401_2026.match_cap"]
+    assert entry["status"] == "proposed" and not entry["check"]["passed"]
+    assert entry["check"]["failures"] == ["an earlier second reading by m disagrees: 6300 against 63"]
+    assert entry["check"]["second_reading"]["agreed"] is False
+
+
+def test_an_unusable_earlier_second_reading_keeps_failing_without_a_reader(env):
+    def down(_kind, _name, _entry):
+        return {"model": "m", "agreed": False, "differences": [], "error": "unreachable"}, ["x"]
+    folder = layer_with(env, k401_2026__match_cap=("facts", fact()))
+    derive_check.recheck(folder, env, on=ON, second=down)
+    derive_check.recheck(folder, env, on=ON)
+    entry = derived.read(folder)["facts"]["k401_2026.match_cap"]
+    assert entry["check"]["failures"] == ["an earlier second reading by m could not be made: unreachable"]
+
+
+def test_a_later_agreeing_reading_or_a_correction_clears_an_earlier_disagreement(env):
+    folder = layer_with(env, k401_2026__match_cap=("facts", fact()))
+    derive_check.recheck(folder, env, on=ON, second=reading(False))
+    derive_check.recheck(folder, env, on=ON, second=reading(True))
+    assert derived.read(folder)["facts"]["k401_2026.match_cap"]["status"] == "checked"
+    derive_check.recheck(folder, env, on=ON, second=reading(False))
+    layer = derived.read(folder)
+    layer["facts"]["k401_2026.match_cap"].update(status="proposed", check=None)
+    derived.write(folder, layer)
+    derive_check.recheck(folder, env, on=ON)
+    entry = derived.read(folder)["facts"]["k401_2026.match_cap"]
+    assert entry["status"] == "checked" and "second_reading" not in entry["check"]
+
+
+def test_an_earlier_agreeing_reading_is_kept_and_passes_without_a_reader(env):
+    folder = layer_with(env, k401_2026__match_cap=("facts", fact()))
+    derive_check.recheck(folder, env, on=ON, second=reading(True))
+    derive_check.recheck(folder, env, on=ON)
+    entry = derived.read(folder)["facts"]["k401_2026.match_cap"]
+    assert entry["status"] == "checked" and entry["check"]["second_reading"]["agreed"] is True
+
+
 def test_a_second_reading_is_made_on_an_entry_the_mechanical_check_fails_too(env):
     folder = layer_with(env, k401_2026__match_cap=("facts", fact(quote="The match is capped at $6,300")))
     derive_check.recheck(folder, env, on=ON, second=reading(False))
@@ -374,6 +416,13 @@ def test_facts_agree_within_half_a_percent():
     assert derive_check.same_value(6300, 6310) and not derive_check.same_value(6300, 6400)
     assert derive_check.same_value(True, True) and not derive_check.same_value(3, 100)
     assert not derive_check.same_value(True, 1) and derive_check.same_value("a", "a")
+
+
+def test_fact_agreement_is_symmetric_and_relative_with_no_floor():
+    assert not derive_check.same_value(0.035, 0.039) and derive_check.same_value(0.035, 0.035)
+    assert derive_check.same_value(100, 99.5) and derive_check.same_value(99.5, 100)
+    assert derive_check.same_value(0, 0) and not derive_check.same_value(0, 0.001)
+    assert not derive_check.same_value(0.001, 0)
 
 
 def test_a_disagreement_says_where_and_what_each_reading_gives():

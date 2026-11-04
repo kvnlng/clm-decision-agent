@@ -179,6 +179,17 @@ def _stale(env: Environment, name: str, entry: dict, on: date) -> str | None:
 SecondReading = Callable[[str, str, dict], tuple[dict, list[str]]]
 
 
+def _earlier(record: dict | None) -> list[str]:
+    """The failure an earlier second reading still makes when none is made now: a disagreement or an unusable
+    reading stands until a later reading agrees or a person corrects the entry, which clears its check."""
+    if not record or record.get("agreed"):
+        return []
+    model = record.get("model")
+    if record.get("error"):
+        return [f"an earlier second reading by {model} could not be made: {record['error']}"]
+    return ["an earlier " + disagreement(model, record.get("differences") or []).removeprefix("a ")]
+
+
 def _reading(record: dict) -> str:
     return "not_made" if record.get("error") else "agreed" if record.get("agreed") else "disagreed"
 
@@ -204,7 +215,10 @@ def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondRea
                 counts["untouched"] += 1
                 continue
             failures, record = check(env, kind, name, entry, on=on), None
-            if second is not None:
+            if second is None:
+                record = (entry.get("check") or {}).get("second_reading")
+                failures += _earlier(record)
+            else:
                 record, disagreed = second(kind, name, entry)
                 failures += disagreed
                 counts[_reading(record)] += 1
@@ -271,9 +285,10 @@ def table_differences(first: Table, second: Table, names: list[str]) -> list[dic
 
 
 def same_value(first, second) -> bool:
-    """Whether two readings of a fact agree: numbers within 0.5%, anything else equal and of the same kind."""
+    """Whether two readings of a fact agree: numbers within 0.5% of the larger, either way round (0 agrees only with
+    0), anything else equal and of the same kind."""
     if _numeric(first) and _numeric(second):
-        return abs(first - second) <= CLOSE * max(abs(second), 1)
+        return abs(first - second) <= CLOSE * max(abs(first), abs(second))
     return type(first) is type(second) and first == second
 
 
