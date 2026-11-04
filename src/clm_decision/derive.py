@@ -375,15 +375,21 @@ def _unchanged(env: Environment, slot: Slot, entry: dict, on: date) -> bool:
 
 
 def _replace(folder: Path, layer: dict) -> None:
-    """Move each table the run wrote aside into derived/rules/, replacing the one there, and point its entry at it."""
+    """Point each entry whose table the run wrote aside at derived/rules/, write the layer aside too, then move the
+    tables into derived/rules/, replacing the ones there, and the layer straight after them."""
     rules = folder / "derived" / RULES
     rules.mkdir(parents=True, exist_ok=True)
+    moves = []
     for kind in ("decisions", "facts"):
         for entry in layer[kind].values():
             if str(entry.get("dmn") or "").startswith(f"{ASIDE}/"):
                 name = entry["dmn"].removeprefix(f"{ASIDE}/")
-                os.replace(folder / "derived" / entry["dmn"], rules / name)
+                moves.append((folder / "derived" / entry["dmn"], rules / name))
                 entry["dmn"] = f"{RULES}/{name}"
+    partial = derived.write_aside(folder, layer)
+    for source, target in moves:
+        os.replace(source, target)
+    os.replace(partial, derived.path(folder))
 
 
 def run(path: str | Path, collection: str, extractor: Extractor, on: date, *, fresh: bool = False) -> dict:
@@ -397,9 +403,9 @@ def run(path: str | Path, collection: str, extractor: Extractor, on: date, *, fr
     try:
         layer = _derive_all(env, collection, extractor, reader, on, fresh)
         _replace(folder, layer)
-        derived.write(folder, layer)
     finally:
         shutil.rmtree(folder / "derived" / ASIDE, ignore_errors=True)
+        derived.path(folder).with_suffix(".json.partial").unlink(missing_ok=True)
     return {name: layer[slot.kind][name]["status"] for name, slot in env.slots.items()
             if name in layer[slot.kind]}
 

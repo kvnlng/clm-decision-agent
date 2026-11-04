@@ -168,6 +168,26 @@ def test_a_run_that_stops_part_way_leaves_the_previous_tables_and_layer_as_they_
     assert sorted(item.name for item in (path.parent / "derived").iterdir()) == ["derived.json", "rules"]
 
 
+# CARRYOVER with its last row's reason reworded: it passes the check too, as another table
+REWORDED = {**CARRYOVER, "rows": [CARRYOVER["rows"][0], {**CARRYOVER["rows"][1], "reason": "Up to 7 unused days."}]}
+
+
+def test_a_layer_that_cannot_be_written_leaves_the_previous_tables_as_they_were(path, monkeypatch):
+    run(path, good())
+    rules = path.parent / "derived" / "rules"
+    table, layer = (rules / "carryover_limit.dmn").read_bytes(), derived.read(path.parent)
+
+    def full(*args, **options):
+        raise OSError("no space left on device")
+    # Writing the layer fails once every slot is derived (no answer here fails its check, so none is retried)
+    monkeypatch.setattr(derived.json, "dumps", full)
+    with pytest.raises(OSError):
+        run(path, Canned(carryover_limit=[REWORDED], k401_2026__match_cap=[CAP]), fresh=True)
+    monkeypatch.undo()
+    assert (rules / "carryover_limit.dmn").read_bytes() == table and derived.read(path.parent) == layer
+    assert sorted(item.name for item in (path.parent / "derived").iterdir()) == ["derived.json", "rules"]
+
+
 def test_a_finished_run_replaces_the_tables_and_leaves_nothing_aside(path):
     run(path, good())
     run(path, Canned(carryover_limit=[SHIFTED], k401_2026__match_cap=[CAP]), fresh=True)

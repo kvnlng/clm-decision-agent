@@ -47,13 +47,18 @@ def read(folder: str | Path) -> dict:
     return layer
 
 
-def write(folder: str | Path, layer: dict) -> None:
-    """Write the layer, replacing the file whole so a reader never sees half of it."""
+def write_aside(folder: str | Path, layer: dict) -> Path:
+    """Write the layer beside its file, as derived.json.partial, for os.replace to put in place; -> that path."""
     file = path(folder)
     file.parent.mkdir(parents=True, exist_ok=True)
     partial = file.with_suffix(".json.partial")
     partial.write_text(json.dumps(layer, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    os.replace(partial, file)
+    return partial
+
+
+def write(folder: str | Path, layer: dict) -> None:
+    """Write the layer, replacing the file whole so a reader never sees half of it."""
+    os.replace(write_aside(folder, layer), path(folder))
 
 
 def dmn_digest(folder: str | Path, entry: dict) -> str | None:
