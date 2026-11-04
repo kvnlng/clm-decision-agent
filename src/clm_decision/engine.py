@@ -128,7 +128,15 @@ def rule_info(env: Environment, name: str) -> dict:
     return {"name": name, "description": decision.description, "statement": rule.statement, "reason": rule.reason,
             "owner": rule.owner, "version": rule.version, "governs": list(rule.governs),
             "depends_on": list(rule.depends_on), "needs": list(rule.needs),
-            **({"cites": list(rule.cites), "collection": decision.collection} if rule.cites else {})}
+            **({"cites": list(rule.cites), "collection": decision.collection} if rule.cites else {}),
+            **_origin(decision)}
+
+
+def _origin(decision) -> dict:
+    """Where a rule comes from: supplied, or derived with its status and source."""
+    if decision.origin != "derived":
+        return {"origin": "supplied"}
+    return {"origin": "derived", "status": decision.status, "source": decision.source}
 
 
 def _estimate(name: str, rows: list[dict], setting) -> list[dict]:
@@ -161,11 +169,18 @@ class Steps:
         query = _part(self.env.queries, "query", name)
         _check(f"query {name}", query.params, params)
         tracing.add("query")
+        read: set[str] = set()
         with tracing.timed("query_ms"):
-            rows = self.env.connector.run(query, params)
+            if self.env.derived_facts:
+                rows, read = self.env.connector.run_recording(query, params)
+            else:
+                rows = self.env.connector.run(query, params)
         if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
             raise StepError(f"query {name}: its function must return a list of dicts")
         step = {"kind": "query", "name": name, "inputs": params, "result": rows, "information": query.kind}
+        facts = [f"{node}.{prop}" for node in sorted(read) for prop in self.env.derived_facts.get(node, {})]
+        if facts:
+            step.update(origin="derived", derived=facts)
         if query.kind == "estimate":
             step["case"] = self.case.get(name, "central")
             rows = step["result"] = _estimate(name, rows, step["case"])
@@ -173,8 +188,15 @@ class Steps:
         return rows
 
     def decide(self, name: str, **inputs) -> dict:
-        """A decision's outputs; a DMN decision also records the rules that fired."""
+        """A decision's outputs; a DMN decision also records the rules that fired. A derived decision not admitted
+        fails, saying why."""
+        if name in self.env.unfilled:
+            self.steps.append({"kind": "decision", "name": name, "inputs": inputs, "result": None, "fired": [],
+                               "origin": "derived", "error": f"decision {name} is derived and not admitted: "
+                                                             f"{self.env.unfilled[name]}"})
+            raise StepError(self.steps[-1]["error"])
         decision = _part(self.env.decisions, "decision", name)
+        origin = {"origin": decision.origin, **({"status": decision.status} if decision.origin == "derived" else {})}
         _check(f"decision {name}", decision.params, inputs)
         tracing.add("decision")
         try:
@@ -189,9 +211,9 @@ class Steps:
         except Exception as error:
             # Recorded even if the owner's code catches it, so a limit that failed cannot pass unnoticed
             self.steps.append({"kind": "decision", "name": name, "inputs": inputs, "result": None, "fired": [],
-                               "error": _message(error)})
+                               **origin, "error": _message(error)})
             raise
-        step = {"kind": "decision", "name": name, "inputs": inputs, "result": outputs, "fired": fired}
+        step = {"kind": "decision", "name": name, "inputs": inputs, "result": outputs, "fired": fired, **origin}
         if decision.collection and isinstance(outputs.get("citation"), str):
             step["citations"] = _resolved(self.env, decision.collection, outputs["citation"])
         self.steps.append(step)
@@ -430,8 +452,8 @@ def _failing(run: dict) -> tuple[str | None, str] | None:
     return None
 
 
-def _headroom(env: Environment, scenario, params: dict, branch: dict,  # pylint: disable=too-many-arguments
-              estimate: str, direction: str) -> dict:  # pylint: disable=too-many-positional-arguments
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def _headroom(env: Environment, scenario, params: dict, branch: dict, estimate: str, direction: str) -> dict:
     """How far the estimate can move from its central value, down or up, before the branch fails a limit: the
     smallest change found by bisection to within half a percent, over a fall to zero or a rise to double. It assumes
     a limit's verdict changes once along the way, as for a threshold."""
@@ -479,7 +501,7 @@ def run_scenario(env: Environment, name: str, params: dict, branches: list[dict]
     ranking = [branch["levers"] for branch in kept]
     used = [step for branch in results for step in branch["steps"]]
     rules = {step["name"]: rule_info(env, step["name"]) for step in used
-             if step["kind"] == "decision" and env.decisions[step["name"]].rule}
+             if step["kind"] == "decision" and step["name"] in env.decisions and env.decisions[step["name"]].rule}
     information = {step["name"]: {"kind": step["information"], "description": env.queries[step["name"]].description}
                    for step in used if step["kind"] == "query"}
     return {"scenario": name, "objective": scenario.objective, "maximise": scenario.maximise, "branches": results,

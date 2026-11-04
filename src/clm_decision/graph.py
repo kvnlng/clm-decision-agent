@@ -70,6 +70,10 @@ class Graph:
         """One node's properties; raises KeyError."""
         return dict(self._nodes[node_id])
 
+    def set(self, node_id: str, name: str, value) -> None:
+        """Give a node a property, as an admitted derived fact does; raises KeyError for an unknown node."""
+        self._nodes[node_id][name] = value
+
     def nodes(self, kind: str | None = None) -> list[dict]:
         """Every node, or every node of one kind."""
         return [dict(node) for node in self._nodes.values() if kind is None or node["kind"] == kind]

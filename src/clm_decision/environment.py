@@ -14,10 +14,12 @@ import sys
 import threading
 import tomllib
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from types import ModuleType
 from typing import Protocol
 
+from . import derived
 from . import documents as docs
 from .documents import _table, _text  # shared with the [documents] settings
 from .dmn import DmnError, Table, load_table
@@ -82,7 +84,7 @@ class Information:
 
 
 @dataclass(frozen=True)
-class Decision:
+class Decision:  # pylint: disable=too-many-instance-attributes
     """A rule: a DMN table, or a function the owner wrote, called with the inputs."""
     name: str
     description: str
@@ -91,6 +93,26 @@ class Decision:
     function: str | None
     rule: RuleInfo | None = None
     collection: str | None = None       # the collection its citations are in
+    origin: str = "supplied"            # or "derived": read from the documents by a model, and checked
+    status: str | None = None           # a derived rule's status in the derived layer
+    source: dict | None = None          # a derived rule's source: document, passages, quote and edition
+
+
+@dataclass(frozen=True)
+class Slot:  # pylint: disable=too-many-instance-attributes
+    """A decision or fact the environment needs and does not supply: derivation fills it from the documents. A
+    decision has inputs and outputs; a fact names a node, a property and its type."""
+    name: str
+    kind: str                           # "decisions" or "facts"
+    description: str
+    collection: str
+    inputs: dict[str, str] = field(default_factory=dict)
+    outputs: dict[str, str] = field(default_factory=dict)
+    owner: str = ""
+    governs: tuple[str, ...] = ()
+    node: str | None = None
+    property: str | None = None
+    type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -168,6 +190,29 @@ class BuiltinConnector:  # pylint: disable=too-few-public-methods
         """The rows the query's function returns."""
         return getattr(self.functions, query.function)(self.graph, **params)
 
+    def run_recording(self, query: Query, params: dict) -> tuple[list[dict], set[str]]:
+        """The rows, and the ids of every node the function was given: what it may have read. A node it was given
+        and ignored is counted too, so this can over-report, never under-report."""
+        recording = _Recording(self.graph)
+        return getattr(self.functions, query.function)(recording, **params), recording.read
+
+
+class _Recording:  # pylint: disable=too-few-public-methods
+    """The graph, noting the id of each node it hands out; one per query call, so calls never share it."""
+
+    def __init__(self, graph: Graph):
+        self._graph, self.read = graph, set()
+
+    def _note(self, found):
+        for item in found if isinstance(found, list) else [found]:
+            if isinstance(item, dict) and isinstance(item.get("id"), str):
+                self.read.add(item["id"])
+        return found
+
+    def __getattr__(self, name: str):
+        method = getattr(self._graph, name)
+        return lambda *args, **kwargs: self._note(method(*args, **kwargs))
+
 
 @dataclass(frozen=True)
 class Environment:  # pylint: disable=too-many-instance-attributes
@@ -190,6 +235,12 @@ class Environment:  # pylint: disable=too-many-instance-attributes
     embedder: docs.Embedder | None = None
     document_tools: bool = True
     cited_text: bool = True
+    slots: dict[str, Slot] = field(default_factory=dict)
+    unfilled: dict[str, str] = field(default_factory=dict)          # slot name -> why it is not admitted
+    admitted: tuple[str, ...] = ()                                  # the slots a derived entry fills
+    admit: tuple[str, ...] = ()                                     # the statuses admitted
+    admit_override: bool = False                                    # --admit-derived: for testing only
+    derived_facts: dict[str, dict[str, dict]] = field(default_factory=dict)    # node -> property -> entry
 
     def topics(self) -> list[str]:
         """The kinds of decision the rules govern."""
@@ -468,7 +519,7 @@ def _check_citations(decisions: dict[str, Decision], collections: dict, store) -
                 raise ScenarioError(f"{place} cites {ident}, which {decision.collection} does not hold")
 
 
-def _scenario(name: str, table: dict, functions: ModuleType, decisions: dict, queries: dict) -> ScenarioDef:
+def _scenario(name: str, table: dict, functions: ModuleType, decisions, queries: dict) -> ScenarioDef:  # pylint: disable=too-many-locals
     where = f"scenarios.{name}"
     levers = _table(table, "levers", where)
     if not levers:
@@ -501,12 +552,161 @@ def _scenario(name: str, table: dict, functions: ModuleType, decisions: dict, qu
                        branch, _text(table, "objective", where), maximise, tuple(limits), uncertain, approvals)
 
 
-def load_environment(path: str | Path, backend: str | None = None,  # pylint: disable=too-many-locals
+def in_force(document: dict, on: date) -> bool:
+    """Whether a document, as the store returns it, is in force on the date: effective_from on or before it and
+    effective_until, if any, on or after it; a document with no dates always is."""
+    metadata = document.get("metadata") or {}
+    start, end = metadata.get("effective_from"), metadata.get("effective_until")
+    return (not start or str(start) <= on.isoformat()) and (not end or on.isoformat() <= str(end))
+
+
+def edition(document: dict) -> str | None:
+    """A document's edition: the date it took effect, or None when it has none."""
+    start = (document.get("metadata") or {}).get("effective_from")
+    return str(start) if start else None
+
+
+def _slot_names(table: dict, where: str) -> dict[str, str]:
+    value = _table(table, where.rsplit(".", 1)[-1], where)
+    for name, kind in value.items():
+        if _bad_name(name):
+            raise ScenarioError(f"{where}.{name}: {_bad_name(name)}")
+        if kind not in TYPES:
+            raise ScenarioError(f"{where}.{name}: type must be {', '.join(TYPES)}, not {kind!r}")
+    return dict(value)
+
+
+def _slots(data: dict, backend: str, decisions: dict) -> tuple[dict[str, Slot], tuple[str, ...]] | None:
+    """The [derived] table's slots and the statuses it admits; None without the table, when the layer is ignored."""
+    if "derived" not in data:
+        return None
+    table = _table(data, "derived", "derived")
+    admit = _names(table, "admit", "derived") if "admit" in table else ("approved",)
+    for status in admit:
+        if status not in derived.STATUSES["decisions"]:
+            raise ScenarioError(f"derived.admit: {status!r} is not one of {', '.join(derived.STATUSES['decisions'])}")
+    default = table.get("collection")
+    slots = {}
+    for name, part in _table(table, "decisions", "derived.decisions").items():
+        where = f"derived.decisions.{name}"
+        if _bad_name(name) or not isinstance(part, dict):
+            raise ScenarioError(f"{where}: a name is lower case letters, digits and _, and its value a table")
+        if name in decisions:
+            raise ScenarioError(f"{where}: a supplied decision has this name; a slot is for one not supplied")
+        slots[name] = Slot(name, "decisions", _text(part, "description", where),
+                           _text(part, "collection", where, default), _slot_names(part, f"{where}.inputs"),
+                           _slot_names(part, f"{where}.outputs"), _text(part, "owner", where),
+                           _names(part, "governs", where))
+    for node, properties in _table(table, "facts", "derived.facts").items():
+        for prop, part in (properties.items() if isinstance(properties, dict) else ()):
+            where = f"derived.facts.{node}.{prop}"
+            if backend != "builtin":
+                raise ScenarioError(f"{where}: derived facts need the built-in graph, not {backend}")
+            if not isinstance(part, dict) or part.get("type") not in TYPES:
+                raise ScenarioError(f"{where}.type: must be {', '.join(TYPES)}")
+            slots[f"{node}.{prop}"] = Slot(f"{node}.{prop}", "facts", _text(part, "description", where),
+                                           _text(part, "collection", where, default), node=node, property=prop,
+                                           type=part["type"])
+    return slots, admit
+
+
+def _why_not(entry: dict | None, admit: tuple[str, ...], override: bool, store, slot: Slot, on: date) -> str | None:
+    """Why a derived entry may not fill its slot, or None when it may."""
+    # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-return-statements
+    if entry is None:
+        return "nothing has been derived for it: run clm-derive run"
+    status = entry.get("status")
+    if status not in admit:
+        return f"its status is {status}, and only {', '.join(admit)} entries are admitted"
+    passed = (entry.get("check") or {}).get("passed") is True
+    if not passed and not (override and "proposed" in admit):
+        return "it failed its check, or was never checked: run clm-derive check"
+    source = entry.get("source") or {}
+    document = store.document(slot.collection, source.get("document", ""), None) if store else {}
+    if not document:
+        return f"its source {source.get('document')} is not in {slot.collection}"
+    if not in_force(document, on):
+        return f"its source {source.get('document')} is not in force on {on}"
+    if edition(document) != source.get("edition"):
+        return (f"it was derived from the {source.get('edition')} edition of {source.get('document')}, and the "
+                f"edition in force is {edition(document)}: run clm-derive run")
+    return None
+
+
+def _derived_decision(slot: Slot, entry: dict, folder: Path, functions: ModuleType, collections: dict,
+                      store) -> Decision:
+    """A derived entry as a decision; raises ScenarioError when its table does not load, is not the slot's, or
+    cites what its collection does not hold."""
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
+    table = {key: entry[key] for key in ("description", "dmn", "rule") if key in entry}
+    table["collection"] = entry.get("collection") or slot.collection
+    decision = _decision(slot.name, table, folder / "derived", functions)
+    if decision.params != slot.inputs:
+        raise ScenarioError(f"its table's inputs {decision.params} are not the slot's {slot.inputs}")
+    decision = Decision(decision.name, decision.description, decision.params, decision.table, None, decision.rule,
+                        decision.collection, "derived", entry.get("status"), entry.get("source"))
+    _check_citations({slot.name: decision}, collections, store)
+    return decision
+
+
+@dataclass
+class _Derived:
+    """What the derived layer added: decisions, facts set on the graph, and the slots left unfilled."""
+    decisions: dict[str, Decision] = field(default_factory=dict)
+    facts: dict[str, dict[str, dict]] = field(default_factory=dict)
+    unfilled: dict[str, str] = field(default_factory=dict)
+    admitted: list[str] = field(default_factory=list)
+
+
+def _fill(slots: dict[str, Slot], context: tuple, graph: Graph | None, collections: dict, store) -> _Derived:
+    """Fill each slot from the layer where its entry may be admitted: a fact only where the supplied graph has no
+    value (supplied decides), a decision only when its table loads and its citations resolve."""
+    # pylint: disable=too-many-locals
+    folder, functions, admit, override, on = context
+    layer = derived.read(folder)
+    found = _Derived()
+    for name, slot in slots.items():
+        entry = layer[slot.kind].get(name)
+        why = _why_not(entry, admit, override, store, slot, on)
+        if why is None and slot.kind == "facts":
+            supplied = graph.node(slot.node) if slot.node in {n["id"] for n in graph.nodes()} else None
+            if supplied is None:
+                why = f"the graph has no node {slot.node}"
+            elif slot.property in supplied:
+                continue        # the supplied value stands; clm-derive reports a conflict when they differ
+            elif not _CHECK_TYPE[slot.type](entry.get("value")):
+                why = f"its value {entry.get('value')!r} is not of type {slot.type}"
+            else:
+                graph.set(slot.node, slot.property, entry["value"])
+                found.facts.setdefault(slot.node, {})[slot.property] = entry
+        elif why is None:
+            try:
+                found.decisions[name] = _derived_decision(slot, entry, folder, functions, collections, store)
+            except ScenarioError as error:
+                why = f"its table cannot be used: {error}"
+        if why is None:
+            found.admitted.append(name)
+        else:
+            found.unfilled[name] = why
+    return found
+
+
+_CHECK_TYPE = {"string": lambda v: isinstance(v, str), "boolean": lambda v: isinstance(v, bool),
+               "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
+               "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+               "list": lambda v: isinstance(v, list)}
+
+
+# pylint: disable-next=too-many-locals,too-many-arguments
+def load_environment(path: str | Path, backend: str | None = None,
                      store: docs.DocumentStore | None = None,
-                     embedder: docs.Embedder | None = None) -> Environment:
+                     embedder: docs.Embedder | None = None, *, admit: list[str] | None = None,
+                     today: date | None = None) -> Environment:
     """Read and check an environment file; raises ScenarioError naming the setting. `backend` overrides the file's
     [graph] backend, to run the same environment on the other graph. `store` and `embedder` replace the document
-    store and embedder the file names, as tests do."""
+    store and embedder the file names, as tests do. With a [derived] table, admitted derived rules and facts join
+    the supplied ones (docs/environment.md); `admit` overrides the statuses admitted, for testing only, and `today`
+    is the date a cited document must be in force on."""
     path = Path(path)
     data = _read(path)
     folder = path.resolve().parent
@@ -514,6 +714,14 @@ def load_environment(path: str | Path, backend: str | None = None,  # pylint: di
     functions = _import(folder, _text(head, "functions", "environment"))
     settings = _graph_settings(data, folder, backend)
     graph = load_graph_files(settings) if settings.backend == "builtin" else None
+    declared = _slots(data, settings.backend, _parts(data, "decisions"))
+    slots, admitted_statuses = declared or ({}, ())
+    if admit is not None and declared is not None:
+        for status in admit:
+            if status not in derived.STATUSES["decisions"]:
+                raise ScenarioError(f"--admit-derived: {status!r} is not one of "
+                                    f"{', '.join(derived.STATUSES['decisions'])}")
+        admitted_statuses = tuple(admit)
     queries = {name: _query(name, table, functions, settings.backend)
                for name, table in _parts(data, "queries").items()}
     decisions = {name: _decision(name, table, folder, functions) for name, table in _parts(data, "decisions").items()}
@@ -523,7 +731,7 @@ def load_environment(path: str | Path, backend: str | None = None,  # pylint: di
                                       _params(table, f"calculations.{name}"),
                                       _function(table, f"calculations.{name}", functions))
                     for name, table in _parts(data, "calculations").items()}
-    scenarios = {name: _scenario(name, table, functions, decisions, queries)
+    scenarios = {name: _scenario(name, table, functions, {*decisions, *slots}, queries)
                  for name, table in _parts(data, "scenarios").items()}
     clm = _clm(data)
     judges = {name: _judge(name, table, clm) for name, table in _parts(data, "judges").items()}
@@ -535,9 +743,14 @@ def load_environment(path: str | Path, backend: str | None = None,  # pylint: di
     else:
         store = embedder = None
     _check_citations(decisions, collections, store)
+    filled = _fill(slots, (folder, functions, admitted_statuses, admit is not None, today or date.today()), graph,
+                   collections, store)
     # Connected last, once everything else is known to be right
     return Environment(path, _text(head, "name", "environment"), _text(head, "description", "environment"), graph,
-                       functions, _connector(settings, graph, functions), queries, decisions, calculations, scenarios,
+                       functions, _connector(settings, graph, functions), queries, decisions | filled.decisions,
+                       calculations, scenarios,
                        judges, clm, information, collections, store, embedder,
                        document_settings.tools if document_settings else True,
-                       document_settings.cited_text if document_settings else True)
+                       document_settings.cited_text if document_settings else True, slots, filled.unfilled,
+                       tuple(filled.admitted), admitted_statuses, admit is not None and declared is not None,
+                       filled.facts)

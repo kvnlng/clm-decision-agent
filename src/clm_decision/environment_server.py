@@ -78,7 +78,24 @@ def describe(env: Environment) -> dict:
             **({"collections": {name: {"description": collection.description, "filters": collection.filters,
                                        "built": env.store.built(name)}
                                 for name, collection in env.collections.items()}} if env.collections else {}),
-            **({"topics": env.topics()} if env.topics() else {})}
+            **({"topics": env.topics()} if env.topics() else {}),
+            **({"derived": _derived(env)} if env.slots else {})}
+
+
+def _derived(env: Environment) -> dict:
+    """Each slot the documents fill, with its status in the derived layer and, when it is not admitted, why."""
+    slots = {}
+    for name, slot in env.slots.items():
+        if slot.kind == "decisions" and name in env.decisions:
+            status = env.decisions[name].status
+        else:
+            status = (env.derived_facts.get(slot.node, {}).get(slot.property) or {}).get("status")
+        slots[name] = {"kind": slot.kind, "description": slot.description, "admitted": name in env.admitted,
+                       "status": status, **({"why": env.unfilled[name]} if name in env.unfilled else {})}
+    note = (f"Derived entries are admitted with status {', '.join(env.admit)}, for testing only: some are not "
+            "approved by a person." if env.admit_override else
+            f"Only derived entries with status {', '.join(env.admit)} are admitted.")
+    return {"admit": list(env.admit), "note": note, "slots": slots}
 
 
 def _information(env: Environment, name: str) -> dict:
