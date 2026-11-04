@@ -32,7 +32,7 @@ rules (DMN tables, calculations, limits). The framework runs them, records what 
 | CLM | Ranks the options | Only in a **judge**: a yes/no question of text no rule can read |
 | The agent | Talks to the person and acts on the decision | Chooses what to run and reports it; never calculates, and every figure is checked |
 | File | `scenario.toml` | `environment.toml` |
-| Examples | [service desk](../examples/service_desk/README.md), [CrowdStrike day](../examples/crowdstrike/README.md) | [tariff](../examples/tariff/README.md), [new site](../examples/new_site/README.md), [non-competes](../examples/noncompete/README.md) |
+| Examples | [service desk](../examples/service_desk/README.md), [CrowdStrike day](../examples/crowdstrike/README.md) | [tariff](../examples/tariff/README.md), [new site](../examples/new_site/README.md), [non-competes](../examples/noncompete/README.md), [handbook](../examples/handbook/README.md) |
 | Guide | [scenario](scenario.md), [walkthrough](walkthrough.md) | [environment](environment.md) |
 
 Each style has its own file today, and `clm-server` serves one file at a time, so the two cannot yet share tools.
@@ -74,7 +74,7 @@ Commands: `clm-server`, `clm-agent`, `clm-chat`, `clm-call`, `clm-new-scenario`,
 
 ## Try an example
 
-[examples/README.md](../examples/README.md) lists all five.
+[examples/README.md](../examples/README.md) lists all six.
 
 **Weighing options: tariff.** No training needed.
 

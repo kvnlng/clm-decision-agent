@@ -12,9 +12,11 @@ score reads them against answer_key.toml:
   whether it is stated as fact or hedged, and any further figure stated about Meridian. It is shown what each figure
   is about, never its value. This script compares: an item is right within 0.5% of the key, wrong otherwise (also
   counted as superseded when it is a 2024 value), not given when absent. A hedged value is counted on its own line,
-  neither right nor wrong. Wrong as fact, the headline, is the wrong items plus the further figures stated as fact.
+  neither right nor wrong. Wrong as fact, the headline, is the wrong items. Further figures stated as fact are not
+  graded, since the key does not hold them: they are counted as from a tool when a tool returned them
+  (number_check.py), and as unsourced otherwise.
 - verdict: read by Claude from a fixed list for each question, as in noncompete.
-- policy cited: how many of the key's handbook sections the answer names, by section or title.
+- policy cited: how many of the key's handbook sections the answer names by section number ("§ 4").
 
 The company, its people and its policies are made up. Not HR, tax or legal advice.
 """
@@ -26,6 +28,7 @@ import tomllib
 from pathlib import Path
 
 from clm_decision import decision_agent
+from clm_decision.number_check import unsupported
 
 HERE = Path(__file__).resolve().parent
 RUNS = HERE / "runs" / "measure"
@@ -50,9 +53,10 @@ def _close(value: float, wanted: float) -> bool:
     return abs(value - wanted) <= CLOSE * max(abs(wanted), 1)
 
 
-def score_figures(read: dict, keyed: dict) -> dict:
-    """The answer's figures, as read, counted against the key's."""
-    counts = dict.fromkeys(("right", "wrong", "superseded", "not_given", "hedged", "other_wrong"), 0)
+def score_figures(read: dict, keyed: dict, returned: list | None = None) -> dict:
+    """The answer's figures, as read, counted against the key's; further figures by whether a tool returned them."""
+    counts = dict.fromkeys(("right", "wrong", "superseded", "not_given", "hedged", "other_from_tools",
+                            "other_unsourced"), 0)
     for name, figure in keyed["figures"].items():
         given = read["items"].get(name) or {}
         value = given.get("value")
@@ -66,19 +70,23 @@ def score_figures(read: dict, keyed: dict) -> dict:
             counts["wrong"] += 1
             counts["superseded"] += any(_close(value, old) for old in keyed["superseded"])
     for other in read["other"]:
-        counts["hedged" if other.get("hedged") else "other_wrong"] += 1
-    return {**counts, "wrong_as_fact": counts["wrong"] + counts["other_wrong"]}
+        if other.get("hedged"):
+            counts["hedged"] += 1
+        elif returned and not unsupported(f"{other['value']:g}", returned):
+            counts["other_from_tools"] += 1
+        else:
+            counts["other_unsourced"] += 1
+    return {**counts, "wrong_as_fact": counts["wrong"]}
 
 
 def policy_cited(answer: str, keyed: dict) -> int:
-    """How many of the key's handbook sections the answer names, by its section number or its title."""
+    """How many of the key's handbook sections the answer names, by section number."""
     handbook = _handbook()
     named = 0
     for ident in keyed["citations"]:
         document = handbook[ident]
         section = document["citation"].rsplit("§", 1)[1].strip()
-        named += bool(re.search(rf"§\s*{re.escape(section)}(?!\d)", answer)
-                      or document["title"].split(" (")[0].lower() in answer.lower())
+        named += bool(re.search(rf"§\s*{re.escape(section)}(?!\d)", answer))
     return named
 
 
@@ -141,8 +149,10 @@ def score() -> int:
         keyed = key[question]
         read = read_figures(client, result["answer"], keyed) if result["answer"] else {
             "items": {}, "other": [], "verdict": NOT_GIVEN}
+        # What the tools returned, and the question, as clm-agent counts them
+        returned = [call["error"] or call["result"] for call in result["calls"]] + [result["question"]]
         rows.append({"question": question, "setup": setup, "backend": backend, "model": result["model"],
-                     **score_figures(read, keyed), "figures": len(keyed["figures"]),
+                     **score_figures(read, keyed, returned), "figures": len(keyed["figures"]),
                      "verdict_right": None if not keyed["choices"] else read["verdict"] == keyed["verdict"],
                      "policy_cited": policy_cited(result["answer"], keyed), "policies": len(keyed["citations"]),
                      "unsupported": result["unsupported"], "calls": len(result["calls"]),
@@ -154,11 +164,13 @@ def score() -> int:
 
 def show(rows: list[dict]) -> None:
     """The scores as a table."""
-    print("question setup     backend  wrong-as-fact right   not-given hedged superseded verdict policy calls seconds")
+    print("question setup     backend  wrong-as-fact right   not-given hedged superseded unsourced verdict policy "
+          "calls seconds")
     for r in rows:
         verdict = "" if r["verdict_right"] is None else "yes" if r["verdict_right"] else "no"
         print(f"{r['question']:8} {r['setup']:9} {r['backend']:8} {r['wrong_as_fact']:>13} "
               f"{r['right']:>3}/{r['figures']:<3} {r['not_given']:>9} {r['hedged']:>6} {r['superseded']:>10} "
+              f"{r['other_unsourced']:>9} "
               f"{verdict:>7} {r['policy_cited']:>4}/{r['policies']} {r['calls']:>5} {r['seconds']!s:>7}"
               f"{'  stopped: ' + r['stopped'] if r['stopped'] else ''}")
 

@@ -134,7 +134,8 @@ def item(value, hedged=False):
 def test_a_right_figure_a_wrong_one_and_a_missing_one():
     read = {"items": {"match": item(3400), "cap": item(5.0), "limit": item(None)}, "other": []}
     assert _measure().score_figures(read, KEYED) == {"right": 1, "wrong": 1, "superseded": 0, "not_given": 1,
-                                                     "hedged": 0, "other_wrong": 0, "wrong_as_fact": 1}
+                                                     "hedged": 0, "other_from_tools": 0, "other_unsourced": 0,
+                                                     "wrong_as_fact": 1}
 
 
 def test_the_old_match_is_wrong_and_counted_as_superseded():
@@ -150,11 +151,13 @@ def test_a_hedged_guess_is_not_wrong():
     assert scored["hedged"] == 2 and scored["wrong_as_fact"] == 0 and scored["not_given"] == 2
 
 
-def test_an_unkeyed_figure_stated_as_fact_is_wrong():
+def test_a_further_figure_is_counted_by_whether_a_tool_returned_it():
     read = {"items": {"match": item(3400), "cap": item(6), "limit": item(24500)},
-            "other": [{"text": "a 3-year vesting cliff", "value": 3, "hedged": False}]}
-    scored = _measure().score_figures(read, KEYED)
-    assert scored["other_wrong"] == 1 and scored["wrong_as_fact"] == 1 and scored["right"] == 3
+            "other": [{"text": "the match at 3% is $2,760", "value": 2760, "hedged": False},
+                      {"text": "a combined limit of $72,000", "value": 72000, "hedged": False}]}
+    scored = _measure().score_figures(read, KEYED, [{"match": 2760}])
+    assert scored["other_from_tools"] == 1 and scored["other_unsourced"] == 1
+    assert scored["wrong_as_fact"] == 0 and scored["right"] == 3
 
 
 class Recorder:
@@ -177,8 +180,9 @@ def test_the_reader_is_never_shown_the_keys_values():
     assert not [f for f in KEY["q1"]["figures"].values() if f"{f['value']:,}" in sent or f"{f['value']}" in sent]
 
 
-def test_policy_cited_counts_the_keys_sections_by_section_or_title():
+def test_policy_cited_counts_the_keys_sections_by_section_number():
     measure = _measure()
     assert measure.policy_cited("See Handbook § 4(3).", KEY["q1"]) == 1
-    assert measure.policy_cited("See the Tuition assistance policy.", KEY["q4"]) == 1
+    assert measure.policy_cited("See the Tuition assistance policy.", KEY["q4"]) == 0
+    assert measure.policy_cited("Handbook §7(2)", KEY["q4"]) == 1
     assert measure.policy_cited("See § 7.", KEY["q1"]) == 0

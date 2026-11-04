@@ -76,3 +76,10 @@ The H100 decided the whole day at 50.1 a second.
   question". At about 0.7 MB it answered, in over 7 minutes. Neither the scenario nor the agent warns yet.
 - **The CLM's two document judgements do not separate their labels.** "Broader than needed" ordered 6 of 28
   labelled pairs rightly, worse than chance; "departs" 28 of 40. No rule reads either.
+- **With a company's own documents, the missing answer is the gap, not a wrong one.** Asked about a made-up
+  handbook with no tools, Claude and gemma4 said they could not know (1 of 17 figures, the public IRS limit) rather
+  than invent figures; no answer in any setup stated a wrong figure as fact. With the rules, 16 of 17 figures were
+  right; the handbook added the one question no rule covers, and the policy text. One run each.
+  ([examples/handbook](../examples/handbook/README.md))
+- **Small results suit a local model.** On the handbook's questions gemma4 was as fast as Claude (about 14 s) and
+  as accurate on the figures, but cited the handbook less often.
