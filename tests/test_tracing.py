@@ -367,3 +367,14 @@ def test_the_report_shows_an_environments_steps(tmp_path, capsys):
 
 def test_one_call_has_no_rate():
     assert trace_report.summarise([record(100.0, 0.01, tool="describe")])["describe"]["per_second"] is None
+
+
+def test_a_read_only_server_says_so_on_every_line(tmp_path):
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl", read_only=True)
+    with writer.call("decide", TEXT):
+        pass
+    plain = tracing.TraceWriter(tmp_path / "plain.jsonl")
+    with plain.call("decide", TEXT):
+        pass
+    assert lines(tmp_path / "trace.jsonl", writer)[0]["read_only"] is True
+    assert "read_only" not in lines(tmp_path / "plain.jsonl", plain)[0]

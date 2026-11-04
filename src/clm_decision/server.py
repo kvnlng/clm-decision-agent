@@ -19,6 +19,7 @@ from starlette.responses import JSONResponse
 
 from . import decision
 from . import oauth
+from . import serving
 from . import tracing
 from .clm_common import ClmError
 from .evaluate import agreement as replay_agreement
@@ -27,12 +28,21 @@ from .record import load_records, record_key, save_correction
 from .environment import Environment, is_environment, load_environment
 from .environment_server import build_environment_server
 from .scenario import Scenario, ScenarioError, load_scenario
+from .serving import Serve
 from .tools import check_tools, load_tools
 
 KEY_ENV = "DECISION_SERVER_KEY"
 MAX_BATCH = 1000
 READ_ONLY = ToolAnnotations(read_only_hint=True)
 CHANGES = ToolAnnotations(read_only_hint=False)
+TOOLS = ("decide", "decide_many", "check_call", "describe")
+REVIEW_TOOLS = ("correct", "agreement")
+NO_REVIEW = "a read-only server cannot offer review mode: correct writes the record"
+
+
+def tool_names(review: bool) -> list[str]:
+    """The tools a scenario's server can offer, before any selection."""
+    return [*TOOLS, *(REVIEW_TOOLS if review else ())]
 
 
 class _OneAtATime:
@@ -84,15 +94,31 @@ def _corrected(scenario: Scenario, tools: dict[str, Callable], text: str, route:
     return more
 
 
-# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def _instructions(scenario: Scenario, offered: list[str], read_only: bool) -> str:
+    """The server's instructions, naming only the deciding tool offered: decide, else decide_many, else neither."""
+    start = f"Decisions for the scenario '{scenario.path.stem}'. Call describe to see the routes and questions"
+    tool = next((name for name in ("decide", "decide_many") if name in offered), None)
+    if tool is None:
+        return f"{start}."
+    what = "the text of a request" if tool == "decide" else "the texts of requests"
+    acting = f"{tool} runs no acting tool: the server is read-only." if read_only else \
+        f"{tool} may run the scenario's acting tools."
+    return f"{start}, then {tool} with {what}. {acting}"
+
+
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments,too-many-locals
 def build_server(scenario: Scenario, router, tools: dict[str, Callable], review: bool,  # pylint: disable=too-many-arguments
-                 trace: tracing.TraceWriter | None = None, auth: oauth.OAuth | None = None) -> MCPServer:
+                 trace: tracing.TraceWriter | None = None, auth: oauth.OAuth | None = None,
+                 serve: Serve = Serve()) -> MCPServer:
     """The MCP server for one scenario. Review mode adds `correct` and `agreement`, which write and read the record.
-    With `trace`, each call is written to the trace; with `auth`, HTTP callers need a token."""
-    server = MCPServer("decision-server", instructions=(
-        f"Decisions for the scenario '{scenario.path.stem}'. Call describe to see the routes and questions, "
-        "then decide with the text of a request. decide may run the scenario's acting tools."),
-        log_level="WARNING", **oauth.server_options(auth))
+    With `trace`, each call is written to the trace; with `auth`, HTTP callers need a token. `serve` chooses the
+    tools offered and whether the server is read-only (serving.py); read-only with review is a ScenarioError."""
+    if serve.read_only and review:
+        raise ScenarioError(NO_REVIEW)
+    offered, left_out = serving.choose(serve, tool_names(review), tool_names(True))
+    server = MCPServer("decision-server", instructions=_instructions(scenario, offered, serve.read_only),
+                       log_level="WARNING", **oauth.server_options(auth))
+    deciding = READ_ONLY if serve.read_only else CHANGES
     # CLM runs on one model and calls arrive on worker threads, so its calls take turns
     router = _OneAtATime(router, threading.Lock())
 
@@ -105,18 +131,18 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
     def traced(tool: str, text: str | None = None):
         return trace.call(tool, text) if trace else contextlib.nullcontext({})
 
-    @server.tool(annotations=CHANGES)
+    @server.tool(annotations=deciding)
     def decide(text: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
         """Decide on a request: its route and confidence, the answers to the scenario's questions, the rules
         that apply, facts the informing tools found, and what the acting tools did. An uncertain route runs no
         acting tool. `context` (such as a booking or user ID) is given to the scenario's tools, not to CLM."""
         with traced("decide", text) as record:
-            result = clm(lambda: decision.decide(text, scenario, router, tools, context))
+            result = clm(lambda: decision.decide(text, scenario, router, tools, context, serve.read_only))
             if trace:
                 record["outcome"] = {key: result.get(key) for key in ("route", "confidence", "uncertain", "source")}
             return result
 
-    @server.tool(annotations=CHANGES)
+    @server.tool(annotations=deciding)
     def decide_many(requests: list[dict[str, Any]]) -> dict[str, Any]:
         """Decide on many requests at once, each {"text": ..., "context": ...} with context optional: the same
         decisions as decide, in the same order, faster per request. At most 1000 requests a call."""
@@ -126,7 +152,8 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
             if not isinstance(request.get("text"), str) or not isinstance(request.get("context") or {}, dict):
                 raise ToolError(f"requests[{i}] must be {{'text': ..., 'context': {{...}}}}, with context optional")
         with traced("decide_many"):
-            return {"decisions": clm(lambda: decision.decide_many(requests, scenario, router, tools))}
+            return {"decisions": clm(lambda: decision.decide_many(requests, scenario, router, tools,
+                                                                  serve.read_only))}
 
     @server.tool(annotations=READ_ONLY)
     def check_call(text: str, call: dict[str, Any]) -> dict[str, Any]:
@@ -140,10 +167,21 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
     def describe() -> dict[str, Any]:
         """The decisions this server makes: its routes, questions and rules."""
         with traced("describe"):
-            return decision.describe(scenario)
+            return {**decision.describe(scenario), **({"left_out": left_out} if left_out else {}),
+                    **({"read_only": True} if serve.read_only else {})}
 
-    if not review:
-        return server
+    if review:
+        _add_review(server, scenario, router, tools, traced, clm)
+    for name in tool_names(review):
+        if name not in offered:
+            server.remove_tool(name)
+    return server
+
+
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def _add_review(server: MCPServer, scenario: Scenario, router, tools: dict[str, Callable], traced: Callable,
+                clm: Callable) -> None:
+    """correct and agreement, which write and read the record."""
 
     @server.tool(annotations=CHANGES)
     # pylint: disable-next=too-many-arguments,too-many-positional-arguments
@@ -178,8 +216,6 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         plain = dataclasses.replace(scenario, live_corrections=False)
         with traced("agreement"):
             return clm(lambda: replay_agreement(records, plain, router))
-
-    return server
 
 
 def http_app(server: MCPServer, key: str | None, host: str = "127.0.0.1", allowed_hosts: list[str] | None = None):
@@ -224,8 +260,7 @@ def load_any(path: str, admit: list[str] | None = None):
     return load_environment(path, admit=admit) if is_environment(path) else load(path)
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Command-line entry point; returns the process exit code. Messages go to stderr: stdout is MCP's."""
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Offer a scenario's or an environment's decisions to other agents "
                                                  "over MCP.")
     parser.add_argument("scenario", metavar="FILE",
@@ -249,10 +284,23 @@ def main(argv: list[str] | None = None) -> int:
                         help="a Host header to accept, such as decisions.example.org:443 (repeatable)")
     parser.add_argument("--trace", metavar="FILE", help="write one line per call to FILE, saying where the time went")
     parser.add_argument("--trace-text", action="store_true", help="include each request's text in the trace")
+    parser.add_argument("--tools", metavar="NAMES",
+                        help="offer only these tools, comma-separated, and describe; NAME* matches a prefix "
+                             "(replaces [serve] tools)")
+    parser.add_argument("--exclude-tools", metavar="NAMES",
+                        help="offer every tool but these, comma-separated; wins over --tools (replaces [serve] "
+                             "exclude_tools)")
+    parser.add_argument("--read-only", action="store_true",
+                        help="run no acting tool: decide reports each one skipped (or [serve] read_only = true)")
     parser.add_argument("--admit-derived", metavar="STATUSES",
                         help="for testing only: admit derived rules and facts with these statuses, such as "
                              "proposed,checked,approved, not only approved ones; describe says so")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Command-line entry point; returns the process exit code. Messages go to stderr: stdout is MCP's."""
+    args = _parser().parse_args(argv)
     key, auth = None, None
     if args.http and args.auth == "oauth":
         try:
@@ -271,16 +319,23 @@ def main(argv: list[str] | None = None) -> int:
             print("error: review mode is for CLM scenarios; an environment has no corrections to review",
                   file=sys.stderr)
             return 2
+        serve = serving.merged(serving.read(args.scenario), args.tools, args.exclude_tools, args.read_only)
+        if serve.read_only and args.review:
+            raise ScenarioError(NO_REVIEW)
+        if not is_environment(args.scenario):
+            # Checked before CLM loads, which takes a while
+            serving.choose(serve, tool_names(args.review), tool_names(True))
         loaded = load_any(args.scenario, args.admit_derived.split(",") if args.admit_derived else None)
+        trace = tracing.TraceWriter(args.trace, text=args.trace_text, read_only=serve.read_only) \
+            if args.trace else None
+        if isinstance(loaded, Environment):
+            server = build_environment_server(loaded, trace=trace, auth=auth, serve=serve)
+        else:
+            scenario, router, tools = loaded
+            server = build_server(scenario, router, tools, args.review, trace=trace, auth=auth, serve=serve)
     except (ScenarioError, ClmError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    trace = tracing.TraceWriter(args.trace, text=args.trace_text) if args.trace else None
-    if isinstance(loaded, Environment):
-        server = build_environment_server(loaded, trace=trace, auth=auth)
-    else:
-        scenario, router, tools = loaded
-        server = build_server(scenario, router, tools, args.review, trace=trace, auth=auth)
     if not args.http:
         server.run("stdio")
         return 0

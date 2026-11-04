@@ -123,6 +123,52 @@ handbook documents), 3 resource templates and 1 prompt for the handbook; it read
 got the prompt as one user message ([environment.md](environment.md#resources-a-prompt-and-context)). The scenario
 server offers tools only.
 
+## Choosing the tools, and a read-only server
+
+By default a server offers every tool it has. An operator can offer fewer, for a scenario or an environment:
+
+```bash
+# only the scenarios and reading the handbook (describe is always offered: agents start with it)
+uv run clm-server examples/handbook/environment.toml --tools "describe,scenario_*,search_*,document_*"
+# everything but the queries and one decision
+uv run clm-server examples/tariff/environment.toml --exclude-tools "query_*,decision_news_risk"
+# routing that decides and informs but opens no ticket
+uv run clm-server examples/service_desk/scenario.toml --read-only
+```
+
+- `--tools NAME,NAME` offers only those tools, and `describe`; `--exclude-tools NAME,NAME` removes those. Exclusion
+  wins over inclusion. A name ending in `*` matches every tool starting with the rest (`query_*`, `search_*`,
+  `scenario_*`); `describe` cannot be excluded.
+- Choosing tools limits what agents are offered; it is not an access boundary. The key or OAuth is: give a caller
+  you would not trust with a tool no access to the server.
+- A name or pattern that matches no tool stops start-up with one line naming it and the tools there are. For a
+  scenario, `correct` and `agreement` count as its tools with or without `--review`, so a file can exclude them.
+- What is not offered is gone everywhere: from the tool list; from `describe`, which lists the left-out tools under
+  `left_out` so an agent does not look for them; from the resources that stand for the same thing (rule resources
+  with the `rule` tool, a collection's documents with `document_COLLECTION`); and from the `answer_question` prompt
+  and the server's instructions where they name a tool.
+- A scenario of an environment still runs every query, decision and calculation it needs: the selection limits what
+  the agent can call, not what the framework runs inside a scenario.
+- `--read-only`: a routing scenario's `decide` and `decide_many` run every informing tool and no acting tool; each
+  acting tool is reported `skipped` with the reason "read-only server", and both are marked read-only. `--review`
+  writes the record, so the two together stop start-up. An environment's tools only read already; `--read-only` is
+  accepted and changes nothing but `describe`. Either way `describe` says `"read_only": true` and each line of the
+  trace carries `read_only`.
+- The same settings can live in the file, scenario or environment, as a `[serve]` table
+  ([environment.md](environment.md#serving-settings)). Each flag given replaces the file's setting, never adds to it;
+  `--read-only` can only turn read-only on.
+
+To check what a selection leaves, list the tools with the Inspector's command-line mode:
+
+```bash
+npx -y @modelcontextprotocol/inspector@2.13.0 --cli uv run clm-server examples/service_desk/scenario.toml \
+    --tools "decide*" --exclude-tools decide_many --method tools/list           # decide and describe
+npx -y @modelcontextprotocol/inspector@2.13.0 --cli uv run clm-server examples/service_desk/scenario.toml \
+    --read-only --method tools/call --tool-name decide --tool-arg "text=I need access to the readmissions data"
+```
+
+The second shows `create_ticket` skipped with the reason "read-only server", and the mock tracker is not called.
+
 ## Databricks
 
 Not tried yet. Databricks agents can call an outside MCP server over Streamable HTTP. An administrator registers it in

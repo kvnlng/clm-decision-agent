@@ -410,3 +410,21 @@ def test_decide_many_ranks_options_in_the_questions_pass(setup, options):
     last_states, ranks = router.prefetched[-1]
     assert ranks == router.rank_calls
     assert len(router.prefetched) == 3 and last_states
+
+
+def test_read_only_runs_the_informing_tools_and_skips_every_acting_one(setup):
+    scenario, tools = setup()
+    router = FakeRouter(decision("Billing", answers=urgent(0.1)), asks=[urgent(0.8)])
+    result = decide(TEXT, scenario, router, tools, read_only=True)
+    assert result["informed"][0]["status"] == "done"
+    assert result["actions"] == [{"tool": "act", "status": "skipped", "reason": "read-only server"}]
+    assert [name for name, _ in fake_tools.CALLS] == ["lookup"]
+
+
+def test_read_only_decide_many_runs_no_acting_tool(setup, options):
+    options(FLIGHTS)
+    scenario, tools = setup(MANY_TOML.replace('routes = ["Billing"]', 'routes = ["Billing", "Tech"]'))
+    made = decide_many([{"text": OTHER, "context": {"n": n}} for n in range(3)], scenario, many_router(), tools,
+                       read_only=True)
+    assert "act" not in [name for name, _ in fake_tools.CALLS]
+    assert {action["reason"] for one in made for action in one["actions"]} == {"read-only server"}

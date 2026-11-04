@@ -1,6 +1,6 @@
-"""Measure the five questions in six setups, on Claude and on a local model: with no tools, with the rules only,
-with the rules and the handbook, with the handbook only, and with rules derived from the handbook by Claude or by the
-local model.
+"""Measure the five questions in seven setups, on Claude and on a local model: with no tools, with the rules only,
+with the rules and the handbook, with the handbook only, with rules derived from the handbook by Claude or by the
+local model, and with the rules and the handbook behind fewer tools.
 
     uv run python examples/handbook/measure.py derive claude|ollama
     uv run python examples/handbook/measure.py restore claude|ollama
@@ -23,8 +23,9 @@ caught and the right ones it flagged, in runs/measure/second_reading.json.
 run asks clm-agent each question in each setup, on each backend, and writes each answer to runs/measure/, which git
 ignores: `none` with --no-tools, `rules` with environment_without_documents.toml, `documents` with environment.toml,
 `documents_only` with environment_documents_only.toml, and `derived` and `derived_local` with
-environment_derived.toml, which run only when the layer in derived/ is Claude's or gemma4's. score reads them
-against answer_key.toml:
+environment_derived.toml, which run only when the layer in derived/ is Claude's or gemma4's, and `fewer_tools` with a
+copy of environment.toml in runs/measure/fewer_tools/ whose [serve] table offers only describe, the scenarios and the
+search_ and document_ tools. score reads them against answer_key.toml:
 
 - figures: Claude (claude-opus-5-5) reads, for each figure the key lists, the value the answer gives for it and
   whether it is stated as fact or hedged, and any further figure stated about Meridian. It is shown what each figure
@@ -61,7 +62,10 @@ SETUPS = {"none": (HERE / "environment.toml", ["--no-tools"]),
           "documents": (HERE / "environment.toml", []),
           "documents_only": (HERE / "environment_documents_only.toml", []),
           "derived": (DERIVED, []),
-          "derived_local": (DERIVED, [])}
+          "derived_local": (DERIVED, []),
+          "fewer_tools": (None, [])}
+# The fewer_tools setup's [serve] tools: describe, the scenarios and reading the handbook
+FEWER_TOOLS = ["describe", "scenario_*", "search_*", "document_*"]
 # Which model's layer each derived setup needs in derived/
 LAYER_MODELS = {"derived": decision_agent.MODEL, "derived_local": decision_agent.LOCAL_MODEL}
 SCRIPTED = "measure.py: scripted approval of every checked entry, not a person"
@@ -345,6 +349,21 @@ def show_compare(found: dict) -> None:
                   f"{'right' if row['right'] else 'WRONG'}")
 
 
+def fewer_tools(runs: Path = RUNS, here: Path = HERE) -> Path:
+    """A copy of environment.toml in runs/fewer_tools/, with the parts it reads beside it, whose [serve] table offers
+    only FEWER_TOOLS; nothing tracked is touched."""
+    folder = runs / "fewer_tools"
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir(parents=True)
+    shutil.copy(here / "handbook_functions.py", folder)
+    for part in ("graph", "rules"):
+        shutil.copytree(here / part, folder / part)
+    listed = ", ".join(f'"{name}"' for name in FEWER_TOOLS)
+    text = (here / "environment.toml").read_text(encoding="utf-8")
+    (folder / "environment.toml").write_text(f"{text}\n[serve]\ntools = [{listed}]\n", encoding="utf-8")
+    return folder / "environment.toml"
+
+
 def run(backends: list[str], questions: list[str], setups: list[str]) -> int:
     """Ask every question in each setup, on each backend."""
     key = _key()
@@ -355,6 +374,7 @@ def run(backends: list[str], questions: list[str], setups: list[str]) -> int:
             print(f"error: {refused}", file=sys.stderr)
             return 2
         environment, extra = SETUPS[setup]
+        environment = environment or fewer_tools()
         for backend in backends:
             for question in questions:
                 out = RUNS / f"{question}-{setup}-{backend}.answer.json"
@@ -415,7 +435,7 @@ def _second(first: str, backend: str, model: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-return-statements
     """run or score."""
-    parser = argparse.ArgumentParser(description="Measure the five questions in three setups.")
+    parser = argparse.ArgumentParser(description="Measure the five questions in several setups.")
     commands = parser.add_subparsers(dest="command", required=True)
     ran = commands.add_parser("run")
     ran.add_argument("--backends", default="claude,ollama")
