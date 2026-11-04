@@ -66,6 +66,10 @@ today is 1 December 2026. What is the company match on my 401(k), and what is th
   Claude and by gemma4.
 - **Derived locally**: the same with gemma4's own layer, answered by gemma4: nothing leaves the machine.
 
+A seventh, **fewer tools**, is rules and handbook behind a shorter tool list: `measure.py` writes a copy of
+`environment.toml` to `runs/measure/fewer_tools/` with `[serve] tools = ["describe", "scenario_*", "search_*",
+"document_*"]` ([Fewer tools](#fewer-tools)).
+
 ## Deriving the rules
 
 ```bash
@@ -218,6 +222,19 @@ What it says:
   hold them.
 - What is still written by hand: the employees' records, the two-tier shape of the match, the other calculations
   and the scenarios. Only the five tables and six plan figures were derived. The scripted approval is not a person.
+
+### Fewer tools
+
+On 4 November 2026 gemma4:26b answered the five questions twice more, one run each: from the full rules-and-handbook
+server (22 tools) and from the same server limited by `[serve]` to `describe`, the scenarios and the `search_` and
+`document_` tools (7 tools; `measure.py run --setups documents,fewer_tools`). Both gave **13 of 17** key figures and
+**none wrong as fact**; 4 were not given each time. The limited list cited the handbook's section more often (5 of 5
+against 3 of 5) and made fewer calls (11 against 17), but gave one verdict fewer (3 of 4 against 4 of 4): on question
+1 it gave the match and the maximum without saying it had begun, and left out the cap and vesting, which the full
+list's answer gave after calling `rules`; on question 3 it gave the two weekly pay figures the full list's answer
+left out. Seconds were about the same (12.8 against 13.5 a question). One run each, so the differences are noise:
+here a shorter tool list neither helped nor hurt the local model. These two runs differ from the table's
+rules-and-handbook row (14 of 17) by one figure, which is the run-to-run noise.
 
 The reader of the figures is Claude, choosing from what the answer says; it may read an answer kindly. The key and
 the policies were written by the same author, which makes the key easy to check against the handbook but says
