@@ -41,6 +41,21 @@ def test_an_entry_that_failed_its_check_cannot_be_approved(tmp_path):
         derived.set_status(tmp_path, "facts", "k401_2026.match_cap", "approved", by="kevin")
 
 
+def test_a_proposed_entry_cannot_be_approved_even_with_an_old_passing_check(tmp_path):
+    # A correction sets the entry back to proposed; until clm-derive check runs, its old check proves nothing
+    layer = _layer()
+    layer["decisions"]["carryover_limit"]["status"] = "proposed"
+    derived.write(tmp_path, layer)
+    with pytest.raises(derived.DerivedError, match="checked"):
+        derived.set_status(tmp_path, "decisions", "carryover_limit", "approved", by="kevin")
+
+
+def test_a_rejected_entry_that_passed_its_check_can_still_be_approved(tmp_path):
+    derived.write(tmp_path, _layer())
+    derived.set_status(tmp_path, "decisions", "carryover_limit", "rejected", by="kevin")
+    assert derived.set_status(tmp_path, "decisions", "carryover_limit", "approved", by="kevin")["status"] == "approved"
+
+
 def test_any_entry_can_be_rejected(tmp_path):
     derived.write(tmp_path, _layer())
     assert derived.set_status(tmp_path, "facts", "k401_2026.match_cap", "rejected", by="kevin")["status"] == "rejected"

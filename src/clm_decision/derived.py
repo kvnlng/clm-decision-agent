@@ -56,7 +56,8 @@ def write(folder: str | Path, layer: dict) -> None:
 # pylint: disable-next=too-many-arguments
 def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str, note: str | None = None) -> dict:
     """Change one entry's status, recording who did it, when and why, and return the entry. A rule or fact is
-    approved only once it passed its check; any can be rejected."""
+    approved only once checked: a proposed one, such as a corrected one, is not, whatever its old check said. Any
+    can be rejected."""
     if kind not in KINDS:
         raise DerivedError(f"{kind!r} is not one of {', '.join(KINDS)}")
     if status not in STATUSES[kind]:
@@ -69,6 +70,8 @@ def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str
         raise DerivedError(f"no {kind} entry named {name!r}")
     if status == "approved" and not (entry.get("check") or {}).get("passed"):
         raise DerivedError(f"{name} failed its check, or was never checked, so it cannot be approved")
+    if status == "approved" and entry.get("status") == "proposed":
+        raise DerivedError(f"{name} is proposed: it is approved only once clm-derive check has checked it")
     entry.update(status=status, decided_by=by, note=note,
                  decided_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     write(folder, layer)
