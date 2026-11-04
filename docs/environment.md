@@ -522,6 +522,23 @@ says so. A rejected entry never decides: neither the file nor the flag can admit
 
 All only read. Each tool's description is yours.
 
+### Serving settings
+
+An operator can offer fewer tools, in the file or on the command line ([serving.md](serving.md#choosing-the-tools-and-a-read-only-server)):
+
+```toml
+[serve]
+tools = ["describe", "scenario_*", "search_*", "document_*"]   # only these, and describe always
+exclude_tools = ["cites_*", "cited_by_*"]                      # wins over tools
+read_only = true                                               # describe says so; an environment's tools only read
+```
+
+All three are optional. `clm-server --tools`, `--exclude-tools` and `--read-only` replace the file's setting, never
+add to it. What is left out is gone from the tool list, `describe` (which names it under `left_out`), the matching
+resources and the prompt; the scenarios still run every part they need. A routing scenario's file takes the same
+table, where `read_only = true` runs no acting tool. The portal's own server reads the same file, so it honours
+`[serve]` too.
+
 ## Resources, a prompt and context
 
 The server also reports its data as MCP resources, its instructions as a prompt, and where each kind of context lives,

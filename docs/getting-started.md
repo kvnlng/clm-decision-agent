@@ -102,6 +102,10 @@ probabilities, each question's answer, the facts the informing tools found, the 
 acting tool opened in the mock tracker: tools run for real. In review mode, `correct` saves the right route for a
 message and `agreement` says how often CLM agrees with your corrections.
 
+To try `decide` without opening tickets, start the server with `--read-only` instead of `--review` (the two do not go
+together, since `correct` writes the record): the informing tools still run, and each acting tool is reported
+`skipped` with the reason "read-only server". The mock tracker is then not needed.
+
 ## Build your own
 
 - **Routing:** `uv run clm-new-scenario my_scenario`, then the [walkthrough](walkthrough.md). In review mode, the `correct`
