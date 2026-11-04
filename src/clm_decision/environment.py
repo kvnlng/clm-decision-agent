@@ -31,6 +31,9 @@ INFORMATION_KINDS = ("fact", "estimate", "supplied")
 QUERY_KINDS = ("fact", "estimate")
 TYPES = ("string", "number", "integer", "boolean", "list")
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
+# The derived statuses environment.toml may admit, and those --admit-derived may, for testing; never rejected
+FILE_ADMITS = ("approved", "checked")
+OVERRIDE_ADMITS = ("proposed", "checked", "approved")
 # A DMN input's typeRef, as a parameter type; "any" is not checked
 _DMN_TYPES = {"number": "number", "integer": "number", "double": "number", "long": "number", "int": "number",
               "decimal": "number", "string": "string", "boolean": "boolean"}
@@ -583,8 +586,10 @@ def _slots(data: dict, backend: str, decisions: dict) -> tuple[dict[str, Slot], 
     table = _table(data, "derived", "derived")
     admit = _names(table, "admit", "derived") if "admit" in table else ("approved",)
     for status in admit:
-        if status not in derived.STATUSES["decisions"]:
-            raise ScenarioError(f"derived.admit: {status!r} is not one of {', '.join(derived.STATUSES['decisions'])}")
+        if status not in FILE_ADMITS:
+            raise ScenarioError(f"derived.admit: {status!r} cannot be admitted here: only {' or '.join(FILE_ADMITS)}; "
+                                "a proposed entry is admitted only by --admit-derived, for testing, and a rejected one "
+                                "never")
     default = table.get("collection")
     slots = {}
     for name, part in _table(table, "decisions", "derived.decisions").items():
@@ -718,9 +723,9 @@ def load_environment(path: str | Path, backend: str | None = None,
     slots, admitted_statuses = declared or ({}, ())
     if admit is not None and declared is not None:
         for status in admit:
-            if status not in derived.STATUSES["decisions"]:
-                raise ScenarioError(f"--admit-derived: {status!r} is not one of "
-                                    f"{', '.join(derived.STATUSES['decisions'])}")
+            if status not in OVERRIDE_ADMITS:
+                raise ScenarioError(f"--admit-derived: {status!r} cannot be admitted: only "
+                                    f"{', '.join(OVERRIDE_ADMITS)}; a rejected entry never decides")
         admitted_statuses = tuple(admit)
     queries = {name: _query(name, table, functions, settings.backend)
                for name, table in _parts(data, "queries").items()}

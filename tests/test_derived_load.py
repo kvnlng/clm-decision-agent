@@ -184,6 +184,23 @@ def test_admit_override_admits_proposed_and_describe_says_so(tmp_path):
     assert "testing" in shown["note"] and shown["slots"]["carry"]["status"] == "proposed"
 
 
+def test_a_rejected_entry_is_never_admitted(tmp_path):
+    with pytest.raises(ScenarioError, match="--admit-derived.*rejected"):
+        load(make(tmp_path, decision=entry("rejected")), admit=["rejected"])
+    with pytest.raises(ScenarioError, match="derived.admit.*rejected"):
+        slots = DERIVED.replace('collection = "hb"', 'collection = "hb"\nadmit = ["rejected"]')
+        load(make(tmp_path, decision=entry("rejected"), slots=slots))
+
+
+def test_the_file_admits_only_approved_or_checked_and_describe_warns_of_checked(tmp_path):
+    with pytest.raises(ScenarioError, match="derived.admit.*proposed.*--admit-derived"):
+        load(make(tmp_path, slots=DERIVED.replace('collection = "hb"', 'collection = "hb"\nadmit = ["proposed"]')))
+    env = load(make(tmp_path, decision=entry("checked"), slots=DERIVED.replace(
+        'collection = "hb"', 'collection = "hb"\nadmit = ["approved", "checked"]')))
+    assert env.decisions["carry"].status == "checked"
+    assert "not approved by a person" in describe(env)["derived"]["note"]
+
+
 def test_a_failed_check_is_never_admitted_without_override(tmp_path):
     env = load(make(tmp_path, decision=entry("approved", passed=False)))
     assert "carry" not in env.decisions and "check" in env.unfilled["carry"]

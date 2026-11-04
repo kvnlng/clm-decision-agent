@@ -94,6 +94,8 @@ def _derived(env: Environment) -> dict:
                        "status": status, **({"why": env.unfilled[name]} if name in env.unfilled else {})}
     note = (f"Derived entries are admitted with status {', '.join(env.admit)}, for testing only: some are not "
             "approved by a person." if env.admit_override else
+            f"Derived entries with status {', '.join(env.admit)} are admitted: the checked ones are not approved by a "
+            "person." if set(env.admit) - {"approved"} else
             f"Only derived entries with status {', '.join(env.admit)} are admitted.")
     return {"admit": list(env.admit), "note": note, "slots": slots}
 
