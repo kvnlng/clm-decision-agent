@@ -155,6 +155,19 @@ def test_the_plans_name_401k_is_not_a_figure(env):
     assert failures(env, "decisions", "carryover_limit", entry) == []
 
 
+def test_a_bare_year_in_a_reason_is_not_a_figure(env):
+    assert reason_failures(env, "The 2026 leave policy, which replaced the 1999 edition.") == []
+
+
+def test_a_bare_section_reference_in_a_reason_is_not_a_figure(env):
+    assert reason_failures(env, "The condition in 6(3) and in 5(2)(a) is not an input.") == []
+
+
+def test_a_year_as_dollars_days_or_percent_is_still_a_figure(env):
+    for text in ("A bonus of $2026.", "Up to 2026 days.", "Up to 2026%.", "Up to 2026.5 hours."):
+        assert any("figure 2026" in failure for failure in reason_failures(env, text)), text
+
+
 def test_a_real_figure_beside_an_exempt_one_still_fails(env):
     found = reason_failures(env, "§ 5(2), in force on 2026-12-01, under the 401(k) plan: 12 days.")
     assert [failure for failure in found if failure.startswith("figure")] == ["figure 12 (reason) is not in the quote"]

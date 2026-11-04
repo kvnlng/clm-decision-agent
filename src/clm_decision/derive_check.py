@@ -22,9 +22,12 @@ _WORDS = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine"
 _FIGURE = re.compile(r"(?<!\w)(?<!\d\.)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\b(?:" + "|".join(_WORDS) + r")\b",
                      re.IGNORECASE)
 # Not policy figures, so not checked in a rule's statement or reason: ISO dates, section references (§ 4, § 4(2),
-# § 4(2) and (4), Section 6(1)) and the plan's name, 401(k)
+# § 4(2) and (4), Section 6(1), or bare: 6(3), 5(2)(a), 401(k)), and a bare year from 1900 to 2100 that is not
+# dollars, a percentage, a count of days, weeks, months or years, or a decimal
 _EXEMPT = re.compile(r"\b\d{4}-\d{2}-\d{2}\b|(?:§|\bSection)\s*\d+(?:\s*\(\d+\))?(?:\s*(?:and|or|,)\s*\(\d+\))*"
-                     r"|\b401\(k\)", re.IGNORECASE)
+                     r"|\b\d+\([0-9a-z]\)(?:\([0-9a-z]\))?"
+                     r"|(?<![$\d.,])\b(?:19\d\d|20\d\d|2100)\b(?!\.\d)(?!\s*%)(?!\s*(?:days?|weeks?|months?|years?)\b)",
+                     re.IGNORECASE)
 _QUOTES = " \t\n\"'“”‘’"
 
 

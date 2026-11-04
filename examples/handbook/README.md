@@ -35,7 +35,7 @@ Each asked by one made-up employee, naming the company, their id and the date (1
 | `answer_key.toml` | What a good answer says, worked out by hand from the handbook; a test checks the rules and calculations against it, never the reverse |
 | `environment_derived.toml` | The same questions with the five rules and the plan's six terms (IRS limit, match cap, and the match's two tiers and rates) as **slots** to derive; the employees' records stay supplied, and `graph/nodes_without_plan_figures.csv` keeps the plan's id without its figures. The match is a generic two-tier `tiered_match`: its shape is still written by hand, as are the other calculations |
 | `environment_documents_only.toml` | The employees' records, the calculations and the handbook, and no rules or plan figures: the agent reads every rule and figure itself |
-| `derived/` | Claude's derived layer, committed so the variant runs without an API key, as checked again with the stricter check: 8 entries approved, 3 tables proposed (below). **Its approvals are scripted** (`measure.py: scripted approval of every checked entry, not a person`): no person approved them |
+| `derived/` | Claude's derived layer, committed so the variant runs without an API key, as checked again with the stricter check: all 11 entries approved (below). **Its approvals are scripted** (`measure.py: scripted approval of every checked entry, not a person`): no person approved them |
 
 ## Running it
 
@@ -85,24 +85,24 @@ side, and 0; both booleans; never a negative value, since `employee` never gives
 
 After a review the check was made stricter: a range's upper bound (`[0..4]`) now counts as a figure, a quote must
 match whole words and numbers ("up to 1" is no longer found in "up to 10"), and a rule's reason is checked like its
-statement. In a statement or reason, ISO dates, section references (§ 4(2), Section 6(1)) and the plan's name
-"401(k)" are not policy figures and are not checked; every other number is. `measure.py recheck BACKEND` checked both kept layers again with it, asking no model: every entry back to
+statement. In a statement or reason, ISO dates, section references (§ 4(2), Section 6(1), or bare: 6(3), 401(k)) and
+a bare year (2026, but not $2026, 2026% or 2026 days) are not policy figures and are not checked; every other number
+is. `measure.py recheck BACKEND` checked both kept layers again with it, asking no model: every entry back to
 proposed, checked, and the checked ones approved by script. The table is the result. "First try" is how many passed
 the old check at once; under the new check no entry was sent back to the model, so it is no guide to a retry now.
 
 | Layer | Passes the check | Right by the second key | **Checked but wrong** | Failed but right |
 |---|---|---|---|---|
-| Claude (claude-opus-5-5) | 8 of 11 | 11 of 11 | **0** | 3 |
+| Claude (claude-opus-5-5) | 11 of 11 | 11 of 11 | **0** | 0 |
 | gemma4:26b | 9 of 11 | 9 of 11 | **2** | 2 |
 
 Under the first, looser check: Claude 11 of 11 passed (8 at the first try), gemma4 10 of 11 (9), with the same
 checked-but-wrong counts, 0 and 2.
 
-- **Claude's layer matched every hand-written rule and figure, but three of its tables now fail the check.** Their
-  reasons hold numbers the quote does not: a bare year ("the 2026 401(k) plan summary", in the match and vesting
-  tables) and a section cited without § or "Section" ("the timing condition in 6(3)", in parental leave). They are
-  not wrong, but they are not approved, so in `derived/` as committed questions 1 and 3 fail their scenario, saying
-  the rule is not admitted; questions 2 and 4 run. Under the looser check all 11 passed, three on the second try.
+- **Claude's layer matched every hand-written rule and figure, and passes the stricter check.** Its reasons name
+  dates, years and sections ("the 2026 401(k) plan summary, in force on 2026-12-01", "Section 6(1)"), which are not
+  policy figures and are exempt; before those exemptions, four of its right tables failed. Under the looser check
+  all 11 passed too, three on the second try.
 - **gemma4 confused the match's tiers with its rates, and the check passed them.** It gave the first tier as 100%
   of pay and the second as 50% (the key: 3% and 3%), quoting "Meridian matches 100% of the first 3% of pay you
   contribute, and 50% of the next 3%". Every figure is in the quote, so the mechanical check cannot tell a rate from
@@ -126,9 +126,9 @@ so the first three setups were run again). `measure.py score` compared them with
 figure the key lists, the value each answer gives and whether it is stated as fact or hedged; it is told what each
 figure is about, never its value. One run each, so a difference of one is noise.
 
-The derived rows were answered from the layers as approved under the first, looser check. With the layers as they
-are now, Claude's would answer questions 2 and 4 from derived rules (questions 1 and 3 fail visibly, the rule not
-admitted), and gemma4's would answer questions 1 and 3, question 1 still with the wrong tiers; those answers were not
+The derived rows were answered from the layers as approved under the first, looser check. Claude's layer is approved
+the same under the current check. gemma4's now leaves carryover and tuition unapproved, so it would answer questions
+1 and 3 from derived rules (question 1 still with the wrong tiers) and fail 2 and 4 visibly; those answers were not
 asked again.
 
 | Setup | Model | Key figures right | Wrong as fact | Not given | Hedged | Verdicts right | Section cited | Seconds (mean) |
