@@ -153,6 +153,13 @@ def test_the_second_key_finds_a_checked_table_that_is_wrong(folder, tmp_path):
     assert found["slots"]["k401_2026.first_tier_rate"]["right"]
 
 
+def test_the_second_keys_grid_holds_no_negative_count(folder):
+    from clm_decision.dmn import load_table  # pylint: disable=import-outside-toplevel
+    table = load_table(folder / "rules" / "carryover_limit.dmn")
+    grid = measure().grid(table, table)
+    assert {row["years_of_service"] for row in grid} == {0, 4, 5, 6}
+
+
 def test_a_derived_setup_needs_the_layer_of_its_model(folder):
     module = measure()
     assert module.wrong_layer("derived", folder) and module.wrong_layer("derived_local", folder)

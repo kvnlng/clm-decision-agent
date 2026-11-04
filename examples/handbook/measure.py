@@ -197,8 +197,9 @@ def _bounds(table, name: str) -> set[float]:
     return {float(found) for row in table.rules for found in re.findall(r"-?\d+(?:\.\d+)?", row.entries[column])}
 
 
-def _grid(hand, mine) -> list[dict]:
-    """Every combination of: each bound in either table, one either side, and 0, for a number; both booleans."""
+def grid(hand, mine) -> list[dict]:
+    """Every combination of: each bound in either table, one either side, and 0, for a number, none below 0 (every
+    input here is a count of days or years); both booleans."""
     axes = []
     for index, name in enumerate(hand.inputs):
         if hand.types[index].endswith("boolean"):
@@ -206,7 +207,7 @@ def _grid(hand, mine) -> list[dict]:
             continue
         bounds = _bounds(hand, name) | _bounds(mine, name)
         values = {0.0} | bounds | {bound + 1 for bound in bounds} | {bound - 1 for bound in bounds}
-        axes.append(sorted(int(value) if value.is_integer() else value for value in values))
+        axes.append(sorted(int(value) if value.is_integer() else value for value in values if value >= 0))
     return [dict(zip(hand.inputs, values)) for values in itertools.product(*axes)]
 
 
@@ -227,7 +228,7 @@ def _compare_table(name: str, folder: Path) -> list[dict]:
         return [{"inputs": None, "hand": None, "derived": f"error: {error}"}]
     names = [output for output in hand.outputs if output not in ("reason", "citation")]
     differences = []
-    for inputs in _grid(hand, mine):
+    for inputs in grid(hand, mine):
         given = {key: value for key, value in inputs.items() if key in mine.inputs}
         expected, found = _outputs(hand, inputs, names), _outputs(mine, given, names)
         if expected != found:
