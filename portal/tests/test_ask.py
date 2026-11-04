@@ -46,6 +46,44 @@ def test_a_follow_up_keeps_the_conversation_per_session(client, portal):
     assert "One" not in page and "Third" in page
 
 
+def test_ask_can_hold_back_only_some_tools(client, portal):
+    portal.make_model = lambda *args: scripted([
+        reply(calls=[("decision_vesting", {"years_of_service": 5}), ("describe", {})]), reply("Done.")])
+    token = sign_in(client)
+    page = post(client, "/ask", token, {"question": "Vested?", "backend": "openai",
+                                        "dry_run_tools": " decision_vesting, "}).text
+    assert "dry run, not sent: decision_vesting" in page and "[tool: describe {}]" in page
+    assert "Tiny handbook" in page and "Done." in page
+    assert 'name="dry_run_tools" value="decision_vesting"' in page
+
+
+def test_ask_refuses_a_dry_run_tool_the_server_does_not_have(client, portal):
+    seen: list[dict] = []
+    portal.make_model = lambda *args: scripted([reply("Should not be asked.")], seen)
+    token = sign_in(client)
+    response = post(client, "/ask", token, {"question": "Vested?", "backend": "openai",
+                                            "dry_run_tools": "decision_vestnig"})
+    assert response.status_code == 400 and "decision_vestnig, which the server does not have" in response.text
+    assert ">Vested?</textarea>" in response.text and not seen and "Should not be asked." not in response.text
+    portal.make_model = lambda *args: scripted([reply("Asked.")], seen)
+    post(client, "/ask", token, {"question": "Now?", "backend": "openai"})
+    assert [item["content"] for item in seen[0]["messages"] if item["role"] == "user"] == ["Now?"]
+
+
+def test_ask_shows_results_in_full_only_when_asked(client, portal):
+    long_id = "hb-" + "x" * 2000
+    calls = [("document_handbook", {"id": long_id})]
+    portal.make_model = lambda *args: scripted([reply(calls=calls), reply("Shortened."), reply(calls=calls),
+                                                reply("In full.")])
+    token = sign_in(client)
+    page = post(client, "/ask", token, {"question": "Short?", "backend": "openai"}).text
+    assert "more characters" in page and f"The passage (1) of {long_id}, as stored." not in page
+    page = post(client, "/ask", token, {"question": "Full?", "backend": "openai", "full": "on"}).text
+    last = page[page.index("Full?"):]
+    assert "more characters" not in last and f"The passage (1) of {long_id}, as stored." in last
+    assert 'name="full" checked' in page
+
+
 LLM_KEY = "the-model-key-not-a-secret"
 
 

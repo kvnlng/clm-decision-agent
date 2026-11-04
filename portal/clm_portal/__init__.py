@@ -79,8 +79,7 @@ def serve(args: argparse.Namespace, run=None) -> int:
     if args.host not in LOOPBACK:
         print(f"warning: listening on {args.host}: the portal is plain HTTP, so its key and every page cross the "
               "network unencrypted; put it behind TLS or keep it on 127.0.0.1", file=sys.stderr)
-    jobs = managed.Jobs()
-    portal = web.Portal(environment, managed.ManagedServer(environment), jobs, options={
+    portal = web.Portal(environment, managed.ManagedServer(environment), managed.Jobs(), options={
         "backend": args.backend, "model": args.model, "model_url": args.model_url})
     app = web.create_app(portal, key, args.host, args.port, public)
     if run is None:

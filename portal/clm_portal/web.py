@@ -470,9 +470,10 @@ def ask_body(portal: Portal, session: Session, message: str = "", draft: str = "
     options = "".join(f'<option value="{name}"{" selected" if name == backend else ""}>{label}</option>'
                       for name, label in (("openai", "OpenAI-style (Ollama by default)"), ("claude", "Claude")))
     testing = portal.server.testing
+    held, full = conversation.get("controls") or ("", False)
     return (f'{f"<p class=failed>{esc(message)}</p>" if message else ""}'
             '<p>Questions go to the model you choose, with the tools of the portal\'s own server. Every call and '
-            'result is shown. Tools run for real unless dry run is ticked.</p>'
+            'result is shown. Tools run for real unless dry run holds them back.</p>'
             f'{shown or "<p class=muted>No questions yet.</p>"}'
             f'<form method="post" action="/ask" class="stack">{csrf_field(session)}'
             f'<label>Question <textarea name="question" required>{esc(draft)}</textarea></label>'
@@ -484,6 +485,10 @@ def ask_body(portal: Portal, session: Session, message: str = "", draft: str = "
             f'<p class="muted">{chat.LLM_KEY_ENV}, if set, is sent only to {esc(portal.started_url())}, the model '
             'URL the portal started with; any other URL is called without it.</p>'
             '<label><input type="checkbox" name="dry_run"> Dry run: show every call, send none</label>'
+            f'<label>Dry run for only these tools, comma-separated; the others run <input name="dry_run_tools" '
+            f'value="{esc(held)}" placeholder="decide, decision_vesting"></label>'
+            f'<label><input type="checkbox" name="full"{" checked" if full else ""}> Full results: show each result '
+            f'whole, not shortened after {chat.SHOWN:,} characters</label>'
             '<button>Ask</button></form>'
             f'<form method="post" action="/ask/clear" class="inline">{csrf_field(session)}'
             '<button>New conversation</button></form>'
@@ -494,8 +499,9 @@ def ask_body(portal: Portal, session: Session, message: str = "", draft: str = "
             '</button></form>')
 
 
-async def ask_page(request: Request) -> Response:
-    """GET and POST /ask: the chat, one question at a time, kept per session."""
+async def ask_page(request: Request) -> Response:  # pylint: disable=too-many-locals
+    """GET and POST /ask: the chat, one question at a time, kept per session. Tools named for a dry run must be the
+    server's, or nothing is sent; the dry-run names and full results are kept for the next question."""
     portal, session = request.app.state.portal, request.state.session
     if request.method == "GET":
         return page(portal, session, "Ask", ask_body(portal, session))
@@ -513,8 +519,12 @@ async def ask_page(request: Request) -> Response:
     if settings[0] == "openai" and os.environ.get(chat.LLM_KEY_ENV) and portal.model_key(settings[2]) is None:
         lines.append(f"  [note: {chat.LLM_KEY_ENV} was not sent: {settings[2]} is not the model URL the portal "
                      f"started with ({portal.started_url()})]")
-    dry_run = chat.DryRun(frozenset({chat.ALL}) if form.get("dry_run") else frozenset())
+    named = [name.strip() for name in str(form.get("dry_run_tools", "")).split(",") if name.strip()]
+    full = bool(form.get("full"))
+    session.ask["controls"] = (", ".join(named), full)
+    dry_run = chat.DryRun(frozenset({chat.ALL}) if form.get("dry_run") else frozenset(named))
     mark = len(session.ask["messages"] or [])
+    unknown: list[str] = []
     try:
         async with httpx.AsyncClient() as http:
             model = portal.make_model(*settings, http)
@@ -522,8 +532,11 @@ async def ask_page(request: Request) -> Response:
                 session.ask["messages"] = model.start()
                 mark = len(session.ask["messages"])
             async with answering(), portal.server.client() as client:
-                tools = model.tools((await client.list_tools()).tools)
-                await chat.answer(client, model, tools, session.ask["messages"], question, dry_run, lines.append)
+                listed = (await client.list_tools()).tools
+                unknown = sorted(set(named) - {tool.name for tool in listed})
+                if not unknown:
+                    await chat.answer(client, model, model.tools(listed), session.ask["messages"], question,
+                                      dry_run, lines.append, full)
     except NotAnswering as error:
         if session.ask["messages"] is not None:
             del session.ask["messages"][mark:]
@@ -531,6 +544,11 @@ async def ask_page(request: Request) -> Response:
                                                                        "in a moment.", question))
     except (chat.ClientError, httpx.HTTPError, OSError, RuntimeError) as error:
         lines.append(f"  [error: {error}]")
+    if unknown:
+        return page(portal, session, "Ask", ask_body(
+            portal, session, f"Dry run names {', '.join(unknown)}, which the server does not have, so nothing was "
+                             "sent: a mistyped name would let that tool run. Your question is kept.", question),
+            status=400)
     session.ask["turns"].append((question, lines))
     return page(portal, session, "Ask", ask_body(portal, session))
 

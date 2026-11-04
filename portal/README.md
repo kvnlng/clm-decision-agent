@@ -47,8 +47,10 @@ Review page shows an error instead.
   information items; the graph's nodes and edges (a graph in Neo4j is named, not shown); the collections and when each
   was built; and every load error, such as why its server did not start. It is read from the files, not by loading
   the environment, so it shows them even when the server does not start.
-- **Ask**: the chat in a page, with the same models, every call and result shown, and dry run as a tick. The
-  conversation is kept for your session. **Testing** restarts the portal's server with `--admit-derived
+- **Ask**: the chat in a page, with the same models and every call and result shown. As in the chat, dry run can
+  hold back every tool (a tick) or only the tools you name, and **Full results** shows results whole rather than
+  shortened after 1,500 characters. A name the server does not have sends nothing, so a typo cannot let a tool
+  run. The conversation is kept for your session. **Testing** restarts the portal's server with `--admit-derived
   proposed,checked,approved`, so unapproved derived rules decide; while it is on, every page says so. It is off at
   every start.
 - **Review**: derived decisions, facts and conflicts, each beside its cited passage (or its quote, when the server
