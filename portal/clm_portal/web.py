@@ -11,6 +11,8 @@ import contextlib
 import hmac
 import html
 import json
+import os
+import re
 import secrets
 import time
 import urllib.parse
@@ -18,13 +20,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import httpx
 from starlette.applications import Starlette
+from starlette.datastructures import UploadFile
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import layer
+from . import chat, layer
 from .managed import Busy, Jobs, ToolFailed, script
 
 COOKIE = "clm_portal_session"
@@ -36,6 +40,7 @@ OPEN_PATHS = ("/sign-in",)
 OPERATOR_NOTE = ("The portal restarts its own server after every change. The server agents use reads the files at "
                  "start: its operator restarts it, or redeploys from git, to pick up approved changes.")
 TESTING_BANNER = "Testing: unapproved derived rules are deciding."
+BACKENDS = ("openai", "claude")
 
 
 @dataclass
@@ -54,6 +59,7 @@ class Portal:  # pylint: disable=too-few-public-methods
         self.environment, self.server, self.jobs, self.find = Path(environment), server, jobs, find
         self.options = options or {}
         self.sessions: dict[str, Session] = {}
+        self.make_model = make_model
 
     def session(self, ident: str | None) -> Session | None:
         """The live session with this id, if any."""
@@ -421,6 +427,227 @@ async def review_action(request: Request) -> Response:
                                       + ("" if job.running else f"; {job.output}") + ".")
 
 
+def make_model(backend: str, model: str | None, url: str | None, http: httpx.AsyncClient):
+    """The chat's model for one question: OpenAI-style (Ollama by default) or Claude, with the chat's defaults."""
+    if backend == "claude":
+        try:
+            from anthropic import AsyncAnthropic  # pylint: disable=import-outside-toplevel
+        except ImportError as error:
+            raise chat.ClientError("Claude needs the anthropic package (clm-decision-agent[agent])") from error
+        return chat.ClaudeModel(AsyncAnthropic(), model or chat.CLAUDE_MODEL)
+    return chat.OpenAIModel(http, model or chat.STARTER_MODEL, url or chat.OLLAMA_V1, os.environ.get(chat.LLM_KEY_ENV))
+
+
+def _ask_settings(portal: Portal, form) -> tuple[str, str, str]:
+    backend = str(form.get("backend") or portal.options.get("backend") or "openai")
+    if backend not in BACKENDS:
+        backend = "openai"
+    model = str(form.get("model") or "").strip() or portal.options.get("model") or ""
+    url = str(form.get("model_url") or "").strip() or portal.options.get("model_url") or ""
+    return backend, model, url
+
+
+def ask_body(portal: Portal, session: Session, message: str = "") -> str:
+    """The conversation so far, the question form and the testing switch."""
+    conversation = session.ask
+    backend, model, url = conversation.get("settings") or _ask_settings(portal, {})
+    shown = "".join(f'<h3>{esc(question)}</h3><div class="chat">{esc(chr(10).join(lines))}</div>'
+                    for question, lines in conversation.get("turns", []))
+    options = "".join(f'<option value="{name}"{" selected" if name == backend else ""}>{label}</option>'
+                      for name, label in (("openai", "OpenAI-style (Ollama by default)"), ("claude", "Claude")))
+    testing = portal.server.testing
+    return (f'{f"<p class=failed>{esc(message)}</p>" if message else ""}'
+            '<p>Questions go to the model you choose, with the tools of the portal\'s own server. Every call and '
+            'result is shown. Tools run for real unless dry run is ticked.</p>'
+            f'{shown or "<p class=muted>No questions yet.</p>"}'
+            f'<form method="post" action="/ask" class="stack">{csrf_field(session)}'
+            '<label>Question <textarea name="question" required></textarea></label>'
+            f'<label>Model <select name="backend">{options}</select></label>'
+            f'<label>Model name <input name="model" value="{esc(model)}" placeholder="{chat.STARTER_MODEL} or '
+            f'{chat.CLAUDE_MODEL}"></label>'
+            f'<label>Model URL (OpenAI-style) <input name="model_url" value="{esc(url)}" '
+            f'placeholder="{chat.OLLAMA_V1}"></label>'
+            '<label><input type="checkbox" name="dry_run"> Dry run: show every call, send none</label>'
+            '<button>Ask</button></form>'
+            f'<form method="post" action="/ask/clear" class="inline">{csrf_field(session)}'
+            '<button>New conversation</button></form>'
+            f'<form method="post" action="/ask/testing" class="inline">{csrf_field(session)}'
+            f'<input type="hidden" name="on" value="{"0" if testing else "1"}">'
+            f'<button data-confirm="Restart the portal\'s server{" without" if testing else " with"} unapproved '
+            f'derived rules?">{"Turn testing off" if testing else "Testing: let unapproved derived rules decide"}'
+            '</button></form>')
+
+
+async def ask_page(request: Request) -> Response:
+    """GET and POST /ask: the chat, one question at a time, kept per session."""
+    portal, session = request.app.state.portal, request.state.session
+    if request.method == "GET":
+        return page(portal, session, "Ask", ask_body(portal, session))
+    form = await request.form()
+    question = str(form.get("question", "")).strip()
+    if not question:
+        return page(portal, session, "Ask", ask_body(portal, session, "Type a question."), status=400)
+    if not portal.server.running:
+        return page(portal, session, "Ask", ask_body(portal, session, "The portal's server is not running: "
+                                                     f"{portal.server.error or 'see Configuration'}"), status=409)
+    settings = _ask_settings(portal, form)
+    if session.ask.get("settings") != settings:
+        session.ask = {"settings": settings, "messages": None, "turns": []}
+    lines: list[str] = []
+    dry_run = chat.DryRun(frozenset({chat.ALL}) if form.get("dry_run") else frozenset())
+    try:
+        async with httpx.AsyncClient() as http:
+            model = portal.make_model(*settings, http)
+            if session.ask["messages"] is None:
+                session.ask["messages"] = model.start()
+            async with portal.server.client() as client:
+                tools = model.tools((await client.list_tools()).tools)
+                await chat.answer(client, model, tools, session.ask["messages"], question, dry_run, lines.append)
+    except (chat.ClientError, httpx.HTTPError, OSError, RuntimeError) as error:
+        lines.append(f"  [error: {error}]")
+    session.ask["turns"].append((question, lines))
+    return page(portal, session, "Ask", ask_body(portal, session))
+
+
+async def ask_clear(request: Request) -> Response:
+    """POST /ask/clear: start a new conversation."""
+    request.state.session.ask = {}
+    return RedirectResponse("/ask", status_code=303)
+
+
+async def ask_testing(request: Request) -> Response:
+    """POST /ask/testing: restart the portal's server admitting every derived status, or not."""
+    portal, session = request.app.state.portal, request.state.session
+    form = await request.form()
+    try:
+        async with changing(portal):
+            await portal.server.restart(testing=form.get("on") == "1")
+    except Busy as error:
+        return page(portal, session, "Ask", ask_body(portal, session, str(error)), status=409)
+    return RedirectResponse("/ask", status_code=303)
+
+
+def jsonl_files(portal: Portal) -> list[str]:
+    """The JSON-lines files in the environment's folder."""
+    return sorted(path.name for path in portal.environment.parent.glob("*.jsonl") if path.is_file())
+
+
+def safe_name(filename: str) -> str | None:
+    """An uploaded file's name, reduced to letters, digits, dots, dashes and underscores; None unless it is a
+    .jsonl file."""
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", Path(filename.replace("\\", "/")).name).lstrip(".")
+    return name if name.endswith(".jsonl") and len(name) > len(".jsonl") else None
+
+
+def documents_body(portal: Portal, session: Session, described: dict | None, message: str = "",
+                   failed: bool = False) -> str:
+    """Each collection with when it was built, and the forms that load and derive."""
+    found = collections(portal)
+    built = (described or {}).get("collections", {})
+    rows = [[esc(name), esc(table_.get("description", "")), built_text((built.get(name) or {}).get("built"))]
+            for name, table_ in found.items()]
+    choose = "".join(f'<option value="{esc(name)}">{esc(name)}</option>' for name in found)
+    files = "".join(f'<option value="{esc(name)}">{esc(name)}</option>' for name in jsonl_files(portal))
+    parts = [f'<p class="{"failed" if failed else "passed"}">{esc(message)}</p>' if message else "",
+             job_status(portal), "<h2>Collections</h2>",
+             table(["collection", "description", "built"], rows) if rows else "<p>No collections.</p>",
+             "<h2>Load</h2><p>Replaces what the collection holds with the file, through clm-load-documents. An "
+             "upload is saved in the environment's folder, so git can hold it.</p>",
+             f'<form method="post" action="/documents/load" class="stack">{csrf_field(session)}'
+             f'<label>Collection <select name="collection">{choose}</select></label>'
+             f'<label>A file in the folder <select name="file"><option value="">(none)</option>{files}</select>'
+             '</label><button data-confirm="Replace the collection with this file?">Load</button></form>',
+             f'<form method="post" action="/documents/load" enctype="multipart/form-data" class="stack">'
+             f'{csrf_field(session)}<label>Collection <select name="collection">{choose}</select></label>'
+             '<label>Upload a .jsonl file <input type="file" name="upload" accept=".jsonl" required></label>'
+             '<label><input type="checkbox" name="overwrite"> Overwrite a file of the same name</label>'
+             '<button data-confirm="Save the file and replace the collection with it?">Upload and load</button>'
+             '</form>', "<h2>Derive</h2>"]
+    if portal.find("clm-derive") is None:
+        parts.append('<p class="muted">Derivation is not available yet: clm-derive is not installed in the '
+                     "portal's environment.</p>")
+    else:
+        parts.append('<p>Derives rules and facts from a collection into the derived layer, through clm-derive run. '
+                     'Each is proposed, then checked; only a person approves one, in Review.</p>'
+                     f'<form method="post" action="/documents/derive" class="stack">{csrf_field(session)}'
+                     f'<label>Collection <select name="collection">{choose}</select></label>'
+                     '<label>Model <select name="backend"><option value="">(clm-derive\'s default)</option>'
+                     '<option value="claude">Claude</option><option value="ollama">Ollama</option></select></label>'
+                     '<label>Model name <input name="model"></label>'
+                     '<button data-confirm="Derive from this collection?">Derive</button></form>')
+    return "".join(parts)
+
+
+async def documents_page(request: Request, message: str = "", status: int = 200) -> Response:
+    """GET /documents."""
+    portal, session = request.app.state.portal, request.state.session
+    _, described, _ = await server_view(portal)
+    return page(portal, session, "Documents", documents_body(portal, session, described, message, status >= 400),
+                status=status, changes=True)
+
+
+async def _start(request: Request, name: str, argv: list[str]) -> Response:
+    portal = request.app.state.portal
+    try:
+        job = await portal.jobs.start(name, argv, on_success=portal.server.restart)
+    except Busy as error:
+        return await documents_page(request, str(error), 409)
+    if not job.running:
+        return await documents_page(request, job.output, 409)
+    return await documents_page(request, f"Started {name}.")
+
+
+async def documents_load(request: Request) -> Response:
+    """POST /documents/load: clm-load-documents ENVIRONMENT COLLECTION FILE, from a file in the folder or an
+    upload saved there."""
+    portal = request.app.state.portal
+    form = await request.form()
+    collection, folder = str(form.get("collection", "")), portal.environment.parent
+    if collection not in collections(portal):
+        return await documents_page(request, f"no collection {collection!r}", 400)
+    upload = form.get("upload")
+    if isinstance(upload, UploadFile) and upload.filename:
+        name = safe_name(upload.filename)
+        if name is None:
+            return await documents_page(request, "only a .jsonl file can be uploaded", 400)
+        target = folder / name
+        if target.exists() and not form.get("overwrite"):
+            return await documents_page(request, f"{name} is already in the folder; tick overwrite to replace it",
+                                        409)
+        if portal.jobs.lock.locked():
+            return await documents_page(request, "a job or another change is running; wait for it to finish", 409)
+        target.write_bytes(await upload.read())
+    else:
+        name = str(form.get("file", ""))
+        if name not in jsonl_files(portal):
+            return await documents_page(request, "choose a .jsonl file in the folder, or upload one", 400)
+        target = folder / name
+    return await _start(request, f"clm-load-documents {collection}",
+                        ["clm-load-documents", str(portal.environment), collection, str(target)])
+
+
+async def documents_derive(request: Request) -> Response:
+    """POST /documents/derive: clm-derive run ENVIRONMENT COLLECTION [--backend B] [--model M]."""
+    portal = request.app.state.portal
+    form = await request.form()
+    collection = str(form.get("collection", ""))
+    backend, model = str(form.get("backend") or ""), str(form.get("model") or "").strip()
+    if collection not in collections(portal):
+        return await documents_page(request, f"no collection {collection!r}", 400)
+    if backend not in ("", "claude", "ollama"):
+        return await documents_page(request, "the model is claude or ollama", 400)
+    argv = ["clm-derive", "run", str(portal.environment), collection,
+            *(["--backend", backend] if backend else []), *(["--model", model] if model else [])]
+    return await _start(request, f"clm-derive run {collection}", argv)
+
+
+async def jobs_current(request: Request) -> Response:
+    """GET /jobs/current: whether a job is running, for the page's polling."""
+    job = request.app.state.portal.jobs.current() or request.app.state.portal.jobs.last()
+    return JSONResponse({"running": bool(job and job.running), "name": job.name if job else None,
+                         "returncode": job.returncode if job else None})
+
+
 def sign_in_page(portal: Portal, message: str = "", status: int = 200) -> HTMLResponse:
     """The sign-in form."""
     shown = f'<p class="failed">{esc(message)}</p>' if message else ""
@@ -546,6 +773,10 @@ def routes() -> list:
     return [Route("/sign-in", sign_in, methods=["GET", "POST"]), Route("/sign-out", sign_out, methods=["POST"]),
             Route("/", configuration_page), Route("/passage", passage_page), Route("/review", review_page),
             Route("/review/{kind}/{name}/{action}", review_action, methods=["POST"]),
+            Route("/ask", ask_page, methods=["GET", "POST"]), Route("/ask/clear", ask_clear, methods=["POST"]),
+            Route("/ask/testing", ask_testing, methods=["POST"]), Route("/documents", documents_page),
+            Route("/documents/load", documents_load, methods=["POST"]),
+            Route("/documents/derive", documents_derive, methods=["POST"]), Route("/jobs/current", jobs_current),
             Mount("/static", StaticFiles(directory=STATIC), name="static")]
 
 

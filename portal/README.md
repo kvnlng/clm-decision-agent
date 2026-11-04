@@ -1,7 +1,72 @@
 # The portal
 
 One local page for the person who administers a decision server, and a command-line chat with any running MCP
-server. It is not part of the `clm-decision-agent` package and is not installed with it.
+server. It is not part of the `clm-decision-agent` package and is not installed with it; it depends on it, by path.
+
+## The page
+
+**Who it is for:** the person who administers an environment's server. It is never for end users, who use their own
+MCP client, and agents can never reach it: it is not an MCP server, and the decision server has no tool that changes
+a status. Anyone who signs in may change the server; there is one role.
+
+### Running it
+
+From a checkout, with [uv](https://docs.astral.sh/uv/):
+
+```bash
+export CLM_PORTAL_KEY=<a long random key>                              # not the key agents use
+set -a; . ./.postgres-local.env; set +a                                # if the environment has documents
+uv run --project portal clm-portal serve examples/handbook/environment.toml
+```
+
+Then open <http://127.0.0.1:8400> and sign in with the key and your name. The name is recorded with every change you
+make; it is not checked, so it is whatever you type. A wrong key waits half a second. Sessions last 12 hours and are
+held in memory, so restarting the portal signs everyone out.
+
+| Option | Default | |
+|---|---|---|
+| `--host` | `127.0.0.1` | Any other address prints a warning: the portal is plain HTTP |
+| `--port` | `8400` | |
+| `--backend`, `--model`, `--model-url` | as the chat | Ask's starting model, changeable on the page |
+
+The portal starts **its own decision server**, `clm-server ENVIRONMENT --http` on 127.0.0.1 at a free port, with a
+key made at each start and given only to that process. It never uses port 8000 or `DECISION_SERVER_KEY`, so it never
+touches the server agents use. It needs the environment's folder on disk, so it runs on the server's machine.
+
+### What it shows and what it changes
+
+- **Configuration**, read only: the environment's name and description; every tool its server offers; every rule,
+  supplied or derived, with its origin, status, owner, version, DMN rows and links to the passages it cites; the
+  information items; the graph's nodes and edges (a graph in Neo4j is named, not shown); the collections and when each
+  was built; and every load error, such as why its server did not start. It is read from the files, not by loading
+  the environment, so it shows them even when the server does not start.
+- **Ask**: the chat in a page, with the same models, every call and result shown, and dry run as a tick. The
+  conversation is kept for your session. **Testing** restarts the portal's server with `--admit-derived
+  proposed,checked,approved`, so unapproved derived rules decide; while it is on, every page says so. It is off at
+  every start.
+- **Review**: derived decisions, facts and conflicts, each beside its cited passage (or its quote, when the server
+  cannot read the passage), its check, and for a fact or conflict the supplied value and its graph row. Approve
+  (only once `clm-derive check` passed it), reject, or resolve a conflict; each is recorded with your name and an
+  optional note. **Correct** edits a fact's value or a decision's DMN table in place: the table must stay inside
+  `derived/` and load before it is saved; the entry goes back to proposed with no check, and `clm-derive check` runs,
+  so it cannot be approved until it passes again.
+- **Documents**: load a collection from a `.jsonl` file in the environment's folder, or upload one, which is saved
+  there (under a safe name, never over another file unless you tick overwrite) so git can hold it; this runs
+  `clm-load-documents`. **Derive** runs `clm-derive run` on a collection; without `clm-derive`, the page says
+  derivation is not available yet.
+
+It changes only documents and the derived layer (`derived/derived.json`, through `clm_decision.derived`, and the
+tables in `derived/`); new tools stay in files, and no supplied file is changed. Every change is written to the
+files, so git stays the record. One job or change runs at a time; another asks you to wait. A job's output is shown,
+with any key or password replaced by `***`, and when it succeeds the portal restarts its own server.
+
+**The server agents use is yours to restart.** It reads the files at start, so after approving changes, restart it
+(or redeploy from git) to pick them up.
+
+**Security:** the key is in `CLM_PORTAL_KEY`, separate from the agents' key. The session cookie is `HttpOnly` and
+`SameSite=Strict`; every form carries a per-session token; a POST from any other origin, or a request whose `Host`
+is not the portal's address, is refused. On an address other than 127.0.0.1 the portal is plain HTTP: put it behind
+TLS.
 
 ## The chat
 
