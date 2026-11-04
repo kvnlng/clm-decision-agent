@@ -846,7 +846,8 @@ def routes() -> list:
     """Every route of the page."""
     return [Route("/sign-in", sign_in, methods=["GET", "POST"]), Route("/sign-out", sign_out, methods=["POST"]),
             Route("/", configuration_page), Route("/passage", passage_page), Route("/review", review_page),
-            Route("/review/{kind}/{name}/{action}", review_action, methods=["POST"]),
+            # A derived fact's name holds its graph node's id, which may hold "/": the name is the rest of the path
+            Route("/review/{kind}/{name:path}/{action}", review_action, methods=["POST"]),
             Route("/ask", ask_page, methods=["GET", "POST"]), Route("/ask/clear", ask_clear, methods=["POST"]),
             Route("/ask/testing", ask_testing, methods=["POST"]), Route("/documents", documents_page),
             Route("/documents/load", documents_load, methods=["POST"]),

@@ -9,7 +9,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from clm_portal import layer, web
-from conftest import KEY, ORIGIN, FakeServer, dmn, post, sign_in
+from conftest import KEY, ORIGIN, FakeServer, dmn, post, sign_in, source
 
 FACT = "k401_2026.match_cap"
 GOOD_DMN = dmn("carryover_limit", "limit", [("&gt;= 5", "10"), ("-", "5")])
@@ -151,6 +151,27 @@ def test_a_rejected_entry_that_passed_its_check_can_be_approved_again(client, en
     assert "disabled" not in part[:part.index("</section>")].split("Approve")[0][-200:]
     assert post(client, "/review/decisions/carryover_limit/approve", token).status_code == 200
     assert layer_of(environment)["decisions"]["carryover_limit"]["status"] == "approved"
+
+
+def test_an_entry_and_a_document_whose_names_hold_a_slash_can_be_acted_on(client, environment):
+    file = environment.parent / "derived" / "derived.json"
+    found = json.loads(file.read_text())
+    name = "dept/sales.cap"
+    found["facts"][name] = {**found["facts"][FACT], "node": "dept/sales", "property": "cap",
+                            "source": source("hb/leave", "(2)", "up to 7"), "status": "checked",
+                            "check": {"passed": True, "failures": []}}
+    file.write_text(json.dumps(found))
+    token = sign_in(client)
+    page = client.get("/review").text
+    assert "/review/facts/dept%2Fsales.cap/approve" in page
+    assert "/passage?collection=handbook&amp;id=hb%2Fleave&amp;passage=%282%29" in page
+    assert "The passage (2) of hb/leave, as stored." in page
+    assert post(client, "/review/facts/dept%2Fsales.cap/approve", token).status_code == 200
+    assert layer_of(environment)["facts"][name]["status"] == "approved"
+    assert post(client, "/review/facts/dept%2Fsales.cap/correct", token, {"value": "1"}).status_code == 200
+    assert layer_of(environment)["facts"][name]["value"] == 1
+    assert "The passage (1) of hb/leave" in client.get("/passage", params={"collection": "handbook",
+                                                                           "id": "hb/leave"}).text
 
 
 @pytest.mark.parametrize("installed", [{"clm-server", "clm-load-documents"}])
