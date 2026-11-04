@@ -12,6 +12,7 @@ import itertools
 import re
 from datetime import date
 from pathlib import Path
+from typing import Callable
 
 from . import derived
 from .dmn import DmnError, Table, evaluate, load_table
@@ -175,12 +176,22 @@ def _stale(env: Environment, name: str, entry: dict, on: date) -> str | None:
     return None
 
 
-def recheck(folder: str | Path, env: Environment, *, on: date) -> dict:
+SecondReading = Callable[[str, str, dict], tuple[dict, list[str]]]
+
+
+def _reading(record: dict) -> str:
+    return "not_made" if record.get("error") else "agreed" if record.get("agreed") else "disagreed"
+
+
+def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondReading | None = None) -> dict:
     """Check every proposed or checked entry again, as after a correction, recording each result through
     derived.set_check, and send any entry but a rejected one whose cited document is no longer the edition it came
     from back to proposed (derived.set_stale). Otherwise approved and rejected entries are a person's decision and
-    are left alone. -> counts."""
+    are left alone. With `second` (kind, name, entry -> record, failures), each entry checked is also read again by
+    a second model, whether or not the mechanical check passed it, and its failures join the check's. -> counts."""
     counts = {"checked": 0, "proposed": 0, "stale": 0, "untouched": 0}
+    if second is not None:
+        counts.update(agreed=0, disagreed=0, not_made=0)
     layer = derived.read(folder)
     for kind in ("decisions", "facts"):
         for name, entry in layer[kind].items():
@@ -192,8 +203,13 @@ def recheck(folder: str | Path, env: Environment, *, on: date) -> dict:
             if entry.get("status") not in ("proposed", "checked"):
                 counts["untouched"] += 1
                 continue
-            failures = check(env, kind, name, entry, on=on)
-            done = derived.set_check(folder, kind, name, {"passed": not failures, "failures": failures})
+            failures, record = check(env, kind, name, entry, on=on), None
+            if second is not None:
+                record, disagreed = second(kind, name, entry)
+                failures += disagreed
+                counts[_reading(record)] += 1
+            done = derived.set_check(folder, kind, name, {"passed": not failures, "failures": failures,
+                                                          "second_reading": record})
             counts[done["status"]] += 1
     return counts
 

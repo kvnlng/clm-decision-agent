@@ -288,6 +288,46 @@ def test_recheck_accepts_a_null_check_after_a_correction(env):
     assert entry["status"] == "checked" and entry["check"]["passed"] and entry["check"]["by"] == "clm-derive check"
 
 
+def reading(agreed, model="m"):
+    def second(_kind, _name, _entry):
+        record = {"model": model, "agreed": agreed, "differences": [] if agreed else [{"first": 6300, "second": 63}]}
+        return record, [] if agreed else [derive_check.disagreement(model, record["differences"])]
+    return second
+
+
+def test_a_disagreeing_second_reading_fails_the_check_and_is_recorded(env):
+    folder = layer_with(env, k401_2026__match_cap=("facts", fact()))
+    counts = derive_check.recheck(folder, env, on=ON, second=reading(False))
+    entry = derived.read(folder)["facts"]["k401_2026.match_cap"]
+    assert entry["status"] == "proposed" and not entry["check"]["passed"]
+    assert entry["check"]["failures"] == ["a second reading by m disagrees: 6300 against 63"]
+    assert entry["check"]["second_reading"]["agreed"] is False
+    assert counts == {"checked": 0, "proposed": 1, "stale": 0, "untouched": 0, "agreed": 0, "disagreed": 1,
+                      "not_made": 0}
+
+
+def test_an_agreeing_second_reading_lets_a_passing_entry_be_checked(env):
+    folder = layer_with(env, k401_2026__match_cap=("facts", fact()))
+    counts = derive_check.recheck(folder, env, on=ON, second=reading(True))
+    entry = derived.read(folder)["facts"]["k401_2026.match_cap"]
+    assert entry["status"] == "checked" and entry["check"]["second_reading"]["agreed"] is True
+    assert counts["agreed"] == 1
+
+
+def test_a_second_reading_is_made_on_an_entry_the_mechanical_check_fails_too(env):
+    folder = layer_with(env, k401_2026__match_cap=("facts", fact(quote="The match is capped at $6,300")))
+    derive_check.recheck(folder, env, on=ON, second=reading(False))
+    entry = derived.read(folder)["facts"]["k401_2026.match_cap"]
+    assert len(entry["check"]["failures"]) == 2 and "second reading" in entry["check"]["failures"][-1]
+
+
+def test_no_second_reading_is_made_on_approved_or_rejected_entries(env):
+    made = []
+    folder = layer_with(env, k401_2026__match_cap=("facts", {**fact(), "status": "approved"}))
+    derive_check.recheck(folder, env, on=ON, second=lambda *args: made.append(args))
+    assert not made
+
+
 def test_a_differing_supplied_value_is_an_open_conflict(env):
     layer = derived.empty("handbook")
     layer["facts"]["k401_2026.year"] = fact(2024, "which for 2024 is", ("(2)",), prop="year")
