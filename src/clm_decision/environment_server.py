@@ -1,8 +1,10 @@
 """An environment's named queries, decisions, calculations and scenarios, each offered as its own MCP tool.
 
 Each tool's arguments are the parameters the owner declared, so an agent sees exactly what it can ask for and the
-MCP SDK refuses anything else. Every tool only reads: nothing here changes the world. server.py serves this when
-its file is an environment.
+MCP SDK refuses anything else. Every tool only reads: nothing here changes the world. The environment's data is also
+offered as resources, read by the same code as the read tools, for clients and people that browse or attach data;
+the reads stay tools, since most clients let a model fetch only through tools. server.py serves this when its file is
+an environment.
 """
 from __future__ import annotations
 
@@ -10,10 +12,13 @@ import contextlib
 import inspect
 from typing import Any, Callable
 
+import pydantic_core
 from mcp.server import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ResourceError, ToolError
+from mcp.server.mcpserver.resources import FunctionResource
 from mcp.types import ToolAnnotations
 
+from . import derived
 from . import engine
 from . import oauth
 from . import tracing
@@ -22,6 +27,7 @@ from .environment import Environment
 from .scenario import ScenarioError
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
+JSON = "application/json"
 _ANNOTATIONS = {"string": str, "number": float, "integer": int, "boolean": bool, "list": list[Any], "any": Any}
 _RESULT = dict[str, Any]
 
@@ -177,6 +183,41 @@ def _add_document_tools(add: Callable, env: Environment, name: str, collection) 
             inspect.Signature([ident, _optional("depth", int, 1)], return_annotation=_RESULT))
 
 
+def _json(run: Callable[[], dict]) -> str:
+    """A resource's content: what run returns, as JSON the way a tool's result is; a failure is a ResourceError
+    carrying the one-line reason, as a tool's is a ToolError."""
+    try:
+        return pydantic_core.to_json(run(), fallback=str).decode()
+    except (engine.StepError, derived.DerivedError) as error:
+        raise ResourceError(str(error)) from error
+    # The owner's code and the store can fail in any way; the client should still learn why
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        raise ResourceError(f"{type(error).__name__}: {error}") from error
+
+
+def _add_resources(server: MCPServer, env: Environment) -> None:
+    """The environment's data as resources: describe, every rule, and the derived layer when there is one."""
+    def add(uri: str, name: str, description: str, run: Callable[[], dict]) -> None:
+        server.add_resource(FunctionResource(uri=uri, name=name, description=description, mime_type=JSON,
+                                             fn=lambda: _json(run)))
+
+    add("environment://describe", "describe", "What describe returns: the environment's queries, decisions, "
+        "calculations, scenarios, collections, topics and derived slots.", lambda: describe(env))
+    rules = sorted(name for name, decision in env.decisions.items() if decision.rule)
+    for name in rules:
+        add(f"rule://{name}", f"rule {name}",
+            f"What the rule tool returns for {name}: {env.decisions[name].description}",
+            lambda name=name: explain_rule(env, name))
+    if rules:
+        server.resource("rule://{name}", name="rule", mime_type=JSON,
+                        description="One rule, supplied or derived, with its origin and status, as the rule tool "
+                                    "returns it.")(lambda name: _json(lambda: explain_rule(env, name)))
+    if env.slots:
+        add("derived://layer", "derived layer", "The derived layer as stored: every rule, fact and conflict derived "
+            "from the documents, with its status, check and who decided it.",
+            lambda: derived.read(env.path.resolve().parent))
+
+
 def build_environment_server(env: Environment, trace: tracing.TraceWriter | None = None,
                              auth: oauth.OAuth | None = None) -> MCPServer:
     """The MCP server for one environment. With `trace`, each call is written to the trace; with `auth`, HTTP
@@ -223,4 +264,5 @@ def build_environment_server(env: Environment, trace: tracing.TraceWriter | None
             lambda args: explain_rule(env, args["name"]), _signature({"name": "string"}))
     add("describe", "The environment: its queries, decisions, calculations and scenarios, with their parameters.",
         lambda _: describe(env), _signature({}))
+    _add_resources(server, env)
     return server
