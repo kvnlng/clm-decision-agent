@@ -43,8 +43,8 @@ SYSTEM = """You derive one rule or one fact from a company's documents, for a de
 exactly as you write it. Use only the documents given, and only an edition in force on the date given. Answer in \
 JSON with the schema.
 
-- source: the one document the rule or fact comes from, the labels of the passages you used, such as "(2)", and a \
-quote: the exact words of those passages, copied character for character. Join pieces from different places with \
+- source: the document's id (as its "Document id" line gives it, such as hb-leave) for the one document the rule \
+or fact comes from, the labels of the passages you used, such as "(2)", and a quote: the exact words of those passages, copied character for character. Join pieces from different places with \
 "...".
 - Every number you state, in the statement, in each row's tests, outputs and reason, or as a fact's value, must \
 appear in the quote, as a numeral or a word ("one full year" is 1). 0 is exempt, for "none".
@@ -167,7 +167,7 @@ def _prompt(slot: Slot, documents: list[dict], on: date) -> str:
     for document in documents:
         dates = ", ".join(f"{key} {value}" for key, value in (document.get("metadata") or {}).items()
                           if key.startswith("effective"))
-        shown.append(f"## {document['id']}: {document['citation']}, {document['title']} ({dates})\n"
+        shown.append(f"Document id: {document['id']}\n{document['citation']}, {document['title']} ({dates})\n"
                      + "\n".join(f"{passage['label']} {passage['text']}" for passage in document["passages"]))
     return "\n".join([f"Slot: {slot.name}", f"What it is: {slot.description}", *wanted, f"In force on: {on}", "",
                       "Documents:", "", "\n\n".join(shown)])

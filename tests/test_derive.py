@@ -124,6 +124,13 @@ def test_the_model_sees_only_documents_in_force(path):
     assert "hb-401k-2026" in prompt and "hb-401k-2024" not in prompt and "23,000" not in prompt
 
 
+def test_the_prompt_gives_each_documents_id_on_its_own_line(path):
+    extractor = good()
+    run(path, extractor)
+    prompt = next(prompt for name, prompt in extractor.prompts if name == "k401_2026.match_cap")
+    assert "\nDocument id: hb-401k-2026\n" in prompt and "the document's id" in derive.SYSTEM
+
+
 def test_a_failed_check_is_retried_once_with_its_failures(path):
     wrong = {**CAP, "value": 6400}
     extractor = Canned(carryover_limit=[CARRYOVER], k401_2026__match_cap=[wrong, CAP])
