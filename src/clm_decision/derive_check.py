@@ -102,6 +102,7 @@ def _fact(env: Environment, slot: Slot, entry: dict) -> tuple[list[str], list[tu
     return failures, figures
 
 
+# pylint: disable-next=too-many-locals
 def _decision(env: Environment, slot: Slot, entry: dict) -> tuple[list[str], list[tuple[str, object]]]:
     try:
         table = load_table(Path(env.path).resolve().parent / "derived" / entry.get("dmn", ""))
@@ -115,10 +116,10 @@ def _decision(env: Environment, slot: Slot, entry: dict) -> tuple[list[str], lis
     if missing:
         failures.append(f"ontology: the table has no output {', '.join(missing)}")
     source = (entry.get("source") or {}).get("document")
-    cites = list((entry.get("rule") or {}).get("cites") or [])
+    rule = entry.get("rule") or {}
+    cites = list(rule.get("cites") or [])
     if cites != [source]:
         failures.append(f"ontology: the rule cites {cites}, not only its source {source}")
-    rule = entry.get("rule") or {}
     figures: list[tuple[str, object]] = [("statement", rule.get("statement", "")), ("reason", rule.get("reason", ""))]
     for row in table.rules:
         figures += [(f"row {row.id} {name}", text) for name, text in zip(table.inputs, row.entries)]
