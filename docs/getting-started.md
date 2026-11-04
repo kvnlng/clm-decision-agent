@@ -112,10 +112,62 @@ you> I need access to the oncology registry for an audit, needed this week
   live in [Neo4j](environment.md#on-neo4j).
 - **Either:** `uv run clm-call <file>` lists the tools, and `uv run clm-call <file> <tool> '<json>'` calls one, with
   no agent. Give a running server's URL instead of a file to reach it.
-- **In a browser:** the MCP Inspector lists a running environment server's tools, resources and prompt and calls
-  them one at a time; the command is in [serving](serving.md).
+- **In a browser:** the MCP Inspector shows everything the server offers and calls one tool at a time; see
+  [Looking inside the server](#looking-inside-the-server).
 
 A mistake in either file stops start-up with one line naming the setting.
+
+## Looking inside the server
+
+The [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector), from the MCP project, is a page in your
+browser that starts your server, connects to it and shows everything it offers: its tools, its resources and its
+prompts. You can call one tool at a time and read the result, with no model and no agent. Use it after every change
+to your environment, before trying an agent. It needs [Node](https://nodejs.org); `npx` downloads the Inspector the
+first time.
+
+**1. Start it** from the repository, naming the environment. The tariff example needs nothing else:
+
+```bash
+npx -y @modelcontextprotocol/inspector@2.13.0 uv run clm-server examples/tariff/environment.toml
+```
+
+It prints an address such as `http://127.0.0.1:6274/?MCP_INSPECTOR_API_TOKEN=...` and opens it in your browser. The
+token in the address lets only you use that page; open the address as printed.
+
+**2. Connect.** The page shows a server card with the command it will run. Turn on its switch: the dot beside it goes
+from **Disconnected** to **Connected**, and the server's name, `decision-server`, appears at the top with four tabs:
+**Servers**, **Tools**, **Prompts** and **Resources**. If it shows **Failed**, the **Console** on the right has the
+server's one-line reason, such as a mistake in the environment file.
+
+**3. Tools.** Open **Tools**. The list has every tool the server offers (18 for tariff). Choose one, for
+example `query_components_of`: its description, whether it is read-only, and a box for each input appear. Type `PX` as the
+product and press **Execute Tool**. The result is the JSON an agent would get: the rows, and the steps that produced
+them.
+
+**4. Resources.** Open **Resources**. Under **URIs** are the things a client can read without calling a tool: for
+tariff, `describe`; for an environment with rules and documents, each rule and each document as well. Under
+**Templates** are the forms for reading any one of them, such as one passage of a document. Choose one to see what it
+holds.
+
+**5. Prompts.** Open **Prompts**. `answer_question` is the reference agent's instructions with your environment's
+description; give it a question to see the message an agent would start from.
+
+**6. Change and look again.** After you edit the environment, turn the switch off and on: the Inspector starts the
+server again from your files. The **Protocol** panel on the right lists every message between the page and the
+server, with how long each took.
+
+**An environment with documents** also needs the password to its PostgreSQL, and the Inspector passes the server none
+of your shell's variables. Start the server through a shell that reads them from your file, so the password never
+appears in the command or on the page:
+
+```bash
+npx -y @modelcontextprotocol/inspector@2.13.0 sh -c \
+    'set -a; . ./.postgres-local.env; exec uv run clm-server examples/handbook/environment.toml'
+```
+
+The handbook shows 22 tools, 19 resources (`describe`, 5 rules and 13 documents), 3 templates and 1 prompt. A
+server already running over HTTP can be inspected too, with its key, from the Inspector's command line:
+[serving](serving.md#inspecting-a-server). The Inspector's page changes between versions; these steps are for 2.13.0.
 
 ## Trying it in a chat
 
