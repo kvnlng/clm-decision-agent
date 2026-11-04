@@ -70,6 +70,16 @@ def test_ask_refuses_a_dry_run_tool_the_server_does_not_have(client, portal):
     assert [item["content"] for item in seen[0]["messages"] if item["role"] == "user"] == ["Now?"]
 
 
+def test_a_mistyped_tool_does_not_matter_when_every_tool_is_held_back(client, portal):
+    portal.make_model = lambda *args: scripted([reply(calls=[("decision_vesting", {"years_of_service": 5})]),
+                                                reply("Held.")])
+    token = sign_in(client)
+    response = post(client, "/ask", token, {"question": "Vested?", "backend": "openai", "dry_run": "on",
+                                            "dry_run_tools": "decision_vestnig"})
+    assert response.status_code == 200 and "dry run, not sent: decision_vesting" in response.text
+    assert "Held." in response.text
+
+
 def test_ask_shows_results_in_full_only_when_asked(client, portal):
     long_id = "hb-" + "x" * 2000
     calls = [("document_handbook", {"id": long_id})]

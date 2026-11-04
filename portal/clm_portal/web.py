@@ -535,7 +535,7 @@ async def ask_page(request: Request) -> Response:  # pylint: disable=too-many-lo
                 mark = len(session.ask["messages"])
             async with answering(), portal.server.client() as client:
                 listed = (await client.list_tools()).tools
-                unknown = sorted(set(named) - {tool.name for tool in listed})
+                unknown = [] if form.get("dry_run") else sorted(set(named) - {tool.name for tool in listed})
                 if not unknown:
                     await chat.answer(client, model, model.tools(listed), session.ask["messages"], question,
                                       dry_run, lines.append, full)
@@ -726,7 +726,8 @@ async def sign_in(request: Request) -> Response:
     portal.sessions[ident] = session
     request.state.session = session
     response = await configuration_page(request)
-    response.set_cookie(COOKIE, ident, max_age=SESSION_SECONDS, path="/", httponly=True, samesite="strict")
+    response.set_cookie(COOKIE, ident, max_age=SESSION_SECONDS, path="/", httponly=True, samesite="strict",
+                        secure=request.app.state.secure)
     return response
 
 
@@ -783,7 +784,9 @@ class Guard:  # pylint: disable=too-few-public-methods
             return
         post = scope["method"] not in ("GET", "HEAD")
         origin = request.headers.get("origin")
-        if post and origin != f"http://{host}" and (self.public is None or origin != self.public):
+        # At the public host only the exact public origin; at the portal's own address, its own or the public one
+        own = self.public if self.public and host == urllib.parse.urlsplit(self.public).netloc else f"http://{host}"
+        if post and origin != own and (self.public is None or origin != self.public):
             await PlainTextResponse("Refused: the request did not come from the portal's page.", 403)(
                 scope, receive, send)
             return
@@ -867,4 +870,5 @@ def create_app(portal: Portal, key: str, host: str, port: int, public: str | Non
             portal.server.stop()
     app = Starlette(routes=routes(), lifespan=lifespan)
     app.state.portal, app.state.key = portal, key
+    app.state.secure = bool(public and public.startswith("https://"))     # behind TLS, never send it in clear
     return Guard(app, portal, allowed_hosts(host, port, public), public)
