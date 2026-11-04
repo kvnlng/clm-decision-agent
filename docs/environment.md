@@ -481,7 +481,7 @@ The check proves every figure is in the quote; it cannot prove a figure is in th
 second_reader = { backend = "ollama", model = "qwen3:14b" }   # or backend = "claude"; absent: no second reading
 ```
 
-With it, `run` and `check` give that model each entry's cited document (the edition in force, whole) and its slot,
+With it, `run` and `check` give that model each entry's cited document, whole (not made when it is not in force), and its slot,
 never the first answer, and compare what it derives: a decision over a grid of inputs (every bound in either table,
 one either side, and 0; never a negative number; both booleans; for a string, each value named and one not), on
 the slot's outputs; a fact within 0.5%. Any difference fails the check, so the entry stays proposed, with a failure
