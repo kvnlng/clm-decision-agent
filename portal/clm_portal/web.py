@@ -25,7 +25,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import layer
-from .managed import Jobs, ToolFailed, script
+from .managed import Busy, Jobs, ToolFailed, script
 
 COOKIE = "clm_portal_session"
 SESSION_SECONDS = 12 * 60 * 60
@@ -265,6 +265,162 @@ async def read_passage(portal: Portal, name: str, ident: str, label: str | None)
     return heading + (passages or "<p>No such passage.</p>")
 
 
+@contextlib.asynccontextmanager
+async def changing(portal: Portal):
+    """Hold the lock jobs and layer writes share; Busy at once, rather than waiting, when it is held."""
+    if portal.jobs.lock.locked():
+        raise Busy("a job or another change is running; wait for it to finish, then try again")
+    async with portal.jobs.lock:
+        yield
+
+
+# pylint: disable-next=too-many-arguments
+def action_form(session: Session, item: dict, action: str, label: str, *, enabled: bool = True,
+                extra: str = "", why: str = "") -> str:
+    """One button, with a note field, posting to /review/KIND/NAME/ACTION."""
+    target = f"/review/{item['kind']}/{urllib.parse.quote(item['name'], safe='')}/{action}"
+    disabled = f' disabled title="{esc(why)}"' if not enabled else ""
+    return (f'<form method="post" action="{esc(target)}" class="inline">{csrf_field(session)}{extra}'
+            f'<input name="note" placeholder="note (optional)" maxlength="500">'
+            f'<button{disabled} data-confirm="{esc(label)} {esc(item["name"])}?">{esc(label)}</button></form>')
+
+
+def _decided(entry: dict) -> str:
+    if not entry.get("decided_by"):
+        return ""
+    note = f": {esc(entry['note'])}" if entry.get("note") else ""
+    return f'<p class="muted">{esc(entry.get("status"))} by {esc(entry["decided_by"])} at ' \
+           f'{esc(entry.get("decided_at"))}{note}</p>'
+
+
+async def _passages(portal: Portal, collection: str | None, source: dict | None) -> str:
+    """Each cited passage as the server holds it, or the quote alone when it cannot be read."""
+    if not source:
+        return ""
+    shown = source_links(collection, source)
+    if collection and source.get("document") and portal.server.running:
+        for label in source.get("passages") or [None]:
+            shown += f'<div class="passage">{await read_passage(portal, collection, source["document"], label)}</div>'
+    return shown
+
+
+async def review_item(portal: Portal, session: Session, item: dict, collection: str | None) -> str:
+    """One derived entry beside its passage and check, with the actions it allows."""
+    entry, kind, name = item["entry"], item["kind"], item["name"]
+    status = f'<span class="status {esc(item["status"])}">{esc(item["status"])}</span>'
+    parts = [f'<h3>{esc(name)} <span class="origin derived">derived {esc(kind[:-1])}</span> {status}</h3>']
+    if kind == "decisions":
+        rule = entry.get("rule") or {}
+        parts.append(f'<p>{esc(entry.get("description"))}</p><p><strong>{esc(rule.get("statement"))}</strong></p>')
+        if item["supplied"]:
+            parts.append(f'<p>The supplied rule of this name says: {esc(item["supplied"])}</p>')
+        parts.append(dmn_table(item["table"]))
+    elif kind == "facts":
+        parts.append(f'<p>{esc(entry.get("node"))}.{esc(entry.get("property"))} = '
+                     f'<strong>{esc(shown_value(entry.get("value")))}</strong>; supplied: '
+                     f'{esc(shown_value(item["supplied"])) if item["supplied"] not in (None, "") else "none"}</p>')
+    else:
+        parts.append(f'<p>{esc(entry.get("target"))} {esc(entry.get("name"))}: supplied '
+                     f'<strong>{esc(shown_value(entry.get("supplied")))}</strong>, the documents say '
+                     f'<strong>{esc(shown_value(entry.get("derived")))}</strong>. The supplied value still decides.'
+                     '</p>')
+    if item["graph_row"]:
+        row = item["graph_row"]
+        parts.append(table(list(row), [[esc(value) for value in row.values()]]))
+    if kind != "conflicts":
+        parts.append(f'<p>{check_text(entry.get("check"))}</p>')
+    parts.append(await _passages(portal, entry.get("collection") or collection, entry.get("source")))
+    parts.append(_decided(entry))
+    parts.append(review_actions(session, item))
+    return f'<section class="entry" id="{esc(kind)}-{esc(name)}">{"".join(parts)}</section>'
+
+
+def review_actions(session: Session, item: dict) -> str:
+    """The buttons an entry allows: approve (only once checked and passed), reject, resolve, correct."""
+    entry, kind = item["entry"], item["kind"]
+    if kind == "conflicts":
+        return action_form(session, item, "resolve", "Resolve") if entry.get("status") == "open" else ""
+    passed = bool((entry.get("check") or {}).get("passed")) and entry.get("status") == "checked"
+    forms = [action_form(session, item, "approve", "Approve", enabled=passed,
+                         why="only an entry that passed clm-derive check can be approved"),
+             action_form(session, item, "reject", "Reject")]
+    if kind == "facts":
+        value = esc(json.dumps(entry.get("value"), ensure_ascii=False))
+        forms.append(action_form(session, item, "correct", "Correct", extra=f'<label>value (JSON) '
+                                 f'<input name="value" value="{value}" required></label>'))
+    elif item["dmn_text"] is not None:
+        forms.append('<details><summary>Correct the table</summary>' + action_form(
+            session, item, "correct", "Save and check again",
+            extra=f'<textarea name="dmn" required>{esc(item["dmn_text"])}</textarea>') + '</details>')
+    return "".join(forms)
+
+
+async def review_page(request: Request, message: str = "", status: int = 200) -> Response:
+    """GET /review: derived decisions, facts and conflicts, checked first."""
+    portal, session = request.app.state.portal, request.state.session
+    found = layer.review(portal.environment)
+    collection = layer.read_layer(portal.environment, []).get("collection")
+    parts = [f'<p class="{"failed" if status >= 400 else "passed"}">{esc(message)}</p>' if message else ""]
+    parts += [f'<p class="failed">{esc(error)}</p>' for error in found["errors"]]
+    parts.append(job_status(portal))
+    for title, items in found["groups"]:
+        parts.append(f"<h2>{esc(title)}</h2>")
+        parts += [await review_item(portal, session, item, collection) for item in items]
+    if not found["groups"]:
+        parts.append("<p>Nothing has been derived.</p>")
+    return page(portal, session, "Review", "".join(parts), status=status, changes=True)
+
+
+def job_status(portal: Portal) -> str:
+    """The running or last job, with its output; the page polls while one runs."""
+    job = portal.jobs.current() or portal.jobs.last()
+    if job is None:
+        return ""
+    if job.running:
+        return f'<p data-job-running>Running {esc(job.name)}: <code>{esc(" ".join(job.argv))}</code> ...</p>'
+    outcome = "succeeded" if job.returncode == 0 else (
+        f"failed (exit code {job.returncode})" if job.returncode is not None else "did not run")
+    return (f'<details class="job"><summary>Last job, {esc(job.name)}, {outcome}</summary>'
+            f'<pre class="output">{esc(job.output)}</pre></details>')
+
+
+ACTIONS = {"approve": ("decisions", "facts"), "reject": ("decisions", "facts"), "resolve": ("conflicts",),
+           "correct": ("decisions", "facts")}
+DONE = {"approve": "approved", "reject": "rejected", "resolve": "resolved"}
+
+
+async def review_action(request: Request) -> Response:
+    """POST /review/KIND/NAME/ACTION: approve, reject, resolve or correct one entry, as the signed-in name."""
+    portal, session = request.app.state.portal, request.state.session
+    kind, name, action = (request.path_params[key] for key in ("kind", "name", "action"))
+    if kind not in ACTIONS.get(action, ()):
+        return await review_page(request, f"{action} is not an action on {kind}", 400)
+    form = await request.form()
+    note = str(form.get("note", "")).strip() or None
+    try:
+        async with changing(portal):
+            if action != "correct":
+                layer.decide(portal.environment, kind, name, DONE[action], by=session.name, note=note)
+                await portal.server.restart()
+                return await review_page(request, f"{name} {DONE[action]}.")
+            if kind == "facts":
+                try:
+                    value = json.loads(str(form.get("value", "")))
+                except json.JSONDecodeError as error:
+                    raise layer.Refused(f"the value is not JSON: {error}") from error
+                layer.correct_fact(portal.environment, name, value, by=session.name, note=note)
+            else:
+                layer.correct_decision(portal.environment, name, str(form.get("dmn", "")), by=session.name, note=note)
+    except Busy as error:
+        return await review_page(request, str(error), 409)
+    except layer.Refused as error:
+        return await review_page(request, str(error), 409 if action == "approve" else 400)
+    job = await portal.jobs.start("clm-derive check", ["clm-derive", "check", str(portal.environment)],
+                                  on_success=portal.server.restart)
+    return await review_page(request, f"{name} corrected: it is proposed until clm-derive check passes it"
+                                      + ("" if job.running else f"; {job.output}") + ".")
+
+
 def sign_in_page(portal: Portal, message: str = "", status: int = 200) -> HTMLResponse:
     """The sign-in form."""
     shown = f'<p class="failed">{esc(message)}</p>' if message else ""
@@ -388,7 +544,8 @@ def allowed_hosts(host: str, port: int) -> set[str]:
 def routes() -> list:
     """Every route of the page."""
     return [Route("/sign-in", sign_in, methods=["GET", "POST"]), Route("/sign-out", sign_out, methods=["POST"]),
-            Route("/", configuration_page), Route("/passage", passage_page),
+            Route("/", configuration_page), Route("/passage", passage_page), Route("/review", review_page),
+            Route("/review/{kind}/{name}/{action}", review_action, methods=["POST"]),
             Mount("/static", StaticFiles(directory=STATIC), name="static")]
 
 

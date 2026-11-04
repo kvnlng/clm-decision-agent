@@ -8,6 +8,7 @@ portal's server, when it is running.
 from __future__ import annotations
 
 import csv
+import os
 import tomllib
 from pathlib import Path
 
@@ -141,3 +142,118 @@ def configuration(environment: Path, tools: list, described: dict | None, error:
                         for name, table in data.get("collections", {}).items()],
         "errors": errors,
     }
+
+
+class Refused(ValueError):
+    """A change the portal will not make; the message says why, and nothing was written."""
+
+
+def _toml_or_empty(environment: Path) -> dict:
+    try:
+        return read_toml(environment)
+    except ValueError:
+        return {}
+
+
+def _nodes(environment: Path, data: dict) -> dict[str, dict]:
+    graph = _graph(environment, []) if "graph" in data else {"nodes": None}
+    return {row.get("id"): row for row in (graph["nodes"] or {"rows": []})["rows"]}
+
+
+def _target(kind: str, name: str, entry: dict) -> tuple[str, str]:
+    """The graph node and property a fact, or a conflict over one, touches."""
+    if kind == "facts" and entry.get("node") and entry.get("property"):
+        return entry["node"], entry["property"]
+    node, _, prop = str(entry.get("name", name) if kind == "conflicts" else name).partition(".")
+    return node, prop
+
+
+def review(environment: Path) -> dict:  # pylint: disable=too-many-locals
+    """The derived entries in the order a person reviews them: checked, open conflicts, proposed, then those decided.
+    A fact or conflict carries the supplied value and the graph row it touches; a decision, its table's rows, its
+    DMN text and the supplied rule of the same name, if any."""
+    environment = Path(environment)
+    errors: list[str] = []
+    found, data = read_layer(environment, errors), _toml_or_empty(environment)
+    nodes, folder = _nodes(environment, data), derived_folder(environment)
+    items = []
+    for kind in derived.KINDS:
+        for name, entry in found[kind].items():
+            item = {"kind": kind, "name": name, "entry": entry, "status": entry.get("status"),
+                    "supplied": None, "graph_row": None, "table": None, "dmn_text": None}
+            if kind == "decisions":
+                item["supplied"] = (data.get("decisions", {}).get(name) or {}).get("rule", {}).get("statement")
+                path = folder / (entry.get("dmn") or "")
+                if entry.get("dmn") and inside(path, folder) and path.is_file():
+                    item["dmn_text"] = path.read_text(encoding="utf-8")
+                    item["table"] = _table(path, errors, f"derived decisions.{name}.dmn")
+            else:
+                node, prop = _target(kind, name, entry)
+                item["graph_row"] = nodes.get(node)
+                item["supplied"] = entry.get("supplied") if kind == "conflicts" else (nodes.get(node) or {}).get(prop)
+            items.append(item)
+    order = (("Checked", ("checked",)), ("Open conflicts", ("open",)), ("Proposed", ("proposed",)),
+             ("Decided", ("approved", "rejected", "resolved")))
+    known = {status for _, statuses in order for status in statuses}
+    groups = [(title, [item for item in items if item["status"] in statuses]) for title, statuses in order]
+    groups.append(("Other", [item for item in items if item["status"] not in known]))
+    return {"groups": [(title, group) for title, group in groups if group], "errors": errors}
+
+
+# pylint: disable-next=too-many-arguments
+def decide(environment: Path, kind: str, name: str, status: str, *, by: str, note: str | None) -> dict:
+    """Approve, reject or resolve one entry, recording who and why; Refused when the layer does not allow it."""
+    try:
+        return derived.set_status(Path(environment).parent, kind, name, status, by=by, note=note or None)
+    except derived.DerivedError as error:
+        raise Refused(str(error)) from error
+
+
+def _entry(environment: Path, kind: str, name: str) -> tuple[dict, dict]:
+    try:
+        found = derived.read(Path(environment).parent)
+    except (derived.DerivedError, ValueError, OSError) as error:
+        raise Refused(f"the derived layer cannot be read: {error}") from error
+    if name not in found[kind]:
+        raise Refused(f"no {kind} entry named {name!r}")
+    return found, found[kind][name]
+
+
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def _proposed(environment: Path, kind: str, name: str, found: dict, by: str, note: str | None) -> dict:
+    """A correction's last steps: in one write, the entry proposed with its check cleared; then the change recorded
+    with who made it and why."""
+    found[kind][name].update(status="proposed", check=None)
+    derived.write(Path(environment).parent, found)
+    return decide(environment, kind, name, "proposed", by=by, note=note)
+
+
+def correct_fact(environment: Path, name: str, value, *, by: str, note: str | None) -> dict:
+    """Give a derived fact a corrected value: it goes back to proposed with no check, so clm-derive check must pass
+    it again before anyone can approve it."""
+    found, entry = _entry(environment, "facts", name)
+    entry["value"] = value
+    return _proposed(environment, "facts", name, found, by, note)
+
+
+def correct_decision(environment: Path, name: str, dmn_text: str, *, by: str, note: str | None) -> dict:
+    """Replace a derived decision's DMN table with corrected text, which must stay inside derived/ and load as a
+    table; it goes back to proposed with no check. Refused, with nothing written, otherwise."""
+    found, entry = _entry(environment, "decisions", name)
+    folder = derived_folder(environment)
+    if not entry.get("dmn"):
+        raise Refused(f"{name} has no DMN table to correct")
+    path = folder / entry["dmn"]
+    if not inside(path, folder) or path.suffix != ".dmn":
+        raise Refused(f"{name}: {entry['dmn']} is outside derived/ or is not a .dmn file, so the portal will not "
+                      "write it")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(f".{path.name}.partial")
+    partial.write_text(dmn_text, encoding="utf-8")
+    try:
+        dmn.load_table(partial)
+    except dmn.DmnError as error:
+        partial.unlink()
+        raise Refused(f"{name}: the corrected table cannot be used: {error}") from error
+    os.replace(partial, path)
+    return _proposed(environment, "decisions", name, found, by, note)
