@@ -17,6 +17,7 @@ from . import chat
 
 PORTAL_KEY_ENV = "CLM_PORTAL_KEY"
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
+MIN_KEY = 16        # clm-server sets no minimum for DECISION_SERVER_KEY, so this is the portal's own
 
 
 def parse(argv: list[str] | None = None) -> argparse.Namespace:
@@ -51,6 +52,10 @@ def serve(args: argparse.Namespace, run=None) -> int:
     key = os.environ.get(PORTAL_KEY_ENV, "").strip()
     if not key:
         print(f"error: set {PORTAL_KEY_ENV} to the key that signs in to the portal; it is not the key agents use",
+              file=sys.stderr)
+        return 2
+    if len(key) < MIN_KEY:
+        print(f"error: {PORTAL_KEY_ENV} must be at least {MIN_KEY} characters; use a long random key",
               file=sys.stderr)
         return 2
     environment = Path(args.environment)

@@ -69,7 +69,8 @@ with any key or password replaced by `***`, and when it succeeds the portal rest
 **The server agents use is yours to restart.** It reads the files at start, so after approving changes, restart it
 (or redeploy from git) to pick them up.
 
-**Security:** the key is in `CLM_PORTAL_KEY`, separate from the agents' key. The session cookie is `HttpOnly` and
+**Security:** the key is in `CLM_PORTAL_KEY`, separate from the agents' key; the portal does not start with a key
+shorter than 16 characters. The session cookie is `HttpOnly` and
 `SameSite=Strict`; every form carries a per-session token; a POST from any other origin, or a request whose `Host`
 is not the portal's address, is refused. On an address other than 127.0.0.1 the portal is plain HTTP: put it behind
 TLS.

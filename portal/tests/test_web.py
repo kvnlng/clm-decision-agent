@@ -77,6 +77,17 @@ def test_serve_refuses_to_start_without_a_key(environment, monkeypatch, capsys):
     assert "not an environment" in capsys.readouterr().err and not ran
 
 
+def test_serve_refuses_a_short_key(environment, monkeypatch, capsys):
+    ran = []
+    monkeypatch.setenv("CLM_PORTAL_KEY", "x" * 15)
+    assert clm_portal.serve(serve_args(environment), run=lambda *a, **k: ran.append(a)) == 2
+    err = capsys.readouterr().err
+    assert "at least 16 characters" in err and "x" * 15 not in err and len(err.strip().splitlines()) == 1
+    assert not ran
+    monkeypatch.setenv("CLM_PORTAL_KEY", "x" * 16)
+    assert clm_portal.serve(serve_args(environment), run=lambda *a, **k: ran.append(a)) == 0 and ran
+
+
 def test_serve_listens_on_loopback_by_default(environment, monkeypatch, capsys):
     monkeypatch.setenv("CLM_PORTAL_KEY", KEY)
     ran = []
