@@ -245,6 +245,35 @@ def test_a_supplied_property_wins_over_a_derived_fact(tmp_path):
     assert "plan_a.cap" not in env.admitted and not env.derived_facts
 
 
+def with_reader(text: str) -> str:
+    return DERIVED.replace('collection = "hb"', f'collection = "hb"\nsecond_reader = {text}')
+
+
+def test_a_second_reader_is_read_and_describe_names_it(tmp_path):
+    env = load(make(tmp_path, decision=entry(), slots=with_reader('{ backend = "ollama", model = "granite4:micro" }')))
+    assert env.second_reader == {"backend": "ollama", "model": "granite4:micro"}
+    shown = describe(env)["derived"]
+    assert shown["second_reader"] == {"backend": "ollama", "model": "granite4:micro"}
+    assert "second reading by granite4:micro" in shown["second_reading"]
+
+
+def test_without_a_second_reader_describe_says_there_is_no_second_reading(tmp_path):
+    env = load(make(tmp_path, decision=entry()))
+    assert env.second_reader is None
+    shown = describe(env)["derived"]
+    assert shown["second_reader"] is None and "no second reading" in shown["second_reading"]
+
+
+@pytest.mark.parametrize("text, wrong", [('{ backend = "openai", model = "x" }', "backend"),
+                                         ('{ backend = "claude" }', "model"),
+                                         ('{ backend = "claude", model = "" }', "model"),
+                                         ('{ backend = "claude", model = "x", extra = 1 }', "extra"),
+                                         ('"claude"', "table")])
+def test_a_malformed_second_reader_is_refused_naming_the_setting(tmp_path, text, wrong):
+    with pytest.raises(ScenarioError, match=f"derived.second_reader.*{wrong}"):
+        load(make(tmp_path, slots=with_reader(text)))
+
+
 def test_a_slot_named_like_a_supplied_decision_is_refused(tmp_path):
     with pytest.raises(ScenarioError, match="derived.decisions.other"):
         load(make(tmp_path, slots=DERIVED.replace("[derived.decisions.carry]", "[derived.decisions.other]")))

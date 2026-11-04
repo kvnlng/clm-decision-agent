@@ -244,6 +244,7 @@ class Environment:  # pylint: disable=too-many-instance-attributes
     admit: tuple[str, ...] = ()                                     # the statuses admitted
     admit_override: bool = False                                    # --admit-derived: for testing only
     derived_facts: dict[str, dict[str, dict]] = field(default_factory=dict)    # node -> property -> entry
+    second_reader: dict | None = None       # [derived] second_reader: {backend, model}, or None for no second reading
 
     def topics(self) -> list[str]:
         """The kinds of decision the rules govern."""
@@ -615,6 +616,28 @@ def _slots(data: dict, backend: str, decisions: dict) -> tuple[dict[str, Slot], 
     return slots, admit
 
 
+READER_BACKENDS = ("claude", "ollama")
+
+
+def _second_reader(data: dict) -> dict | None:
+    """The [derived] table's second_reader, the model that reads each derived entry's document again; None without
+    one."""
+    table = data.get("derived") or {}
+    if "second_reader" not in table:
+        return None
+    where, reader = "derived.second_reader", table["second_reader"]
+    if not isinstance(reader, dict):
+        raise ScenarioError(f"{where}: must be a table such as {{ backend = \"ollama\", model = \"gemma4:26b\" }}")
+    extra = sorted(set(reader) - {"backend", "model"})
+    if extra:
+        raise ScenarioError(f"{where}: unknown setting {', '.join(extra)}; only backend and model")
+    if reader.get("backend") not in READER_BACKENDS:
+        raise ScenarioError(f"{where}.backend: must be {' or '.join(READER_BACKENDS)}")
+    if not isinstance(reader.get("model"), str) or not reader["model"].strip():
+        raise ScenarioError(f"{where}.model: must name the model, such as gemma4:26b")
+    return {"backend": reader["backend"], "model": reader["model"]}
+
+
 def _why_not(entry: dict | None, admit: tuple[str, ...], override: bool, store, slot: Slot, on: date) -> str | None:
     """Why a derived entry may not fill its slot, or None when it may."""
     # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-return-statements
@@ -758,4 +781,4 @@ def load_environment(path: str | Path, backend: str | None = None,
                        document_settings.tools if document_settings else True,
                        document_settings.cited_text if document_settings else True, slots, filled.unfilled,
                        tuple(filled.admitted), admitted_statuses, admit is not None and declared is not None,
-                       filled.facts)
+                       filled.facts, _second_reader(data) if declared is not None else None)
