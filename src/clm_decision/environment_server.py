@@ -26,7 +26,7 @@ from . import oauth
 from . import serving
 from . import tracing
 from .dmn import DmnError
-from .environment import Environment
+from .environment import NOT_DERIVED, Environment
 from .scenario import ScenarioError
 from .serving import Serve
 
@@ -101,15 +101,12 @@ def describe(env: Environment, offered: list[str] | None = None, left_out: list[
 
 
 def _derived(env: Environment) -> dict:
-    """Each slot the documents fill, with its status in the derived layer and, when it is not admitted, why."""
-    slots = {}
-    for name, slot in env.slots.items():
-        if slot.kind == "decisions" and name in env.decisions:
-            status = env.decisions[name].status
-        else:
-            status = (env.derived_facts.get(slot.node, {}).get(slot.property) or {}).get("status")
-        slots[name] = {"kind": slot.kind, "description": slot.description, "admitted": name in env.admitted,
-                       "status": status, **({"why": env.unfilled[name]} if name in env.unfilled else {})}
+    """Each slot the documents fill, with its status in the derived layer (not derived when it has no entry) and,
+    when it is not admitted, why."""
+    slots = {name: {"kind": slot.kind, "description": slot.description, "admitted": name in env.admitted,
+                    "status": env.slot_statuses.get(name, NOT_DERIVED),
+                    **({"why": env.unfilled[name]} if name in env.unfilled else {})}
+             for name, slot in env.slots.items()}
     note = (f"Derived entries are admitted with status {', '.join(env.admit)}, for testing only: some are not "
             "approved by a person." if env.admit_override else
             f"Derived entries with status {', '.join(env.admit)} are admitted: the checked ones are not approved by a "

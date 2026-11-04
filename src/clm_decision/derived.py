@@ -69,7 +69,8 @@ def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str
     layer = read(folder)
     entry = layer[kind].get(name)
     if entry is None:
-        raise DerivedError(f"no {kind} entry named {name!r}")
+        raise DerivedError(f"no {kind} entry named {name!r}"
+                           + (": it is not derived: run clm-derive run" if kind != "conflicts" else ""))
     if status == "approved" and not (entry.get("check") or {}).get("passed"):
         raise DerivedError(f"{name} failed its check, or was never checked, so it cannot be approved")
     if status == "approved" and entry.get("status") == "proposed":

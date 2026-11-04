@@ -72,8 +72,10 @@ def test_a_conflict_is_resolved_not_approved(tmp_path):
 
 def test_unknown_entries_and_statuses_are_refused(tmp_path):
     derived.write(tmp_path, _layer())
-    with pytest.raises(derived.DerivedError, match="no decisions entry"):
+    with pytest.raises(derived.DerivedError, match="no decisions entry named 'nope': it is not derived"):
         derived.set_status(tmp_path, "decisions", "nope", "approved", by="kevin")
+    with pytest.raises(derived.DerivedError, match="no conflicts entry named 'nope'$"):
+        derived.set_status(tmp_path, "conflicts", "nope", "resolved", by="kevin")
     with pytest.raises(derived.DerivedError, match="not a status"):
         derived.set_status(tmp_path, "decisions", "carryover_limit", "fine", by="kevin")
     with pytest.raises(derived.DerivedError, match="by"):

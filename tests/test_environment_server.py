@@ -149,6 +149,14 @@ def test_describe_lists_slots_and_why_unfilled(tmp_path):
     carry, cap = shown["slots"]["carry"], shown["slots"]["plan_a.cap"]
     assert not carry["admitted"] and "checked" in carry["why"] and carry["kind"] == "decisions"
     assert cap["admitted"] and cap["status"] == "approved" and "why" not in cap
+    assert carry["status"] == "checked"
+
+
+def test_describe_says_a_slot_nothing_filled_is_not_derived(tmp_path):
+    from test_derived_load import load, make  # pylint: disable=import-outside-toplevel
+    shown = describe(load(make(tmp_path)))["derived"]["slots"]
+    assert shown["carry"]["status"] == shown["plan_a.cap"]["status"] == "not derived"
+    assert "nothing has been derived" in shown["carry"]["why"]
 
 
 def test_admit_derived_flag_reaches_the_environment(monkeypatch, capsys):

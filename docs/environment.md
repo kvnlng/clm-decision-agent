@@ -475,7 +475,7 @@ one whose cited document has a newer edition (or has left the collection, or is 
 proposed, approved ones included, keeping who decided and adding the reason to the note. Loading admits an entry only when its status is
 in `admit`, its check passed, its cited edition is still the one in force (a new edition is re-derived by `run`) and
 its table loads. Anything else leaves the slot **unfilled**: `describe` lists every slot under `derived` with its
-status and why, and a step that calls an unfilled slot fails with that reason, so the branch fails visibly while the
+status (`not derived` when the layer has no entry for it) and why, and a step that calls an unfilled slot fails with that reason, so the branch fails visibly while the
 other questions still load. An admitted fact fills its node's property only where the graph has none; a query that
 read it carries `origin: "derived"` and the fact's name.
 

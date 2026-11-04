@@ -245,6 +245,7 @@ class Environment:  # pylint: disable=too-many-instance-attributes
     admit_override: bool = False                                    # --admit-derived: for testing only
     derived_facts: dict[str, dict[str, dict]] = field(default_factory=dict)    # node -> property -> entry
     second_reader: dict | None = None       # [derived] second_reader: {backend, model}, or None for no second reading
+    slot_statuses: dict[str, str] = field(default_factory=dict)     # slot name -> its entry's status, or not derived
 
     def topics(self) -> list[str]:
         """The kinds of decision the rules govern."""
@@ -684,6 +685,10 @@ class _Derived:
     facts: dict[str, dict[str, dict]] = field(default_factory=dict)
     unfilled: dict[str, str] = field(default_factory=dict)
     admitted: list[str] = field(default_factory=list)
+    statuses: dict[str, str] = field(default_factory=dict)
+
+
+NOT_DERIVED = "not derived"     # the status shown for a slot the layer has no entry for
 
 
 def _fill(slots: dict[str, Slot], context: tuple, graph: Graph | None, collections: dict, store) -> _Derived:
@@ -695,6 +700,7 @@ def _fill(slots: dict[str, Slot], context: tuple, graph: Graph | None, collectio
     found = _Derived()
     for name, slot in slots.items():
         entry = layer[slot.kind].get(name)
+        found.statuses[name] = entry.get("status") if entry is not None else NOT_DERIVED
         why = _why_not(entry, admit, override, store, slot, on)
         if why is None and slot.kind == "facts":
             supplied = graph.node(slot.node) if slot.node in {n["id"] for n in graph.nodes()} else None
@@ -781,4 +787,4 @@ def load_environment(path: str | Path, backend: str | None = None,
                        document_settings.tools if document_settings else True,
                        document_settings.cited_text if document_settings else True, slots, filled.unfilled,
                        tuple(filled.admitted), admitted_statuses, admit is not None and declared is not None,
-                       filled.facts, _second_reader(data) if declared is not None else None)
+                       filled.facts, _second_reader(data) if declared is not None else None, filled.statuses)
