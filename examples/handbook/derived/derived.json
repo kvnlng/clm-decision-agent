@@ -4,15 +4,19 @@
   "decisions": {
     "match_eligible": {
       "description": "Whether the company match has begun for an employee, from their days of employment, counting the first day of employment.",
-      "status": "approved",
+      "status": "proposed",
       "check": {
-        "passed": true,
-        "failures": [],
-        "at": "2026-11-04T13:59:52+00:00",
-        "by": "clm-derive run"
+        "passed": false,
+        "failures": [
+          "figure 2026 (reason) is not in the quote",
+          "figure 401 (reason) is not in the quote",
+          "figure 12 (reason) is not in the quote"
+        ],
+        "at": "2026-11-04T14:31:05+00:00",
+        "by": "clm-derive check"
       },
-      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:01:14+00:00",
+      "decided_by": null,
+      "decided_at": null,
       "note": null,
       "source": {
         "document": "hb-401k-2026",
@@ -41,15 +45,19 @@
     },
     "vesting": {
       "description": "The percentage of the company match an employee owns (is vested in), from their full years of service.",
-      "status": "approved",
+      "status": "proposed",
       "check": {
-        "passed": true,
-        "failures": [],
-        "at": "2026-11-04T13:59:58+00:00",
-        "by": "clm-derive run"
+        "passed": false,
+        "failures": [
+          "figure 401 (reason) is not in the quote",
+          "figure 2026 (reason) is not in the quote",
+          "figure 12 (reason) is not in the quote"
+        ],
+        "at": "2026-11-04T14:31:05+00:00",
+        "by": "clm-derive check"
       },
-      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:01:14+00:00",
+      "decided_by": null,
+      "decided_at": null,
       "note": null,
       "source": {
         "document": "hb-401k-2026",
@@ -78,15 +86,20 @@
     },
     "carryover_limit": {
       "description": "How many unused days of paid time off carry into next year, from full years of service.",
-      "status": "approved",
+      "status": "proposed",
       "check": {
-        "passed": true,
-        "failures": [],
-        "at": "2026-11-04T14:00:18+00:00",
-        "by": "clm-derive run"
+        "passed": false,
+        "failures": [
+          "figure 2 (reason) is not in the quote",
+          "figure 2026 (reason) is not in the quote",
+          "figure 1 (reason) is not in the quote",
+          "figure 12 (reason) is not in the quote"
+        ],
+        "at": "2026-11-04T14:31:05+00:00",
+        "by": "clm-derive check"
       },
-      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:01:14+00:00",
+      "decided_by": null,
+      "decided_at": null,
       "note": null,
       "source": {
         "document": "hb-leave",
@@ -115,15 +128,20 @@
     },
     "parental_eligible": {
       "description": "Whether an employee may start parental leave, and its weeks at full pay, its further weeks at reduced pay and the percentage of pay in those weeks, from days employed on the day it starts.",
-      "status": "approved",
+      "status": "proposed",
       "check": {
-        "passed": true,
-        "failures": [],
-        "at": "2026-11-04T14:00:40+00:00",
-        "by": "clm-derive run"
+        "passed": false,
+        "failures": [
+          "figure 6 (reason) is not in the quote",
+          "figure 1 (reason) is not in the quote",
+          "figure 2 (reason) is not in the quote",
+          "figure 3 (reason) is not in the quote"
+        ],
+        "at": "2026-11-04T14:31:05+00:00",
+        "by": "clm-derive check"
       },
-      "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:01:14+00:00",
+      "decided_by": null,
+      "decided_at": null,
       "note": null,
       "source": {
         "document": "hb-parental",
@@ -157,11 +175,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:00:58+00:00",
-        "by": "clm-derive run"
+        "at": "2026-11-04T14:31:05+00:00",
+        "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:01:14+00:00",
+      "decided_at": "2026-11-04T14:31:05+00:00",
       "note": null,
       "source": {
         "document": "hb-tuition",
@@ -198,11 +216,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:01:02+00:00",
-        "by": "clm-derive run"
+        "at": "2026-11-04T14:31:05+00:00",
+        "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:01:14+00:00",
+      "decided_at": "2026-11-04T14:31:05+00:00",
       "note": null,
       "source": {
         "document": "hb-401k-2026",
@@ -223,11 +241,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:01:04+00:00",
-        "by": "clm-derive run"
+        "at": "2026-11-04T14:31:05+00:00",
+        "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:01:14+00:00",
+      "decided_at": "2026-11-04T14:31:05+00:00",
       "note": null,
       "source": {
         "document": "hb-401k-2026",
@@ -248,11 +266,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:01:06+00:00",
-        "by": "clm-derive run"
+        "at": "2026-11-04T14:31:05+00:00",
+        "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:01:14+00:00",
+      "decided_at": "2026-11-04T14:31:05+00:00",
       "note": null,
       "source": {
         "document": "hb-401k-2026",
@@ -273,11 +291,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:01:08+00:00",
-        "by": "clm-derive run"
+        "at": "2026-11-04T14:31:05+00:00",
+        "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:01:14+00:00",
+      "decided_at": "2026-11-04T14:31:05+00:00",
       "note": null,
       "source": {
         "document": "hb-401k-2026",
@@ -298,11 +316,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:01:12+00:00",
-        "by": "clm-derive run"
+        "at": "2026-11-04T14:31:05+00:00",
+        "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:01:14+00:00",
+      "decided_at": "2026-11-04T14:31:05+00:00",
       "note": null,
       "source": {
         "document": "hb-401k-2026",
@@ -323,11 +341,11 @@
       "check": {
         "passed": true,
         "failures": [],
-        "at": "2026-11-04T14:01:14+00:00",
-        "by": "clm-derive run"
+        "at": "2026-11-04T14:31:05+00:00",
+        "by": "clm-derive check"
       },
       "decided_by": "measure.py: scripted approval of every checked entry, not a person",
-      "decided_at": "2026-11-04T14:01:14+00:00",
+      "decided_at": "2026-11-04T14:31:05+00:00",
       "note": null,
       "source": {
         "document": "hb-401k-2026",

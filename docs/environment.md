@@ -415,7 +415,8 @@ The environment declares **slots**, the decisions and facts it needs, without th
 
 ```toml
 [derived]
-admit = ["approved"]                 # the default; without a [derived] table the layer is ignored
+admit = ["approved"]                 # the default; ["approved", "checked"] also runs checked ones, and describe
+                                     # says they are not approved; without a [derived] table the layer is ignored
 collection = "handbook"              # where the slots are derived from, unless a slot names its own
 
 [derived.decisions.carryover_limit]
@@ -448,16 +449,20 @@ failures. Approved and rejected entries on an unchanged edition are kept, unless
 check** only when all of these hold:
 
 1. **Edition**: the cited document is in force on the date and its `effective_from` is the entry's edition.
-2. **Quote**: each piece of the quote (split at `...`) is, word for word, in a passage it cites.
+2. **Quote**: each piece of the quote (split at `...`) is, word for word, in a passage it cites, whole: never
+   ending inside a word or a number ("up to 1" is not in "up to 10").
 3. **Figures**: every number the entry states is in the quote: a fact's value, each bound and numeric output of the
-   table, each number in a text cell and in the statement. Small numbers, ordinals ("90th") and the words one to
+   table (both ends of a range), each number in a text cell, in the statement and in the reason, dates and section
+   numbers included. Small numbers, ordinals ("90th") and the words one to
    twenty count; only zero is exempt.
 4. **Ontology**: a fact's node and property are its slot's, of the slot's type; a table's inputs are exactly the
    slot's, its outputs include the slot's, it cites only its source; and the model named nothing `missing`.
 
 Statuses go proposed, then checked once the check passes, then approved or rejected by a person with `status`, which
 refuses to approve an entry that is not checked. A correction (a changed value or table) is written with status
-proposed and check null together, then `check` runs the check again. Loading admits an entry only when its status is
+proposed and check null together, then `check` runs the check again. `check` also sends any entry but a rejected
+one whose cited document has a newer edition (or has left the collection, or is no longer in force) back to
+proposed, approved ones included, keeping who decided and adding the reason to the note. Loading admits an entry only when its status is
 in `admit`, its check passed, its cited edition is still the one in force (a new edition is re-derived by `run`) and
 its table loads. Anything else leaves the slot **unfilled**: `describe` lists every slot under `derived` with its
 status and why, and a step that calls an unfilled slot fails with that reason, so the branch fails visibly while the
@@ -465,7 +470,7 @@ other questions still load. An admitted fact fills its node's property only wher
 read it carries `origin: "derived"` and the fact's name.
 
 `clm-server --admit-derived proposed,checked,approved` admits unapproved entries too, for testing only; `describe`
-says so. No tool of the decision server changes a status.
+says so. A rejected entry never decides: neither the file nor the flag can admit one. No tool of the decision server changes a status.
 
 ## The MCP tools
 

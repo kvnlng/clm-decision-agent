@@ -160,6 +160,21 @@ def test_the_second_keys_grid_holds_no_negative_count(folder):
     assert {row["years_of_service"] for row in grid} == {0, 4, 5, 6}
 
 
+def test_a_kept_layer_is_checked_again_and_only_its_passing_entries_approved(folder, tmp_path):
+    hand_written_layer(folder)
+    layer = derived.read(folder)
+    layer["facts"]["k401_2026.match_cap"]["source"]["quote"] = "The company match is capped"
+    derived.write(folder, layer)
+    kept = tmp_path / "runs" / "derived-test"
+    shutil.copytree(folder / "derived", kept)
+    module = measure()
+    assert module.recheck_layer("test", tmp_path / "runs", folder, load(folder)) == 0
+    entries = json.loads((kept / "derived.json").read_text(encoding="utf-8"))["facts"]
+    assert entries["k401_2026.match_cap"]["status"] == "proposed"
+    assert entries["k401_2026.irs_limit"]["status"] == "approved"
+    assert entries["k401_2026.irs_limit"]["decided_by"] == module.SCRIPTED
+
+
 def test_a_derived_setup_needs_the_layer_of_its_model(folder):
     module = measure()
     assert module.wrong_layer("derived", folder) and module.wrong_layer("derived_local", folder)
@@ -172,10 +187,12 @@ def test_a_derived_setup_needs_the_layer_of_its_model(folder):
 
 def test_the_committed_layer_loads_and_its_approvals_say_they_are_scripted():
     env = load(EXAMPLE)
-    assert not env.unfilled and len(env.admitted) == 11
     layer = derived.read(EXAMPLE)
+    assert len(env.admitted) + len(env.unfilled) == 11
     for kind in ("decisions", "facts"):
-        for entry in layer[kind].values():
+        for name, entry in layer[kind].items():
+            assert entry["status"] in ("approved", "proposed")
+            assert (entry["status"] == "approved") == (name in env.admitted) == entry["check"]["passed"]
             assert entry["status"] != "approved" or entry["decided_by"] == measure().SCRIPTED
 
 

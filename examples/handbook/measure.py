@@ -4,13 +4,15 @@ local model.
 
     uv run python examples/handbook/measure.py derive claude|ollama
     uv run python examples/handbook/measure.py restore claude|ollama
+    uv run python examples/handbook/measure.py recheck claude|ollama
     uv run python examples/handbook/measure.py run [--backends claude,ollama] [--questions q1,...] [--setups none,...]
     uv run python examples/handbook/measure.py compare
     uv run python examples/handbook/measure.py score
 
 derive runs `clm-derive run --fresh` on environment_derived.toml with that backend, approves every entry that passed
 its check, labelled as a scripted approval and not a person's, and keeps a copy of the layer in
-runs/measure/derived-BACKEND/; restore puts that copy back. compare evaluates each kept layer against the second
+runs/measure/derived-BACKEND/; restore puts that copy back; recheck checks that copy again with the check as it is
+now, asking no model, and approves by script only what passes. compare evaluates each kept layer against the second
 key, the hand-written rules/*.dmn and graph/nodes.csv, and writes runs/measure/second_key.json: above all, the
 entries that passed the check and are wrong, which a person approving them would have had to catch.
 
@@ -40,10 +42,12 @@ import re
 import shutil
 import sys
 import tomllib
+from datetime import date
 from pathlib import Path
 
-from clm_decision import decision_agent, derive, derived
+from clm_decision import decision_agent, derive, derive_check, derived
 from clm_decision.dmn import DmnError, evaluate, load_table
+from clm_decision.environment import load_environment
 from clm_decision.number_check import unsupported
 
 HERE = Path(__file__).resolve().parent
@@ -167,15 +171,39 @@ def derive_layer(backend: str) -> int:
     code = derive.main(["run", str(DERIVED), "handbook", "--backend", backend, "--fresh", "--as-of", AS_OF])
     if code:
         return code
-    layer = derived.read(HERE)
-    for kind in ("decisions", "facts"):
-        for name, entry in layer[kind].items():
-            if entry["status"] == "checked":
-                derived.set_status(HERE, kind, name, "approved", by=SCRIPTED)
+    _approve_checked(HERE)
     kept = RUNS / f"derived-{backend}"
     shutil.rmtree(kept, ignore_errors=True)
     shutil.copytree(HERE / "derived", kept)
     print(f"kept in {kept}", file=sys.stderr)
+    return 0
+
+
+def _approve_checked(folder: Path) -> None:
+    layer = derived.read(folder)
+    for kind in ("decisions", "facts"):
+        for name, entry in layer[kind].items():
+            if entry["status"] == "checked":
+                derived.set_status(folder, kind, name, "approved", by=SCRIPTED)
+
+
+def recheck_layer(backend: str, runs: Path = RUNS, folder: Path = HERE, env=None) -> int:
+    """Check a kept layer again with the check as it is now, without asking any model: every entry is set back to
+    proposed with no check, as a correction is, then checked, and the checked ones approved by script."""
+    kept = runs / f"derived-{backend}"
+    shutil.rmtree(folder / "derived", ignore_errors=True)
+    shutil.copytree(kept, folder / "derived")
+    layer = derived.read(folder)
+    for kind in ("decisions", "facts"):
+        for entry in layer[kind].values():
+            entry.update(status="proposed", check=None, decided_by=None, decided_at=None, note=None)
+    derived.write(folder, layer)
+    day = date.fromisoformat(AS_OF)
+    env = env or load_environment(folder / DERIVED.name, today=day)
+    print(derive_check.recheck(folder, env, on=day), file=sys.stderr)
+    _approve_checked(folder)
+    shutil.rmtree(kept)
+    shutil.copytree(folder / "derived", kept)
     return 0
 
 
@@ -351,7 +379,7 @@ def main(argv: list[str] | None = None) -> int:
     ran.add_argument("--setups", default="none,rules,documents")
     commands.add_parser("score")
     commands.add_parser("compare")
-    for command in ("derive", "restore"):
+    for command in ("derive", "restore", "recheck"):
         commands.add_parser(command).add_argument("backend", choices=("claude", "ollama"))
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -360,6 +388,8 @@ def main(argv: list[str] | None = None) -> int:
         return derive_layer(args.backend)
     if args.command == "restore":
         return restore(args.backend)
+    if args.command == "recheck":
+        return recheck_layer(args.backend)
     if args.command == "compare":
         found = compare()
         RUNS.mkdir(parents=True, exist_ok=True)
