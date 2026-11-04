@@ -202,8 +202,9 @@ def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondRea
     from back to proposed (derived.set_stale); an approved one whose table changed since its check goes back to
     proposed too, and is checked again at once, as is, once, an approved one checked before table digests were kept
     (counted as undigested), so its digest comes from a check. Otherwise approved and rejected entries are a
-    person's decision and are left alone. With `second` (kind, name, entry -> record, failures), each entry checked is also read again by
-    a second model, whether or not the mechanical check passed it, and its failures join the check's. -> counts."""
+    person's decision and are left alone. With `second` (kind, name, entry -> record, failures), each entry checked
+    is also read again by a second model, whether or not the mechanical check passed it, and its failures join the
+    check's. -> counts."""
     counts = {"checked": 0, "proposed": 0, "stale": 0, "untouched": 0, "undigested": 0}
     if second is not None:
         counts.update(agreed=0, disagreed=0, not_made=0)
