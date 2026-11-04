@@ -112,6 +112,30 @@ def test_the_hand_written_carryover_table_passes(env):
     assert failures(env, "decisions", "carryover_limit", decision(env)) == []
 
 
+def test_numbers_reads_both_bounds_of_a_range():
+    assert derive_check.numbers("[1..12]") == [1, 12]
+    assert derive_check.numbers("(5..99]") == [5, 99]
+
+
+def test_a_ranges_upper_bound_not_in_the_quote_fails(env):
+    table = dmn([("[5..99]", 10, "With 5 or more full years of service, up to 10 days."), GOOD[1]])
+    found = failures(env, "decisions", "carryover_limit", decision(env, table=table))
+    assert any("figure 99" in failure for failure in found)
+
+
+def test_a_quote_cut_mid_number_or_mid_word_fails(env):
+    found = failures(env, "decisions", "carryover_limit", decision(env, quote=LEAVE_2 + " ... up to 1"))
+    assert any("'up to 1'" in failure for failure in found)
+    found = failures(env, "decisions", "carryover_limit", decision(env, quote=LEAVE_2 + " ... full yea"))
+    assert any("'full yea'" in failure for failure in found)
+
+
+def test_a_figure_in_the_rules_reason_must_be_in_the_quote(env):
+    entry = decision(env)
+    entry["rule"]["reason"] = "The paid time off policy, which allows 12 days."
+    assert any("figure 12 (reason)" in failure for failure in failures(env, "decisions", "carryover_limit", entry))
+
+
 def test_a_quote_not_in_the_passage_fails(env):
     found = failures(env, "decisions", "carryover_limit", decision(env, quote="Up to 8 unused days carry over"))
     assert any("quote" in failure for failure in found)

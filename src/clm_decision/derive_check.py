@@ -18,7 +18,8 @@ from .environment import _CHECK_TYPE, _DMN_TYPES, Environment, Slot, edition, in
 
 _WORDS = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
           "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty")
-_FIGURE = re.compile(r"(?<![\w.])(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\b(?:" + "|".join(_WORDS) + r")\b",
+# Not inside a word or after a decimal point; after ".." (a range's upper bound) it counts
+_FIGURE = re.compile(r"(?<!\w)(?<!\d\.)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\b(?:" + "|".join(_WORDS) + r")\b",
                      re.IGNORECASE)
 _QUOTES = " \t\n\"'“”‘’"
 
@@ -60,8 +61,16 @@ def _source(env: Environment, slot: Slot, source: dict, on: date) -> tuple[list[
     if not pieces:
         failures.append("quote: there is no quote")
     failures += [f"quote: {piece!r} is not in {ident} {', '.join(labels)}" for piece in pieces
-                 if not any(piece in text for text in cited)]
+                 if not any(_within(piece, text) for text in cited)]
     return failures, cited
+
+
+def _within(piece: str, text: str) -> bool:
+    """Whether the piece is in the text whole: never ending or starting inside a word or a number, so "up to 1"
+    is not found in "up to 10"."""
+    pattern = (r"(?<!\w)" if piece[0].isalnum() else "") + re.escape(piece) + (r"(?!\w)" if piece[-1].isalnum()
+                                                                                else "")
+    return re.search(pattern, text) is not None
 
 
 def _figures(found: list[tuple[str, object]], quote: str) -> list[str]:
@@ -109,7 +118,8 @@ def _decision(env: Environment, slot: Slot, entry: dict) -> tuple[list[str], lis
     cites = list((entry.get("rule") or {}).get("cites") or [])
     if cites != [source]:
         failures.append(f"ontology: the rule cites {cites}, not only its source {source}")
-    figures: list[tuple[str, object]] = [("statement", (entry.get("rule") or {}).get("statement", ""))]
+    rule = entry.get("rule") or {}
+    figures: list[tuple[str, object]] = [("statement", rule.get("statement", "")), ("reason", rule.get("reason", ""))]
     for row in table.rules:
         figures += [(f"row {row.id} {name}", text) for name, text in zip(table.inputs, row.entries)]
         for name, value in zip(table.outputs, row.values):
