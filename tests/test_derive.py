@@ -310,9 +310,11 @@ def test_a_second_reading_that_disagrees_leaves_the_entry_proposed_saying_where(
     layer = derived.read(path.parent)
     entry = layer["decisions"]["carryover_limit"]
     assert entry["status"] == "proposed" and entry["attempts"] == 1
-    assert entry["check"]["failures"] == ["a second reading by second disagrees: at years_of_service=4, 7 against 10"]
+    assert entry["check"]["failures"] == ["a second reading by second disagrees: at years_of_service=4, 7 against 10; "
+                                          "at years_of_service=4.5, 7 against 10"]
     assert entry["check"]["second_reading"]["differences"] == [
-        {"inputs": {"years_of_service": 4}, "first": {"carryover_limit": 7}, "second": {"carryover_limit": 10}}]
+        {"inputs": {"years_of_service": years}, "first": {"carryover_limit": 7}, "second": {"carryover_limit": 10}}
+        for years in (4, 4.5)]
     assert layer["facts"]["k401_2026.match_cap"]["check"]["failures"] == [
         "a second reading by second disagrees: 6300 against 6000"]
     assert len(first.prompts) == 2

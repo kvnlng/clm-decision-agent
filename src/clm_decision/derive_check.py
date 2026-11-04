@@ -247,10 +247,25 @@ def _strings(table: Table, name: str) -> set[str]:
     return {found for row in table.rules for found in re.findall(r'"([^"]*)"', row.entries[column])}
 
 
+def _points(bounds: set[float]) -> list:
+    """Each bound and a point just either side of it, a step of half the gap to its nearest neighbour but at most 1,
+    so rows that differ only between bounds less than 1 apart are compared too; one more below the lowest bound and
+    above the highest, and 0. Negative values are taken too."""
+    ordered = sorted(bounds)
+    values = {0.0}
+    for index, bound in enumerate(ordered):
+        gaps = [abs(bound - other) for other in ordered[max(index - 1, 0):index + 2] if other != bound]
+        step = min([1.0, *(gap / 2 for gap in gaps)])
+        values |= {bound - step, bound, bound + step}
+    if ordered:
+        values |= {ordered[0] - 1, ordered[-1] + 1}
+    rounded = {round(value, 9) for value in values}
+    return sorted(int(value) if value.is_integer() else value for value in rounded)
+
+
 def grid(first: Table, second: Table) -> list[dict]:
-    """The inputs two tables are compared on, every combination of: for a number, each bound in either table, one
-    either side, and 0, never below 0 (a count of days or years); both booleans; for a string, each value either
-    table names and one neither does."""
+    """The inputs two tables are compared on, every combination of: for a number, the points around each bound in
+    either table (_points); both booleans; for a string, each value either table names and one neither does."""
     axes = []
     for index, name in enumerate(first.inputs):
         kind = first.types[index].rsplit(":", 1)[-1]
@@ -259,9 +274,7 @@ def grid(first: Table, second: Table) -> list[dict]:
         elif kind == "string":
             axes.append(sorted(_strings(first, name) | _strings(second, name)) + ["(none of these)"])
         else:
-            bounds = _bounds(first, name) | _bounds(second, name)
-            values = {0.0} | bounds | {bound + 1 for bound in bounds} | {bound - 1 for bound in bounds}
-            axes.append(sorted(int(value) if value.is_integer() else value for value in values if value >= 0))
+            axes.append(_points(_bounds(first, name) | _bounds(second, name)))
     return [dict(zip(first.inputs, values)) for values in itertools.product(*axes)]
 
 
@@ -273,13 +286,21 @@ def _outputs(table: Table, inputs: dict, names: list[str]):
     return {name: found.get(name) for name in names}
 
 
+def _compared(outputs):
+    """Outputs as they are compared: text in any case, without the spaces around it."""
+    if not isinstance(outputs, dict):
+        return outputs
+    return {name: value.strip().casefold() if isinstance(value, str) else value for name, value in outputs.items()}
+
+
 def table_differences(first: Table, second: Table, names: list[str]) -> list[dict]:
     """Where two tables give different values of the named outputs on the grid, first's inputs deciding the grid's
-    axes; a point where neither table has a row agrees."""
+    axes, text compared in any case and without the spaces around it; a point where neither table has a row
+    agrees."""
     differences = []
     for inputs in grid(first, second):
         one, other = _outputs(first, inputs, names), _outputs(second, inputs, names)
-        if one != other:
+        if _compared(one) != _compared(other):
             differences.append({"inputs": inputs, "first": one, "second": other})
     return differences
 

@@ -11,9 +11,9 @@ import pytest
 from fake_documents import FakeEmbedder, FakeStore
 from test_derived_load import HEAD
 
-from clm_decision import derive_check, derived
+from clm_decision import derive, derive_check, derived
 from clm_decision.dmn import load_table
-from clm_decision.environment import load_environment
+from clm_decision.environment import Slot, load_environment
 
 HANDBOOK = Path(__file__).parent.parent / "examples" / "handbook" / "handbook.jsonl"
 ON = date(2026, 12, 1)
@@ -390,15 +390,16 @@ def loaded(tmp_path, rows, name="t"):
 SHIFTED = [("&gt;= 4", 10, "x"), ("-", 7, "y")]
 
 
-def test_the_grid_takes_every_bound_one_either_side_and_zero_never_a_negative(tmp_path):
+def test_the_grid_takes_every_bound_points_either_side_scaled_to_the_gap_one_beyond_and_zero(tmp_path):
     grid = derive_check.grid(loaded(tmp_path, GOOD, "a"), loaded(tmp_path, SHIFTED, "b"))
-    assert [row["years_of_service"] for row in grid] == [0, 3, 4, 5, 6]
+    assert [row["years_of_service"] for row in grid] == [0, 3, 3.5, 4, 4.5, 5, 5.5, 6]
 
 
 def test_two_tables_that_differ_at_a_bound_are_listed_there(tmp_path):
     first, second = loaded(tmp_path, GOOD, "a"), loaded(tmp_path, SHIFTED, "b")
     assert derive_check.table_differences(first, second, ["carryover_limit"]) == [
-        {"inputs": {"years_of_service": 4}, "first": {"carryover_limit": 7}, "second": {"carryover_limit": 10}}]
+        {"inputs": {"years_of_service": years}, "first": {"carryover_limit": 7}, "second": {"carryover_limit": 10}}
+        for years in (4, 4.5)]
 
 
 def test_tables_that_differ_only_in_their_reasons_agree(tmp_path):
@@ -440,3 +441,67 @@ def test_a_long_disagreement_lists_three_points_and_counts_the_rest():
     point = "allowed false, weeks 0 against allowed true, weeks 12"
     assert derive_check.disagreement("m", differences) == (
         f"a second reading by m disagrees: at d=0, {point}; at d=1, {point}; at d=2, {point}; and at 2 more")
+
+
+def rendered(tmp_path, name, inputs, outputs, rows):
+    """A table rendered as clm-derive renders one: rows of ({input: test}, {output: value})."""
+    slot = Slot(name, "decisions", "A test rule.", "handbook", inputs, outputs)
+    file = tmp_path / f"{name}.dmn"
+    file.write_text(derive.render_dmn(slot, [{"inputs": tests, "outputs": values, "reason": "r"}
+                                             for tests, values in rows], "hb-leave"), encoding="utf-8")
+    return load_table(file)
+
+
+def numbers_table(tmp_path, name, rows):
+    return rendered(tmp_path, name, {"n": "number"}, {"k": "number"}, [({"n": test}, {"k": k}) for test, k in rows])
+
+
+def test_the_grid_takes_points_between_bounds_less_than_one_apart(tmp_path):
+    first = numbers_table(tmp_path, "a", [("< 0.5", 1), ("-", 0)])
+    second = numbers_table(tmp_path, "b", [("< 0.7", 1), ("-", 0)])
+    assert [item["inputs"]["n"] for item in derive_check.table_differences(first, second, ["k"])] == [0.5, 0.6]
+
+
+def test_the_grid_takes_points_below_zero(tmp_path):
+    first = numbers_table(tmp_path, "a", [("< -5", 1), ("-", 0)])
+    second = numbers_table(tmp_path, "b", [("< -3", 1), ("-", 0)])
+    assert [point["n"] for point in derive_check.grid(first, second)] == [-6, -5, -4, -3, -2, 0]
+    assert [item["inputs"]["n"] for item in derive_check.table_differences(first, second, ["k"])] == [-5, -4]
+
+
+def test_text_outputs_that_differ_only_in_case_or_spaces_agree(tmp_path):
+    first = rendered(tmp_path, "a", {"n": "number"}, {"kind": "string"}, [({"n": "-"}, {"kind": "Full Time"})])
+    second = rendered(tmp_path, "b", {"n": "number"}, {"kind": "string"}, [({"n": "-"}, {"kind": " full time "})])
+    other = rendered(tmp_path, "c", {"n": "number"}, {"kind": "string"}, [({"n": "-"}, {"kind": "part time"})])
+    assert not derive_check.table_differences(first, second, ["kind"])
+    assert derive_check.table_differences(first, other, ["kind"])[0]["first"] == {"kind": "Full Time"}
+
+
+def test_the_grid_takes_each_text_value_and_one_neither_table_names(tmp_path):
+    rows = [({"plan": '"gold"'}, {"k": 2}), ({"plan": "-"}, {"k": 1})]
+    first = rendered(tmp_path, "a", {"plan": "string"}, {"k": "number"}, rows)
+    second = rendered(tmp_path, "b", {"plan": "string"}, {"k": "number"}, [({"plan": '"silver"'}, {"k": 2}), rows[1]])
+    assert [point["plan"] for point in derive_check.grid(first, second)] == ["gold", "silver", "(none of these)"]
+    assert [item["inputs"]["plan"] for item in derive_check.table_differences(first, second, ["k"])] == [
+        "gold", "silver"]
+
+
+def test_the_grid_takes_both_booleans(tmp_path):
+    first = rendered(tmp_path, "a", {"member": "boolean"}, {"k": "number"}, [({"member": "true"}, {"k": 2}),
+                                                                         ({"member": "-"}, {"k": 1})])
+    second = rendered(tmp_path, "b", {"member": "boolean"}, {"k": "number"}, [({"member": "-"}, {"k": 1})])
+    assert [point["member"] for point in derive_check.grid(first, second)] == [True, False]
+    assert derive_check.table_differences(first, second, ["k"]) == [
+        {"inputs": {"member": True}, "first": {"k": 2}, "second": {"k": 1}}]
+
+
+def test_the_grid_for_two_inputs_takes_every_combination(tmp_path):
+    inputs, outputs = {"years": "number", "member": "boolean"}, {"k": "number"}
+    first = rendered(tmp_path, "a", inputs, outputs, [({"years": ">= 5", "member": "true"}, {"k": 2}),
+                                                   ({"years": "-", "member": "-"}, {"k": 1})])
+    second = rendered(tmp_path, "b", inputs, outputs, [({"years": ">= 5", "member": "-"}, {"k": 2}),
+                                                    ({"years": "-", "member": "-"}, {"k": 1})])
+    grid = derive_check.grid(first, second)
+    assert len(grid) == 4 * 2 and {"years": 6, "member": False} in grid
+    assert [item["inputs"] for item in derive_check.table_differences(first, second, ["k"])] == [
+        {"years": 5, "member": False}, {"years": 6, "member": False}]
