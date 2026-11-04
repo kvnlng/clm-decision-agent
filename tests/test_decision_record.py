@@ -120,3 +120,17 @@ def write_rules_env(write_environment):
         one_input_dmn("reserve_policy", "share_of_reserves", "&gt; 0.5"))
     env = load_environment(path)
     return env, rules_for(env, "open_site")
+
+
+def test_record_marks_derived_rules_and_facts(tmp_path):
+    from test_derived_load import entry, fact, load, make  # pylint: disable=import-outside-toplevel
+    env = load(make(tmp_path, decision=entry(), cap=fact()))
+    calls = [call("scenario_s", {"employee": "e1"}, engine.run_scenario(env, "s", {"employee": "e1"})),
+             call("query_plan", {}, engine.run_query(env, "plan", {}))]
+    record = decision_record.build("How many days carry over?", calls)
+    assert record["rules"]["carry"]["origin"] == "derived"
+    [plan] = [item for item in record["information"] if item["query"] == "plan"]
+    assert plan["origin"] == "derived" and plan["derived"] == ["plan_a.cap"]
+    text = decision_record.markdown(record, "", [])
+    assert "(derived from hb-leave (2), approved)" in text
+    assert "plan_a.cap derived from hb-plan (4), approved" in text

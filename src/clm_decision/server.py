@@ -218,9 +218,10 @@ def load(path: str):
     return scenario, router, tools
 
 
-def load_any(path: str):
-    """An environment, loaded without CLM, or a CLM scenario's (scenario, router, tools) as `load` gives them."""
-    return load_environment(path) if is_environment(path) else load(path)
+def load_any(path: str, admit: list[str] | None = None):
+    """An environment, loaded without CLM, or a CLM scenario's (scenario, router, tools) as `load` gives them.
+    `admit` overrides the derived statuses an environment admits, for testing only."""
+    return load_environment(path, admit=admit) if is_environment(path) else load(path)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -248,6 +249,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="a Host header to accept, such as decisions.example.org:443 (repeatable)")
     parser.add_argument("--trace", metavar="FILE", help="write one line per call to FILE, saying where the time went")
     parser.add_argument("--trace-text", action="store_true", help="include each request's text in the trace")
+    parser.add_argument("--admit-derived", metavar="STATUSES",
+                        help="for testing only: admit derived rules and facts with these statuses, such as "
+                             "proposed,checked,approved, not only approved ones; describe says so")
     args = parser.parse_args(argv)
     key, auth = None, None
     if args.http and args.auth == "oauth":
@@ -267,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
             print("error: review mode is for CLM scenarios; an environment has no corrections to review",
                   file=sys.stderr)
             return 2
-        loaded = load_any(args.scenario)
+        loaded = load_any(args.scenario, args.admit_derived.split(",") if args.admit_derived else None)
     except (ScenarioError, ClmError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

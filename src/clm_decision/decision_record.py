@@ -26,6 +26,8 @@ def _information(record: dict, steps: list[dict], descriptions: dict) -> None:
                 "description": descriptions.get(step["name"], "")}
         item["rows"] = [{key: row[key] for key in _RANGE_KEYS} for row in step["result"]] \
             if item["kind"] == "estimate" else step["result"]
+        if step.get("origin") == "derived":
+            item.update(origin="derived", derived=step["derived"], sources=step.get("sources", {}))
         if not any(seen["query"] == item["query"] and seen["inputs"] == item["inputs"]
                    for seen in record["information"]):
             record["information"].append(item)
@@ -131,8 +133,16 @@ def _branch(branch: dict) -> list[str]:
     return lines
 
 
+def _derived(source: dict | None, status: str | None) -> str:
+    """Where a derived rule or fact came from, and its status: "hb-leave (2), approved"."""
+    source = source or {}
+    return f"{source.get('document')} {' '.join(source.get('passages') or [])}, {status}"
+
+
 def _rule(rule: dict) -> str:
-    return (f"- **{rule['name']}** (owner {rule['owner']}, version {rule['version']}): {rule['statement']} "
+    origin = f" (derived from {_derived(rule.get('source'), rule.get('status'))})" \
+        if rule.get("origin") == "derived" else ""
+    return (f"- **{rule['name']}**{origin} (owner {rule['owner']}, version {rule['version']}): {rule['statement']} "
             f"Why: {rule['reason']}")
 
 
@@ -178,6 +188,8 @@ def markdown(record: dict, answer: str, unsupported: list[str],  # pylint: disab
                            f"{row['high']}; {row['source']}, {row['as_of']}")
         else:
             out.append(f"- {item['query']} {inputs} (fact): {item['description']}")
+            out += [f"  - {name} derived from {_derived(source, source.get('status'))}"
+                    for name, source in item.get("sources", {}).items()]
             out += [f"  - {json.dumps(row)}" for row in item["rows"]]
     out += ["", "## Scenarios", ""]
     for scenario in record["scenarios"]:

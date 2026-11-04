@@ -20,7 +20,9 @@ Start with `uv run clm-new-environment my_environment`: a working offsite-planni
 
 **The owner writes every query, rule, calculation and lever; the agent only chooses among them.** It never writes a
 graph query, states a rule or invents a lever value, and is told never to calculate. So every figure and verdict traces
-to a step, and `number_check.py` checks the answer against those steps.
+to a step, and `number_check.py` checks the answer against those steps. A rule the owner does not supply can be
+derived from the documents and checked before a person approves it; which kind each rule is is never hidden
+([Derived rules and facts](#derived-rules-and-facts)).
 
 Without judges, the server has no language model: the same inputs give the same outputs. A judge (below) adds one, for
 evidence no rule can read, and every answer it gives is traced.
@@ -400,6 +402,70 @@ with any figure the number check could not find. Figures in the question count a
 
 When the rules need something the question does not give, the agent is told to stop and list it, with the rule that
 needs it, not run a scenario or fill it in.
+
+## Derived rules and facts
+
+**A rule or fact is either supplied or derived and checked.** Supplied means the owner wrote it: the graph, the DMN
+tables, the Python module. When it is not supplied, it can be derived from the environment's own documents by a model
+and checked mechanically, and only a person's approval lets it decide. Which kind each one is is never hidden: every
+decision step, rule and record says `origin: "supplied"` or `"derived"`. Supplied always decides: derivation never
+edits a supplied file, and a document that disagrees with a supplied fact is reported as a conflict.
+
+The environment declares **slots**, the decisions and facts it needs, without their contents:
+
+```toml
+[derived]
+admit = ["approved"]                 # the default; without a [derived] table the layer is ignored
+collection = "handbook"              # where the slots are derived from, unless a slot names its own
+
+[derived.decisions.carryover_limit]
+description = "How many unused days of paid time off carry into next year, from full years of service."
+inputs = { years_of_service = "number" }
+outputs = { carryover_limit = "number" }   # a limit adds allowed; reason and citation are always added
+owner = "People Operations"
+governs = ["benefits"]
+
+[derived.facts.k401_2026.match_cap]        # node k401_2026, property match_cap
+description = "The plan's cap on the company match, in dollars a plan year."
+type = "number"
+```
+
+A slot's description must not hold a figure, or it gives away its own answer. A scenario calls a slot as it calls a
+supplied decision, and a limit may name one. A slot's name must not be a supplied decision's. Fact slots need the
+built-in graph.
+
+```
+uv run clm-derive run ENVIRONMENT COLLECTION [--backend claude|ollama] [--model NAME] [--as-of DATE] [--fresh]
+uv run clm-derive check ENVIRONMENT [--as-of DATE]
+uv run clm-derive status ENVIRONMENT KIND NAME STATUS --by WHO [--note TEXT]
+```
+
+`run` searches the collection with each slot's description and gives the model (Claude, with the `agent` extra, or
+`gemma4:26b` through Ollama) the documents in force on `--as-of` (default today), whole. The model answers in JSON; the
+code renders a decision table into `derived/rules/NAME.dmn` and writes the entry to `derived/derived.json`, with its
+source (document, passages, quote, edition). Each entry is checked; one that fails is asked for once more with the
+failures. Approved and rejected entries on an unchanged edition are kept, unless `--fresh`. An entry **passes the
+check** only when all of these hold:
+
+1. **Edition**: the cited document is in force on the date and its `effective_from` is the entry's edition.
+2. **Quote**: each piece of the quote (split at `...`) is, word for word, in a passage it cites.
+3. **Figures**: every number the entry states is in the quote: a fact's value, each bound and numeric output of the
+   table, each number in a text cell and in the statement. Small numbers, ordinals ("90th") and the words one to
+   twenty count; only zero is exempt.
+4. **Ontology**: a fact's node and property are its slot's, of the slot's type; a table's inputs are exactly the
+   slot's, its outputs include the slot's, it cites only its source; and the model named nothing `missing`.
+
+Statuses go proposed, then checked once the check passes, then approved or rejected by a person with `status`, which
+refuses to approve an entry that is not checked. A correction (a changed value or table) is written with status
+proposed and check null together, then `check` runs the check again. Loading admits an entry only when its status is
+in `admit`, its check passed, its cited edition is still the one in force (a new edition is re-derived by `run`) and
+its table loads. Anything else leaves the slot **unfilled**: `describe` lists every slot under `derived` with its
+status and why, and a step that calls an unfilled slot fails with that reason, so the branch fails visibly while the
+other questions still load. An admitted fact fills its node's property only where the graph has none; a query that
+read it carries `origin: "derived"` and the fact's name.
+
+`clm-server --admit-derived proposed,checked,approved` admits unapproved entries too, for testing only; `describe`
+says so. No tool of the decision server changes a status.
 
 ## The MCP tools
 

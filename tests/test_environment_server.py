@@ -12,7 +12,7 @@ from clm_decision import clm_router
 from clm_decision import server
 from clm_decision import tracing
 from clm_decision.environment import Environment, load_environment
-from clm_decision.environment_server import build_environment_server
+from clm_decision.environment_server import build_environment_server, describe
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "tariff" / "environment.toml"
 QUERIES = ["product_facts", "components_of", "suppliers_of", "key_clients_of", "supply_dependencies",
@@ -140,3 +140,38 @@ async def test_a_traced_scenario_counts_its_steps_and_branches(tmp_path):
     assert counts["query"] >= 3 and counts["decision"] >= 3 and counts["calculation"] == 6
     assert all(counts[f"{kind}_ms"] >= 0 for kind in ("query", "decision", "calculation"))
     assert record["outcome"] == {"ok": True, "kept": 2, "rejected": 1, "failed": 0, "best": {"region_b_share": 0.5}}
+
+
+def test_describe_lists_slots_and_why_unfilled(tmp_path):
+    from test_derived_load import entry, fact, load, make  # pylint: disable=import-outside-toplevel
+    shown = describe(load(make(tmp_path, decision=entry("checked"), cap=fact())))["derived"]
+    assert shown["admit"] == ["approved"] and "Only" in shown["note"]
+    carry, cap = shown["slots"]["carry"], shown["slots"]["plan_a.cap"]
+    assert not carry["admitted"] and "checked" in carry["why"] and carry["kind"] == "decisions"
+    assert cap["admitted"] and cap["status"] == "approved" and "why" not in cap
+
+
+def test_admit_derived_flag_reaches_the_environment(monkeypatch, capsys):
+    seen = {}
+
+    def refuse(path, **options):
+        seen.update(options, path=path)
+        raise server.ScenarioError("stop here")
+    monkeypatch.setattr(server, "load_environment", refuse)
+    assert server.main([str(EXAMPLE), "--admit-derived", "proposed,checked,approved"]) == 2
+    assert seen["admit"] == ["proposed", "checked", "approved"] and "stop here" in capsys.readouterr().err
+    assert server.main([str(EXAMPLE)]) == 2 and seen["admit"] is None
+
+
+@pytest.mark.anyio
+async def test_no_tool_changes_a_status(tmp_path):
+    from test_derived_load import entry, load, make  # pylint: disable=import-outside-toplevel
+    path = make(tmp_path, decision=entry("checked"))
+    before = (tmp_path / "derived" / "derived.json").read_text(encoding="utf-8")
+    async with Client(build_environment_server(load(path))) as client:
+        tools = (await client.list_tools()).tools
+        for tool in tools:
+            await client.call_tool(tool.name, {})
+    assert all(tool.annotations.read_only_hint for tool in tools)
+    assert not [tool.name for tool in tools if any(word in tool.name for word in ("status", "approve", "check"))]
+    assert (tmp_path / "derived" / "derived.json").read_text(encoding="utf-8") == before

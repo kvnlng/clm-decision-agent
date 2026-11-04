@@ -314,3 +314,8 @@ async def test_no_tools_on_ollama_sends_no_tools():
         result = await answer(None, QUESTION, OllamaChat(http, "gemma4:26b", system=NO_TOOLS_SYSTEM))
     assert result["answer"] == "I don't know." and result["calls"] == []
     assert ollama.requests[0]["tools"] == [] and ollama.requests[0]["messages"][0]["content"] == NO_TOOLS_SYSTEM
+
+
+def test_system_says_when_a_rule_was_derived():
+    from clm_decision.decision_agent import SYSTEM  # pylint: disable=import-outside-toplevel
+    assert "origin is derived" in SYSTEM and "not approved" in SYSTEM

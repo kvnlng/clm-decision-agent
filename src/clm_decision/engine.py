@@ -180,7 +180,13 @@ class Steps:
         step = {"kind": "query", "name": name, "inputs": params, "result": rows, "information": query.kind}
         facts = [f"{node}.{prop}" for node in sorted(read) for prop in self.env.derived_facts.get(node, {})]
         if facts:
-            step.update(origin="derived", derived=facts)
+            sources = {}
+            for fact in facts:
+                node, prop = fact.split(".", 1)
+                entry = self.env.derived_facts[node][prop]
+                sources[fact] = {**{key: (entry.get("source") or {}).get(key) for key in ("document", "passages")},
+                                 "status": entry.get("status")}
+            step.update(origin="derived", derived=facts, sources=sources)
         if query.kind == "estimate":
             step["case"] = self.case.get(name, "central")
             rows = step["result"] = _estimate(name, rows, step["case"])

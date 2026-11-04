@@ -50,7 +50,9 @@ dependency behind a rejection, naming it.
 its to_ask is not given in the question, stop: list each missing item with the rule that needs it, and run no \
 scenario. Never fill in a missing item yourself.
 - Say which figures are estimates, with their range and source, and report each kept branch's warnings, headroom \
-and the approvals it needs."""
+and the approvals it needs.
+- A rule or fact whose origin is derived was read from the documents by a model and checked mechanically, not \
+written by the owner: say so, name its source, and say when it is not approved."""
 # For --no-tools: the question alone, as an employee might ask a general chatbot
 NO_TOOLS_SYSTEM = ("You answer an employee's question about their employer's policies and benefits. If you do not "
                    "know something, say so.")
