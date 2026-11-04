@@ -72,13 +72,40 @@ class ToolFailed(RuntimeError):
     """The portal's server answered a call with an error; the message is the server's."""
 
 
+class NotAnswering(ToolFailed):
+    """The portal's server could not be reached, as while it restarts."""
+
+
+def cause(error: BaseException) -> BaseException:
+    """The first error inside any exception groups, as the MCP client wraps them."""
+    while isinstance(error, BaseExceptionGroup) and error.exceptions:
+        error = error.exceptions[0]
+    return error
+
+
+@contextlib.asynccontextmanager
+async def answering():
+    """Turn a failure to reach the server, however the MCP client wraps it, into NotAnswering; a ToolFailed from
+    inside stays as it is."""
+    try:
+        yield
+    except ToolFailed:
+        raise
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        found = cause(error)
+        if isinstance(found, ToolFailed):
+            raise found from error
+        raise NotAnswering(f"the portal's server is not answering (it may be restarting): "
+                           f"{found or type(found).__name__}") from error
+
+
 class ManagedServer:  # pylint: disable=too-many-instance-attributes
     """The portal's decision server: started, restarted after every change, and stopped with the portal."""
 
     def __init__(self, environment: Path, *, popen=subprocess.Popen, connect=connect,  # pylint: disable=redefined-outer-name
                  wait: float = 120, find=script):
         self.environment, self.popen, self.connect, self.wait, self.find = Path(environment), popen, connect, wait, find
-        self.testing, self.error = False, None
+        self.testing, self.wanted, self.error = False, False, None
         self.process, self.url, self._key, self._stderr = None, None, None, None
 
     @property
@@ -92,8 +119,10 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
                 "--port", str(port), "--key-env", SERVER_KEY_ENV, *(ADMIT_ALL if testing else [])]
 
     async def start(self, testing: bool = False) -> None:
-        """Start the server, and wait until it lists its tools or exits; `error` says why it did not start."""
-        self.testing, self.error = testing, None
+        """Start the server, and wait until it lists its tools or exits; `error` says why it did not start, and
+        `testing` is true only once a server in testing mode has started."""
+        self.wanted = testing
+        self.testing, self.error = False, None
         server = self.find("clm-server")
         if server is None:
             self.process, self.error = None, "clm-server is not installed in the portal's environment"
@@ -117,6 +146,7 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
                 return
             try:
                 await self.tools()
+                self.testing = testing
                 return
             except Exception:  # pylint: disable=broad-exception-caught
                 if time.monotonic() > deadline:
@@ -128,7 +158,7 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
     async def restart(self, testing: bool | None = None) -> None:
         """Stop the server and start it again, in testing mode or not (unchanged when None)."""
         self.stop()
-        await self.start(self.testing if testing is None else testing)
+        await self.start(self.wanted if testing is None else testing)
 
     def stop(self) -> None:
         """Stop the server, if it is running."""
@@ -150,14 +180,17 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
         return Client(self.connect(self.url, self._key))
 
     async def tools(self) -> list:
-        """The server's tools, as MCP lists them."""
-        async with self.client() as client:
-            return (await client.list_tools()).tools
+        """The server's tools, as MCP lists them; NotAnswering when it cannot be reached."""
+        async with answering():
+            async with self.client() as client:
+                return (await client.list_tools()).tools
 
     async def call(self, name: str, arguments: dict) -> dict:
-        """One tool's result as a dict; ToolFailed with the server's message when it fails."""
-        async with self.client() as client:
-            return result_dict(name, await client.call_tool(name, arguments))
+        """One tool's result as a dict; ToolFailed with the server's message when it fails, NotAnswering when it
+        cannot be reached."""
+        async with answering():
+            async with self.client() as client:
+                return result_dict(name, await client.call_tool(name, arguments))
 
 
 def result_dict(name: str, result) -> dict:

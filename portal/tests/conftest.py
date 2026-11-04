@@ -14,6 +14,7 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from mcp import Client
 from mcp.server import MCPServer
@@ -143,12 +144,27 @@ def stand_in() -> MCPServer:
     return server
 
 
-class FakeServer:
-    """The portal's server, in memory: it starts, restarts and fails as told, and serves the stand-in."""
+class Unreachable:
+    """A client of a server that is restarting: opening it fails as the MCP client does, with an exception group
+    around httpx's ConnectError."""
+
+    async def __aenter__(self):
+        raise ExceptionGroup("unhandled errors in a TaskGroup", [httpx.ConnectError("All connection attempts failed")])
+
+    async def __aexit__(self, *_):
+        return False
+
+
+class FakeServer:  # pylint: disable=too-many-instance-attributes
+    """The portal's server, in memory: it starts, restarts and fails as told, and serves the stand-in. Its tools and
+    call are the real ManagedServer's, over the stand-in; with `unreachable` set it is running but not answering."""
+
+    tools = managed.ManagedServer.tools
+    call = managed.ManagedServer.call
 
     def __init__(self, error: str | None = None):
         self.server = stand_in()
-        self.testing, self.error, self.failing = False, None, error
+        self.testing, self.error, self.failing, self.unreachable = False, None, error, False
         self.starts: list[bool] = []
         self.url, self._key = "http://127.0.0.1:59999/mcp", SERVER_KEY
 
@@ -157,7 +173,8 @@ class FakeServer:
         return self.error is None and bool(self.starts)
 
     async def start(self, testing: bool = False) -> None:
-        self.testing, self.error = testing, self.failing
+        self.error = self.failing
+        self.testing = testing and self.error is None
         self.starts.append(testing)
 
     async def restart(self, testing: bool | None = None) -> None:
@@ -166,16 +183,8 @@ class FakeServer:
     def stop(self) -> None:
         pass
 
-    def client(self) -> Client:
-        return Client(self.server)
-
-    async def tools(self) -> list:
-        async with self.client() as client:
-            return (await client.list_tools()).tools
-
-    async def call(self, name: str, arguments: dict) -> dict:
-        async with self.client() as client:
-            return managed.result_dict(name, await client.call_tool(name, arguments))
+    def client(self):
+        return Unreachable() if self.unreachable else Client(self.server)
 
 
 def recorder(code: int = 0, output: str = "done\n"):

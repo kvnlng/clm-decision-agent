@@ -18,6 +18,8 @@ from clm_decision.scenario import ScenarioError
 
 DECISION_FIELDS = {"description", "dmn", "function", "params", "collection", "rule", "source", "status", "check",
                    "decided_by", "decided_at", "note"}
+TEXT_FIELDS = ("description", "dmn", "function", "collection", "status", "decided_by", "decided_at", "note", "node",
+               "property", "target", "name")
 
 
 def read_toml(environment: Path) -> dict:
@@ -102,13 +104,60 @@ def _graph(environment: Path, errors: list[str]) -> dict:
     return {"note": None, "nodes": _csv(settings.nodes, errors), "edges": _csv(settings.edges, errors)}
 
 
+def _texts(value) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def _wrong(found: dict, key: str, where: str, what: str, errors: list[str], ok) -> None:
+    if found.get(key) is not None and not ok(found[key]):
+        errors.append(f"{where}.{key}: must be {what}, so it is not shown")
+        found[key] = None
+
+
+def clean(kind: str, name: str, entry, errors: list[str]) -> dict | None:
+    """A copy of a derived entry for showing, with each wrongly typed field it relies on dropped and named in errors;
+    None, with the reason, when the entry is not a table at all."""
+    where = f"derived {kind}.{name}"
+    if not isinstance(entry, dict):
+        errors.append(f"{where}: not a table, so it is not shown")
+        return None
+    found = dict(entry)
+    for key in TEXT_FIELDS:
+        _wrong(found, key, where, "text", errors, lambda value: isinstance(value, str))
+    for key in ("rule", "source"):
+        _wrong(found, key, where, "a table", errors, lambda value: isinstance(value, dict))
+    _wrong(found, "check", where, 'a table with "passed" true or false and "failures" a list of text', errors,
+           lambda value: isinstance(value, dict) and isinstance(value.get("passed", False), bool)
+           and _texts(value.get("failures", [])))
+    if found.get("rule"):
+        found["rule"] = dict(found["rule"])
+        for key in ("governs", "depends_on", "needs", "cites"):
+            _wrong(found["rule"], key, f"{where}.rule", "a list of text", errors, _texts)
+    if found.get("source"):
+        found["source"] = dict(found["source"])
+        for key in ("document", "quote", "edition"):
+            _wrong(found["source"], key, f"{where}.source", "text", errors, lambda value: isinstance(value, str))
+        _wrong(found["source"], "passages", f"{where}.source", "a list of text", errors, _texts)
+    return found
+
+
 def read_layer(environment: Path, errors: list[str]) -> dict:
-    """The derived layer, or an empty one with the reason in errors when it cannot be read."""
+    """The derived layer for showing, each entry cleaned of wrongly typed fields; an empty one, with the reason in
+    errors, when it cannot be read."""
     try:
-        return derived.read(Path(environment).parent)
+        found = derived.read(Path(environment).parent)
     except (derived.DerivedError, ValueError, OSError) as error:
         errors.append(f"derived layer: {error}")
         return derived.empty(None)
+    shown = {**found, **{kind: {} for kind in derived.KINDS}}
+    _wrong(shown, "collection", "derived layer", "text", errors, lambda value: isinstance(value, str))
+    for kind in derived.KINDS:
+        for name, entry in found[kind].items():
+            entry = clean(kind, name, entry, errors)
+            if entry is not None:
+                shown[kind][name] = entry
+    return shown
 
 
 def configuration(environment: Path, tools: list, described: dict | None, error: str | None) -> dict:
@@ -164,7 +213,7 @@ def _target(kind: str, name: str, entry: dict) -> tuple[str, str]:
     """The graph node and property a fact, or a conflict over one, touches."""
     if kind == "facts" and entry.get("node") and entry.get("property"):
         return entry["node"], entry["property"]
-    node, _, prop = str(entry.get("name", name) if kind == "conflicts" else name).partition(".")
+    node, _, prop = str((entry.get("name") or name) if kind == "conflicts" else name).partition(".")
     return node, prop
 
 
@@ -238,10 +287,11 @@ def correct_fact(environment: Path, name: str, value, *, by: str, note: str | No
 
 def correct_decision(environment: Path, name: str, dmn_text: str, *, by: str, note: str | None) -> dict:
     """Replace a derived decision's DMN table with corrected text, which must stay inside derived/ and load as a
-    table; it goes back to proposed with no check. Refused, with nothing written, otherwise."""
+    table. The entry is written as proposed with no check before the table is replaced, so a failure part way never
+    leaves a checked or approved entry with an unchecked table. Refused, with nothing written, otherwise."""
     found, entry = _entry(environment, "decisions", name)
     folder = derived_folder(environment)
-    if not entry.get("dmn"):
+    if not isinstance(entry.get("dmn"), str) or not entry["dmn"]:
         raise Refused(f"{name} has no DMN table to correct")
     path = folder / entry["dmn"]
     if not inside(path, folder) or path.suffix != ".dmn":
@@ -255,5 +305,9 @@ def correct_decision(environment: Path, name: str, dmn_text: str, *, by: str, no
     except dmn.DmnError as error:
         partial.unlink()
         raise Refused(f"{name}: the corrected table cannot be used: {error}") from error
-    os.replace(partial, path)
-    return _proposed(environment, "decisions", name, found, by, note)
+    try:
+        changed = _proposed(environment, "decisions", name, found, by, note)
+        os.replace(partial, path)
+    finally:
+        partial.unlink(missing_ok=True)
+    return changed

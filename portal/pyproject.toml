@@ -5,9 +5,10 @@ description = "The portal: a local page for administering a decision server, and
 requires-python = ">=3.12,<3.15"
 license = "Apache-2.0"
 # The main package brings mcp, httpx, starlette, uvicorn and python-multipart, and its clm-server, clm-load-documents
-# and clm-derive scripts; its agent extra brings anthropic, for --backend claude
+# and clm-derive scripts; its agent extra brings anthropic, for --backend claude, and neo4j lets the portal's own
+# server reach a graph in Neo4j
 dependencies = [
-    "clm-decision-agent[documents,agent]",
+    "clm-decision-agent[documents,agent,neo4j]",
 ]
 
 [project.scripts]

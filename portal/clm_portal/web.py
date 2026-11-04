@@ -29,7 +29,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import chat, layer
-from .managed import Busy, Jobs, ToolFailed, script
+from .managed import Busy, Jobs, NotAnswering, ToolFailed, answering, script
 
 COOKIE = "clm_portal_session"
 SESSION_SECONDS = 12 * 60 * 60
@@ -96,7 +96,8 @@ def page(portal: Portal, session: Session | None, title: str, body: str, *, stat
             ("/", "Configuration"), ("/ask", "Ask"), ("/review", "Review"), ("/documents", "Documents")))
         nav = (f'<nav>{links}<span class="who">Signed in as {esc(session.name)}</span>'
                f'<form method="post" action="/sign-out">{csrf_field(session)}<button>Sign out</button></form></nav>')
-    banner = f'<p class="banner testing">{TESTING_BANNER}</p>' if portal.server.testing else ""
+    banner = f'<p class="banner testing">{TESTING_BANNER}</p>' if portal.server.testing and portal.server.running \
+        else ""
     note = f'<p class="note">{OPERATOR_NOTE}</p>' if changes else ""
     return HTMLResponse(
         f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
@@ -418,6 +419,7 @@ async def review_action(request: Request) -> Response:
                 layer.correct_fact(portal.environment, name, value, by=session.name, note=note)
             else:
                 layer.correct_decision(portal.environment, name, str(form.get("dmn", "")), by=session.name, note=note)
+            await portal.server.restart()
     except Busy as error:
         return await review_page(request, str(error), 409)
     except layer.Refused as error:
@@ -448,8 +450,8 @@ def _ask_settings(portal: Portal, form) -> tuple[str, str, str]:
     return backend, model, url
 
 
-def ask_body(portal: Portal, session: Session, message: str = "") -> str:
-    """The conversation so far, the question form and the testing switch."""
+def ask_body(portal: Portal, session: Session, message: str = "", draft: str = "") -> str:
+    """The conversation so far, the question form (holding `draft`) and the testing switch."""
     conversation = session.ask
     backend, model, url = conversation.get("settings") or _ask_settings(portal, {})
     shown = "".join(f'<h3>{esc(question)}</h3><div class="chat">{esc(chr(10).join(lines))}</div>'
@@ -462,7 +464,7 @@ def ask_body(portal: Portal, session: Session, message: str = "") -> str:
             'result is shown. Tools run for real unless dry run is ticked.</p>'
             f'{shown or "<p class=muted>No questions yet.</p>"}'
             f'<form method="post" action="/ask" class="stack">{csrf_field(session)}'
-            '<label>Question <textarea name="question" required></textarea></label>'
+            f'<label>Question <textarea name="question" required>{esc(draft)}</textarea></label>'
             f'<label>Model <select name="backend">{options}</select></label>'
             f'<label>Model name <input name="model" value="{esc(model)}" placeholder="{chat.STARTER_MODEL} or '
             f'{chat.CLAUDE_MODEL}"></label>'
@@ -496,14 +498,21 @@ async def ask_page(request: Request) -> Response:
         session.ask = {"settings": settings, "messages": None, "turns": []}
     lines: list[str] = []
     dry_run = chat.DryRun(frozenset({chat.ALL}) if form.get("dry_run") else frozenset())
+    mark = len(session.ask["messages"] or [])
     try:
         async with httpx.AsyncClient() as http:
             model = portal.make_model(*settings, http)
             if session.ask["messages"] is None:
                 session.ask["messages"] = model.start()
-            async with portal.server.client() as client:
+                mark = len(session.ask["messages"])
+            async with answering(), portal.server.client() as client:
                 tools = model.tools((await client.list_tools()).tools)
                 await chat.answer(client, model, tools, session.ask["messages"], question, dry_run, lines.append)
+    except NotAnswering as error:
+        if session.ask["messages"] is not None:
+            del session.ask["messages"][mark:]
+        return page(portal, session, "Ask", ask_body(portal, session, f"{error}; your question is kept: ask again "
+                                                                       "in a moment.", question))
     except (chat.ClientError, httpx.HTTPError, OSError, RuntimeError) as error:
         lines.append(f"  [error: {error}]")
     session.ask["turns"].append((question, lines))
