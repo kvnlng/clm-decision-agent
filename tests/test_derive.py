@@ -216,6 +216,19 @@ def test_status_command_refuses_approving_a_failed_entry(path, capsys):
     assert derived.read(path.parent)["decisions"]["carryover_limit"]["status"] == "approved"
 
 
+def test_status_command_with_a_second_reader_approves_only_after_a_reading_since_the_last_change(path, read_again,
+                                                                                              capsys):
+    run(path, good())
+    status = ["status", str(path), "decisions", "carryover_limit"]
+    assert derive.main([*status, "rejected", "--by", "kevin"]) == 0
+    assert derive.main([*status, "approved", "--by", "kevin"]) == 2
+    error = capsys.readouterr().err
+    assert "no second reading by second that agrees" in error and error.count("\n") == 1
+    assert derive.main([*status, "proposed", "--by", "kevin"]) == 0
+    assert derive.main(["check", str(path)]) == 0
+    assert derive.main([*status, "approved", "--by", "kevin"]) == 0
+
+
 def test_check_command_moves_a_corrected_entry_to_checked(path):
     run(path, Canned(carryover_limit=[CARRYOVER], k401_2026__match_cap=[{**CAP, "value": 6400}]))
     layer = derived.read(path.parent)

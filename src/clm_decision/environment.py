@@ -639,6 +639,13 @@ def _second_reader(data: dict) -> dict | None:
     return {"backend": reader["backend"], "model": reader["model"].strip()}
 
 
+def second_reader_of(path: str | Path) -> dict | None:
+    """The second reader an environment file's [derived] table names, read without loading the environment (no
+    store is connected); None without one. Raises ScenarioError as loading would."""
+    data = _read(Path(path))
+    return _second_reader(data) if "derived" in data else None
+
+
 def _why_not(entry: dict | None, admit: tuple[str, ...], override: bool, store, slot: Slot, on: date,
              folder: Path) -> str | None:
     """Why a derived entry may not fill its slot, or None when it may."""

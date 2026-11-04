@@ -511,8 +511,10 @@ changes. It is never sent back to the first model as a retry. The second reader 
 the layer, nor another tag of it (any `gemma4:…` for gemma4) or a dated id of the same Claude model: `run` and
 `check` refuse it, since it would repeat its own reading. Removing `second_reader` does not clear a recorded
 disagreement: `check` keeps failing the entry, as "an earlier second reading by MODEL …", until a later second
-reading agrees or a person corrects the entry. Without `second_reader`, `describe`
-and `check` say there is no second reading and the check is as before.
+reading agrees or a person corrects the entry. With `second_reader`, `status` approves an entry only when its check
+holds a second reading by that model that agreed, made since the entry's last change; so a rejected entry with an
+old passing check is set to proposed and checked again first. Without `second_reader`, `describe` and `check` say
+there is no second reading and the check is as before.
 
 **Agreement is necessary, not sufficient.** Two models can make the same mistake: in the handbook example, qwen3:14b
 read the second tier as 50% of pay just as gemma4 had, and the wrong entry passed both. A weak second reader costs

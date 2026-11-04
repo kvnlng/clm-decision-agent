@@ -182,6 +182,45 @@ def test_a_check_recorded_before_digests_were_kept_is_taken_as_it_is(tmp_path):
                                                       "check": {"passed": True, "failures": []}})
 
 
+def _read_again(folder, agreed=True, at="2026-11-04T10:00:00+00:00", **entry) -> None:
+    layer = _layer()
+    layer["decisions"]["carryover_limit"] = {
+        "status": "checked", "decided_by": None, "decided_at": None, "note": None, **entry,
+        "check": {"passed": agreed, "failures": [], "at": at, "by": "clm-derive check",
+                  "second_reading": {"model": "second", "agreed": agreed, "differences": []}}}
+    derived.write(folder, layer)
+
+
+def approve(folder, reader="second"):
+    return derived.set_status(folder, "decisions", "carryover_limit", "approved", by="kevin", second_reader=reader)
+
+
+def test_with_a_second_reader_an_entry_is_approved_after_an_agreeing_reading(tmp_path):
+    _read_again(tmp_path)
+    assert approve(tmp_path)["status"] == "approved"
+
+
+def test_with_a_second_reader_an_entry_never_read_again_is_not_approved(tmp_path):
+    derived.write(tmp_path, _layer())
+    with pytest.raises(derived.DerivedError, match="^carryover_limit has no second reading by second that agrees, "
+                                                   "made since its last change: run clm-derive check"):
+        approve(tmp_path)
+    assert approve(tmp_path, reader=None)["status"] == "approved"
+
+
+def test_with_a_second_reader_a_rejected_entry_with_an_old_reading_is_not_approved(tmp_path):
+    _read_again(tmp_path, status="rejected", decided_by="kevin", decided_at="2026-11-04T11:00:00+00:00")
+    with pytest.raises(derived.DerivedError, match="since its last change"):
+        approve(tmp_path)
+    # Set back to proposed by a person, then checked and read again: the reading is later than the change
+    _read_again(tmp_path, at="2026-11-04T12:00:00+00:00", decided_by="kevin", decided_at="2026-11-04T11:00:00+00:00")
+    assert approve(tmp_path)["status"] == "approved"
+    # Set to checked by hand after an older reading: the reading is earlier than the change
+    _read_again(tmp_path, at="2026-11-04T10:00:00+00:00", decided_by="kevin", decided_at="2026-11-04T11:00:00+00:00")
+    with pytest.raises(derived.DerivedError, match="since its last change"):
+        approve(tmp_path)
+
+
 def test_set_check_refuses_conflicts(tmp_path):
     derived.write(tmp_path, _layer())
     with pytest.raises(derived.DerivedError, match="decisions or facts"):

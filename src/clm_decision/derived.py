@@ -78,11 +78,25 @@ def changed_line(name: str) -> str:
     return f"{name}'s DMN has changed since its check: run clm-derive check again"
 
 
+def _read_again_since(entry: dict, reader: str) -> bool:
+    """Whether the entry's check holds a second reading by the reader that agreed, made since the entry's last
+    change. A rejection is always later than its check, as a rejected entry is never checked."""
+    check = entry.get("check") or {}
+    reading = check.get("second_reading") or {}
+    if entry.get("status") == "rejected" or not reading.get("agreed") or reading.get("model") != reader:
+        return False
+    return not entry.get("decided_at") or datetime.fromisoformat(check.get("at") or "0001-01-01T00:00:00+00:00") \
+        >= datetime.fromisoformat(entry["decided_at"])
+
+
 # pylint: disable-next=too-many-arguments
-def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str, note: str | None = None) -> dict:
+def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str, note: str | None = None,
+               second_reader: str | None = None) -> dict:
     """Change one entry's status, recording who did it, when and why, and return the entry. A rule or fact is
-    approved only once checked: a proposed one, such as a corrected one, is not, whatever its old check said. Any
-    can be rejected."""
+    approved only once checked: a proposed one, such as a corrected one, is not, whatever its old check said, nor
+    one whose table changed since its check. With `second_reader`, the model [derived] second_reader names, it is
+    approved only with an agreeing second reading by that model made since its last change. Any can be
+    rejected."""
     if kind not in KINDS:
         raise DerivedError(f"{kind!r} is not one of {', '.join(KINDS)}")
     if status not in STATUSES[kind]:
@@ -100,6 +114,9 @@ def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str
         raise DerivedError(f"{name} is proposed: it is approved only once clm-derive check has checked it")
     if status == "approved" and changed_since_check(folder, entry):
         raise DerivedError(changed_line(name))
+    if status == "approved" and second_reader and not _read_again_since(entry, second_reader):
+        raise DerivedError(f"{name} has no second reading by {second_reader} that agrees, made since its last "
+                           "change: run clm-derive check (set a rejected entry to proposed first)")
     entry.update(status=status, decided_by=by, note=note,
                  decided_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     write(folder, layer)

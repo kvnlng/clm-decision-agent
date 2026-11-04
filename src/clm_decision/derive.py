@@ -37,7 +37,7 @@ from . import derive_check, derived
 from .decision_agent import LOCAL_MODEL, MODEL, OLLAMA_URL
 from .dmn import DmnError, load_table
 from .engine import Steps
-from .environment import Environment, Slot, edition, in_force, load_environment
+from .environment import Environment, Slot, edition, in_force, load_environment, second_reader_of
 from .scenario import ScenarioError, StepError
 
 RUN = "clm-derive run"
@@ -456,7 +456,9 @@ def _check(environment: str, folder: Path, on: date) -> int:
 def _command(args) -> int:
     folder = Path(args.environment).resolve().parent
     if args.command == "status":
-        entry = derived.set_status(folder, args.kind, args.name, args.status, by=args.by, note=args.note)
+        reader = second_reader_of(args.environment)
+        entry = derived.set_status(folder, args.kind, args.name, args.status, by=args.by, note=args.note,
+                                   second_reader=reader["model"] if reader else None)
         print(f"{args.kind} {args.name}: {entry['status']}, by {entry['decided_by']}")
         return 0
     on = _day(args.as_of)
