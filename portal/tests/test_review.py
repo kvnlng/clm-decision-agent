@@ -3,7 +3,9 @@
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import hashlib
 import json
+import re
 
+import pytest
 from starlette.testclient import TestClient
 
 from clm_portal import layer, web
@@ -149,3 +151,12 @@ def test_a_rejected_entry_that_passed_its_check_can_be_approved_again(client, en
     assert "disabled" not in part[:part.index("</section>")].split("Approve")[0][-200:]
     assert post(client, "/review/decisions/carryover_limit/approve", token).status_code == 200
     assert layer_of(environment)["decisions"]["carryover_limit"]["status"] == "approved"
+
+
+@pytest.mark.parametrize("installed", [{"clm-server", "clm-load-documents"}])
+def test_a_correction_without_clm_derive_says_so_as_an_error(client, environment):
+    token = sign_in(client)
+    response = post(client, f"/review/facts/{FACT}/correct", token, {"value": "6300"})
+    assert response.status_code == 200 and layer_of(environment)["facts"][FACT]["value"] == 6300
+    shown = re.search(r'<p class="(\w+)">[^<]*clm-derive is not installed', response.text)
+    assert shown and shown.group(1) == "failed"

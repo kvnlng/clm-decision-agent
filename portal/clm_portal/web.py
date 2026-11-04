@@ -359,12 +359,13 @@ def review_actions(session: Session, item: dict) -> str:
     return "".join(forms)
 
 
-async def review_page(request: Request, message: str = "", status: int = 200) -> Response:
-    """GET /review: derived decisions, facts and conflicts, checked first."""
+async def review_page(request: Request, message: str = "", status: int = 200, failed: bool = False) -> Response:
+    """GET /review: derived decisions, facts and conflicts, checked first. The message is shown as an error when the
+    status is one, or when `failed` says so."""
     portal, session = request.app.state.portal, request.state.session
     found = layer.review(portal.environment)
     collection = layer.read_layer(portal.environment, []).get("collection")
-    parts = [f'<p class="{"failed" if status >= 400 else "passed"}">{esc(message)}</p>' if message else ""]
+    parts = [f'<p class="{"failed" if failed or status >= 400 else "passed"}">{esc(message)}</p>' if message else ""]
     parts += [f'<p class="failed">{esc(error)}</p>' for error in found["errors"]]
     parts.append(job_status(portal, "/review"))
     for title, items in found["groups"]:
@@ -424,7 +425,7 @@ async def review_action(request: Request) -> Response:
     job = await portal.jobs.start("clm-derive check", ["clm-derive", "check", str(portal.environment)],
                                   on_success=portal.server.restart)
     return await review_page(request, f"{name} corrected: it is proposed until clm-derive check passes it"
-                                      + ("" if job.running else f"; {job.output}") + ".")
+                                      + ("" if job.running else f"; {job.output}") + ".", failed=not job.running)
 
 
 def make_model(backend: str, model: str | None, url: str | None, http: httpx.AsyncClient):

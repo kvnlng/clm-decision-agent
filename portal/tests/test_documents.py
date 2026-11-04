@@ -100,7 +100,7 @@ def test_without_clm_derive_the_page_says_derivation_is_not_available(client, ru
     token = sign_in(client)
     assert "Derivation is not available yet" in client.get("/documents").text
     page = post(client, "/documents/derive", token, {"collection": "handbook"}).text
-    assert "clm-derive is not installed" in page and not runner.seen
+    assert '<p class="failed">clm-derive is not installed' in page and not runner.seen
 
 
 def test_a_running_job_sends_the_page_back_to_a_get_when_it_ends(client, runner):
