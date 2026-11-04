@@ -185,16 +185,6 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
             async with self.client() as client:
                 return (await client.list_tools()).tools
 
-    async def offered(self) -> dict:
-        """What the server offers, as MCP lists it, from one session: its instructions, tools, resources, resource
-        templates and prompts; NotAnswering when it cannot be reached."""
-        async with answering():
-            async with self.client() as client:
-                return {"instructions": client.instructions or "", "tools": (await client.list_tools()).tools,
-                        "resources": (await client.list_resources()).resources,
-                        "templates": (await client.list_resource_templates()).resource_templates,
-                        "prompts": (await client.list_prompts()).prompts}
-
     async def call(self, name: str, arguments: dict) -> dict:
         """One tool's result as a dict; ToolFailed with the server's message when it fails, NotAnswering when it
         cannot be reached."""

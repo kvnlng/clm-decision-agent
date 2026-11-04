@@ -336,7 +336,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if not records:
         print(f"No corrections in {scenario.record_path}. "
-              f"Correct some decisions with `clm-chat {args.scenario} --review` first.")
+              "Correct some decisions first: serve the scenario with --review and call its correct tool, for example "
+              "in the MCP Inspector (docs/getting-started.md, \"Looking inside the server\").")
         return 0
     if skipped:
         print(f"{skipped} unreadable lines skipped in {scenario.record_path.name}")

@@ -36,6 +36,7 @@ SESSION_SECONDS = 12 * 60 * 60
 WRONG_KEY_WAIT = 0.5
 MAX_BODY = 200 * 1024 * 1024
 STATIC = Path(__file__).parent / "static"
+INSPECTOR = "@modelcontextprotocol/inspector@2.13.0"
 OPEN_PATHS = ("/sign-in",)
 OPERATOR_NOTE = ("The portal restarts its own server after every change. The server agents use reads the files at "
                  "start: its operator restarts it, or redeploys from git, to pick up approved changes.")
@@ -173,40 +174,15 @@ def _rule(rule: dict) -> str:
     return f'<section class="rule">{body}</section>'
 
 
-def offered_sections(found: dict) -> str:
-    """What the portal's server reports: its instructions, tools, resources, resource templates and prompts."""
-    def listed(heading: list[str], rows: list[list[str]], none: str) -> str:
-        return table(heading, rows) if rows else f'<p class="muted">{none}</p>'
-    return "".join((
-        f'<h2>Instructions</h2><p>{esc(found["instructions"]) or "None."}</p>',
-        "<h2>Tools</h2>" + table(["tool", "description", "parameters"],
-                                 [[f"<code>{esc(tool['name'])}</code>", esc(tool["description"]),
-                                   esc(", ".join(tool["parameters"]))] for tool in found["tools"]]),
-        "<h2>Resources</h2>" + listed(
-            ["resource", "name", "description"],
-            [[f"<code>{esc(item['uri'])}</code>", esc(item["name"]), esc(item["description"])]
-             for item in found["resources"]], "No resources."),
-        "<h2>Resource templates</h2>" + listed(
-            ["template", "name", "description"],
-            [[f"<code>{esc(item['uri_template'])}</code>", esc(item["name"]), esc(item["description"])]
-             for item in found["templates"]], "No resource templates."),
-        "<h2>Prompts</h2>" + listed(
-            ["prompt", "description", "arguments"],
-            [[f"<code>{esc(item['name'])}</code>", esc(item["description"]), esc(", ".join(item["arguments"]))]
-             for item in found["prompts"]], "No prompts.")))
-
-
-def configuration_body(found: dict, running: bool) -> str:
+def configuration_body(found: dict, environment: Path) -> str:
     """The Configuration page's sections."""
     parts = [f'<p>{esc(found["description"])}</p>']
     if found["errors"]:
         items = "".join(f"<li><pre>{esc(error)}</pre></li>" for error in found["errors"])
         parts.append(f'<section class="errors"><h2>Load errors</h2><ul>{items}</ul></section>')
-    if running:
-        parts.append(offered_sections(found))
-    else:
-        parts.append('<h2>Tools</h2><p class="muted">The portal\'s server is not running, so its instructions, tools, '
-                     'resources and prompts are not listed.</p>')
+    parts.append('<h2>Tools, resources and prompts</h2><p>The MCP Inspector shows what this server offers and calls '
+                 'one tool at a time (docs/getting-started.md, "Looking inside the server"):</p>'
+                 f'<pre>npx -y {INSPECTOR} uv run clm-server {esc(str(environment))}</pre>')
     parts.append("<h2>Rules</h2>" + ("".join(_rule(rule) for rule in found["rules"]) or "<p>No rules.</p>"))
     if found["information"]:
         parts.append("<h2>Information</h2>" + table(
@@ -237,24 +213,23 @@ def built_text(built: dict | None) -> str:
     return esc(", ".join(f"{key}: {shown_value(value)}" for key, value in built.items()))
 
 
-async def server_view(portal: Portal) -> tuple[dict, dict | None, str | None]:
-    """What the server offers and its describe, or the reason they are not available."""
+async def server_view(portal: Portal) -> tuple[dict | None, str | None]:
+    """The server's describe, or the reason it is not available."""
     if not portal.server.running:
-        return {}, None, portal.server.error or "The portal's server is not running."
+        return None, portal.server.error or "The portal's server is not running."
     try:
-        offered = await portal.server.offered()
         described = await portal.server.call("describe", {})
     except (ToolFailed, OSError, RuntimeError) as error:
-        return {}, None, f"The portal's server did not answer: {error}"
-    return offered, described, None
+        return None, f"The portal's server did not answer: {error}"
+    return described, None
 
 
 async def configuration_page(request: Request) -> Response:
     """GET /: the whole configuration, read only."""
     portal, session = request.app.state.portal, request.state.session
-    offered, described, error = await server_view(portal)
-    found = layer.configuration(portal.environment, offered, described, error)
-    return page(portal, session, found["name"], configuration_body(found, not error))
+    described, error = await server_view(portal)
+    found = layer.configuration(portal.environment, described, error)
+    return page(portal, session, found["name"], configuration_body(found, portal.environment))
 
 
 def collections(portal: Portal) -> dict:
@@ -613,7 +588,7 @@ def documents_body(portal: Portal, session: Session, described: dict | None, mes
 async def documents_page(request: Request, message: str = "", status: int = 200) -> Response:
     """GET /documents."""
     portal, session = request.app.state.portal, request.state.session
-    _, described, _ = await server_view(portal)
+    described, _ = await server_view(portal)
     return page(portal, session, "Documents", documents_body(portal, session, described, message, status >= 400),
                 status=status, changes=True)
 

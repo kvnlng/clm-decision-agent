@@ -4,7 +4,7 @@
                                                         [--out FILE]
 
 It starts server.py for the environment, or connects to a running server at a URL (with the key in
-DECISION_SERVER_KEY, as clm-call does), offers the model the server's tools and nothing else, and lets it call them
+DECISION_SERVER_KEY), offers the model the server's tools and nothing else, and lets it call them
 until it answers. The model is Claude through the Anthropic API (the default, claude-opus-5-5) or a local model
 through Ollama (gemma4:26b by default); both get the same instructions and tools. Every figure in the answer is then
 checked against what the tools returned (number_check.py), and the question, the answer, every call and the check
@@ -27,7 +27,7 @@ import anyio
 import httpx
 from mcp import Client, MCPError
 
-from .call import connect, is_url, refusal, server_params  # pylint: disable=unused-import
+from .connection import connect, is_url, refusal, server_params  # pylint: disable=unused-import
 from . import citation_check, decision_record, instructions
 from .number_check import unsupported
 

@@ -13,7 +13,7 @@ from conftest import free_port, serving
 from mcp import Client
 
 from clm_decision import server
-from clm_decision.call import connect
+from clm_decision.connection import connect
 from clm_decision.decision_agent import NO_TOOLS_SYSTEM, AgentError, ClaudeChat, OllamaChat, answer, main, server_params
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server

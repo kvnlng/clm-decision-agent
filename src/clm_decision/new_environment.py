@@ -10,7 +10,7 @@ The folder holds a made-up team choosing where to hold an offsite:
     rules/budget.dmn            a limit: the total cost must be within budget
     <folder>_functions.py       the queries on the graph, the calculation and the scenario's branch
 
-Then `clm-call FOLDER/environment.toml` lists its tools and calls them, and `clm-server` serves them.
+Then the MCP Inspector lists its tools and calls them, and `clm-server` serves them.
 docs/environment.md explains every part.
 """
 import argparse
@@ -240,9 +240,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     environment = write(args.folder)
     print(f"Wrote {environment}, its graph, rules and functions. Next:\n"
-          f"  uv run clm-call {environment}                       # its tools\n"
-          f"  uv run clm-call {environment} scenario_offsite '{{\"team\": \"T1\", \"days\": 2}}'\n"
-          f"  uv run clm-server {environment}                     # serve it over MCP")
+          f"  npx -y @modelcontextprotocol/inspector@2.13.0 uv run clm-server {environment}"
+          f"   # its tools, in the browser\n"
+          f"  uv run clm-server {environment}   # serve it over MCP")
     return 0
 
 

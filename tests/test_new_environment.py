@@ -9,7 +9,7 @@ from clm_decision.new_environment import main
 def test_the_new_environment_loads_and_decides(tmp_path, capsys):
     folder = tmp_path / "team-offsite"
     assert main([str(folder)]) == 0
-    assert "clm-call" in capsys.readouterr().out
+    assert "@modelcontextprotocol/inspector@2.13.0 uv run clm-server" in capsys.readouterr().out
     env = load_environment(folder / "environment.toml")
     result = engine.run_scenario(env, "offsite", {"team": "T1", "days": 2})
     branches = {branch["levers"]["venue"]: branch for branch in result["branches"]}

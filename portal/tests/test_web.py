@@ -90,21 +90,18 @@ def test_serve_listens_on_loopback_by_default(environment, monkeypatch, capsys):
     assert "warning" in err.lower() and "plain HTTP" in err and KEY not in err
 
 
-def test_configuration_shows_every_tool_rule_and_graph_row(client):
+def test_configuration_shows_every_rule_and_graph_row_and_points_to_the_inspector(client, environment):
     sign_in(client)
     page = client.get("/").text
-    for text in ("Tiny handbook", "A made-up handbook, for the portal", "describe", "document_handbook",
-                 "decision_vesting", "years_of_service", "vesting", "carryover_limit",
+    for text in ("Tiny handbook", "A made-up handbook, for the portal", "years_of_service", "vesting",
+                 "carryover_limit",
                  "The match vests 25% for each full year.", "People Operations (made up)", "2026-01",
                  "&gt;= 4", "vested_percent", "meridian", "k401_2026", "offered_by", "6300", "years_of_service",
                  "Full years of service.", "handbook", "2026-11-01T09:30:00+00:00", "handbook.jsonl"):
         assert text in page, text
     assert "/passage?collection=handbook&amp;id=hb-401k" in page
-    for text in ("Instructions", "Decisions for &#x27;Tiny handbook&#x27;. Call describe first.", "Resources",
-                 "environment://describe", "What describe returns.", "Resource templates",
-                 "document://{collection}/{id}", "One document of a collection.", "Prompts", "answer_question",
-                 "Ask a question the way the reference agent does.", "question"):
-        assert text in page, text
+    assert f"npx -y @modelcontextprotocol/inspector@2.13.0 uv run clm-server {environment}" in page
+    assert "Resource templates" not in page and "document_handbook" not in page
     assert "/passage?collection=handbook&amp;id=hb-leave&amp;passage=%282%29" in page
 
 
