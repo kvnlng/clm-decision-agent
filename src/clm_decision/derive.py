@@ -86,14 +86,18 @@ class ClaudeExtractor:  # pylint: disable=too-few-public-methods
         self.client, self.model = client, model
 
     def extract(self, system: str, prompt: str, schema: dict) -> dict:
-        """The answer; raises DeriveError in one line when Claude cannot give one."""
+        """The answer; raises DeriveError in one line when Claude cannot give one, and AnswerError, as Ollama's
+        extractor does, when its answer is not JSON."""
         try:
             response = self.client.messages.create(
                 model=self.model, max_tokens=16000, system=system, messages=[{"role": "user", "content": prompt}],
                 output_config={"format": {"type": "json_schema", "schema": schema}})
-            return json.loads(next(block.text for block in response.content if block.type == "text"))
         except Exception as error:  # pylint: disable=broad-exception-caught  # the SDK raises many kinds
             raise DeriveError(f"Claude ({self.model}): {_first_line(error)}") from error
+        try:
+            return json.loads(next(block.text for block in response.content if block.type == "text"))
+        except (StopIteration, ValueError) as error:
+            raise AnswerError(f"Claude ({self.model}) did not answer in JSON: {_first_line(error)}") from error
 
 
 class OllamaExtractor:  # pylint: disable=too-few-public-methods

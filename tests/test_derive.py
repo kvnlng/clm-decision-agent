@@ -5,6 +5,7 @@ commands. No model, PostgreSQL or Ollama is needed."""
 import dataclasses
 import functools
 import sys
+import types
 
 import httpx
 import pytest
@@ -230,6 +231,40 @@ def test_an_answer_that_is_not_json_fails_the_check_without_stopping_the_run(pat
     assert layer["decisions"]["carryover_limit"]["status"] == "checked"
     entry = layer["facts"]["k401_2026.match_cap"]
     assert entry["status"] == "proposed" and "JSON" in entry["check"]["failures"][0] and entry["attempts"] == 2
+
+
+class FakeAnthropic:  # pylint: disable=too-few-public-methods
+    """The Anthropic client's messages.create, answering with the given text, or raising the given error."""
+
+    def __init__(self, reply: str = "", error: Exception | None = None):
+        self.reply, self.error, self.messages = reply, error, self
+
+    def create(self, **request):
+        if self.error is not None:
+            raise self.error
+        return types.SimpleNamespace(content=[types.SimpleNamespace(type="text", text=self.reply)])
+
+
+def test_a_claude_answer_that_is_not_json_fails_that_answer_without_stopping_the_run(path):
+    class Broken(Canned):  # pylint: disable=missing-class-docstring
+        def extract(self, system, prompt, schema):
+            if "Slot: k401_2026.match_cap\n" in prompt:
+                return derive.ClaudeExtractor(FakeAnthropic('{"value": 63'), "claude-x").extract(system, prompt,
+                                                                                                   schema)
+            return super().extract(system, prompt, schema)
+    run(path, Broken(carryover_limit=[CARRYOVER]))
+    layer = derived.read(path.parent)
+    assert layer["decisions"]["carryover_limit"]["status"] == "checked"
+    entry = layer["facts"]["k401_2026.match_cap"]
+    assert entry["status"] == "proposed" and entry["attempts"] == 2
+    assert entry["check"]["failures"][0].startswith("answer: Claude (claude-x) did not answer in JSON: ")
+
+
+def test_claude_that_cannot_be_reached_still_stops_the_run():
+    claude = derive.ClaudeExtractor(FakeAnthropic(error=RuntimeError("connection refused")), "claude-x")
+    with pytest.raises(derive.DeriveError) as raised:
+        claude.extract("system", "prompt", {"type": "object"})
+    assert not isinstance(raised.value, derive.AnswerError) and "connection refused" in str(raised.value)
 
 
 def test_claude_backend_without_the_agent_extra_says_so_in_one_line(path, monkeypatch, capsys):

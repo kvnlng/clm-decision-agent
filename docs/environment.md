@@ -453,7 +453,8 @@ uv run clm-derive status ENVIRONMENT KIND NAME STATUS --by WHO [--note TEXT]
 `gemma4:26b` through Ollama) the documents in force on `--as-of` (default today), whole. The model answers in JSON; the
 code renders a decision table into `derived/rules/NAME.dmn` and writes the entry to `derived/derived.json`, with its
 source (document, passages, quote, edition). Each entry is checked; one that fails is asked for once more with the
-failures. Approved and rejected entries on an unchanged edition are kept, unless `--fresh`. An entry **passes the
+failures. An answer that is not JSON, from Claude or Ollama, fails that entry, and the run goes on. Approved and
+rejected entries on an unchanged edition are kept, unless `--fresh`. An entry **passes the
 check** only when all of these hold:
 
 1. **Edition**: the cited document is in force on the date and its `effective_from` is the entry's edition.
