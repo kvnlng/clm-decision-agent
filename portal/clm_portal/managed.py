@@ -86,20 +86,26 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
         """Whether the server started and is still running."""
         return self.process is not None and self.process.poll() is None and self.error is None
 
-    def command(self, port: int, testing: bool) -> list[str]:
+    def command(self, server: Path, port: int, testing: bool) -> list[str]:
         """The server's command line."""
-        server = self.find("clm-server")
-        return [str(server or "clm-server"), str(self.environment), "--http", "--host", "127.0.0.1",
+        return [str(server), str(self.environment), "--http", "--host", "127.0.0.1",
                 "--port", str(port), "--key-env", SERVER_KEY_ENV, *(ADMIT_ALL if testing else [])]
 
     async def start(self, testing: bool = False) -> None:
         """Start the server, and wait until it lists its tools or exits; `error` says why it did not start."""
         self.testing, self.error = testing, None
+        server = self.find("clm-server")
+        if server is None:
+            self.process, self.error = None, "clm-server is not installed in the portal's environment"
+            return
         port, self._key = free_port(), secrets.token_urlsafe(32)
         self.url = f"http://127.0.0.1:{port}/mcp"
+        if self._stderr is not None:
+            self._stderr.close()
         self._stderr = tempfile.TemporaryFile()  # pylint: disable=consider-using-with
         try:
-            self.process = self.popen(self.command(port, testing), env=child_environment(**{SERVER_KEY_ENV: self._key}),
+            self.process = self.popen(self.command(server, port, testing),
+                                      env=child_environment(**{SERVER_KEY_ENV: self._key}),
                                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=self._stderr)
         except OSError as error:
             self.process, self.error = None, f"cannot start clm-server: {error}"
@@ -114,8 +120,8 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
                 return
             except Exception:  # pylint: disable=broad-exception-caught
                 if time.monotonic() > deadline:
-                    self.stop()
                     self.error = self._tail() or f"clm-server did not answer within {self.wait:.0f} seconds"
+                    self.stop()
                     return
                 await asyncio.sleep(0.2)
 
@@ -233,8 +239,6 @@ class Jobs:
                 job.returncode, job.output = done.returncode, scrub((done.stdout or "") + (done.stderr or ""))
             except OSError as error:
                 job.output = f"cannot run {job.argv[0]}: {error}"
-            job.running = False
-            self._current = None
             if job.returncode == 0 and on_success is not None:
                 await on_success()
         finally:

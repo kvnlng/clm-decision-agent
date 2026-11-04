@@ -368,7 +368,7 @@ async def review_page(request: Request, message: str = "", status: int = 200) ->
     collection = layer.read_layer(portal.environment, []).get("collection")
     parts = [f'<p class="{"failed" if status >= 400 else "passed"}">{esc(message)}</p>' if message else ""]
     parts += [f'<p class="failed">{esc(error)}</p>' for error in found["errors"]]
-    parts.append(job_status(portal))
+    parts.append(job_status(portal, "/review"))
     for title, items in found["groups"]:
         parts.append(f"<h2>{esc(title)}</h2>")
         parts += [await review_item(portal, session, item, collection) for item in items]
@@ -377,13 +377,14 @@ async def review_page(request: Request, message: str = "", status: int = 200) ->
     return page(portal, session, "Review", "".join(parts), status=status, changes=True)
 
 
-def job_status(portal: Portal) -> str:
-    """The running or last job, with its output; the page polls while one runs."""
+def job_status(portal: Portal, back: str) -> str:
+    """The running or last job, with its output; while one runs, the page polls and then goes back to `back`."""
     job = portal.jobs.current() or portal.jobs.last()
     if job is None:
         return ""
     if job.running:
-        return f'<p data-job-running>Running {esc(job.name)}: <code>{esc(" ".join(job.argv))}</code> ...</p>'
+        return (f'<p data-job-running="{esc(back)}">Running {esc(job.name)}: '
+                f'<code>{esc(" ".join(job.argv))}</code> ...</p>')
     outcome = "succeeded" if job.returncode == 0 else (
         f"failed (exit code {job.returncode})" if job.returncode is not None else "did not run")
     return (f'<details class="job"><summary>Last job, {esc(job.name)}, {outcome}</summary>'
@@ -549,7 +550,7 @@ def documents_body(portal: Portal, session: Session, described: dict | None, mes
     choose = "".join(f'<option value="{esc(name)}">{esc(name)}</option>' for name in found)
     files = "".join(f'<option value="{esc(name)}">{esc(name)}</option>' for name in jsonl_files(portal))
     parts = [f'<p class="{"failed" if failed else "passed"}">{esc(message)}</p>' if message else "",
-             job_status(portal), "<h2>Collections</h2>",
+             job_status(portal, "/documents"), "<h2>Collections</h2>",
              table(["collection", "description", "built"], rows) if rows else "<p>No collections.</p>",
              "<h2>Load</h2><p>Replaces what the collection holds with the file, through clm-load-documents. An "
              "upload is saved in the environment's folder, so git can hold it.</p>",

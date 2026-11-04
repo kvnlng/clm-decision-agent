@@ -25,7 +25,7 @@ held in memory, so restarting the portal signs everyone out.
 
 | Option | Default | |
 |---|---|---|
-| `--host` | `127.0.0.1` | Any other address prints a warning: the portal is plain HTTP |
+| `--host` | `127.0.0.1` | Any other address prints a warning: the portal is plain HTTP. Give the address you will type in the browser, not `0.0.0.0`: a request for any other address is refused |
 | `--port` | `8400` | |
 | `--backend`, `--model`, `--model-url` | as the chat | Ask's starting model, changeable on the page |
 

@@ -177,3 +177,24 @@ async def test_a_jobs_output_never_shows_a_secret(monkeypatch):
 
 def test_script_finds_a_console_script_beside_the_python():
     assert managed.script("clm-server") is not None and managed.script("no-such-script") is None
+
+
+@pytest.mark.anyio
+async def test_a_missing_clm_server_is_reported_and_nothing_else_is_started(tmp_path):
+    popen = FakePopen()
+    server = managed.ManagedServer(tmp_path / "environment.toml", popen=popen, connect=lambda url, key: stand_in(),
+                                   find=lambda _: None)
+    await server.start()
+    assert not popen.started and "clm-server is not installed" in server.error and not server.running
+
+
+@pytest.mark.anyio
+async def test_a_job_is_running_until_the_server_has_restarted():
+    seen = []
+    jobs = managed.Jobs(runner=recorder(), script=lambda name: Path("/bin") / name)
+
+    async def restart():
+        seen.append(jobs.current() is not None and jobs.current().running)
+    await jobs.start("load", ["clm-load-documents", "a"], on_success=restart)
+    await jobs.wait()
+    assert seen == [True] and jobs.current() is None
