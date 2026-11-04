@@ -246,10 +246,11 @@ class Jobs:
         """The job that ran most recently, running or not."""
         return self._last
 
-    async def start(self, name: str, argv: list[str],
-                    on_success: Callable[[], Awaitable[None]] | None = None) -> Job:
+    async def start(self, name: str, argv: list[str], on_success: Callable[[], Awaitable[None]] | None = None,
+                    prepare: Callable[[], object] | None = None) -> Job:
         """Start a job in the background; Busy when one is running or a change is being written. A command that is
-        not installed gives a finished job saying so."""
+        not installed gives a finished job saying so. `prepare`, such as writing an upload, runs once the job holds
+        the lock and before the command; when it raises, no job runs and the lock is freed."""
         if self.lock.locked():
             raise Busy("another job or change is running; wait for it to finish, then try again")
         found = self.find(argv[0])
@@ -258,6 +259,12 @@ class Jobs:
             self._last = job
             return job
         await self.lock.acquire()
+        if prepare is not None:
+            try:
+                prepare()
+            except BaseException:
+                self.lock.release()
+                raise
         job = Job(name, argv)
         self._current = self._last = job
         self._task = asyncio.create_task(self._run(job, [str(found), *argv[1:]], on_success))

@@ -593,12 +593,15 @@ async def documents_page(request: Request, message: str = "", status: int = 200)
                 status=status, changes=True)
 
 
-async def _start(request: Request, name: str, argv: list[str]) -> Response:
+async def _start(request: Request, name: str, argv: list[str], prepare=None) -> Response:
+    """Start a job; `prepare`, such as saving an upload, runs only once the job holds the lock."""
     portal = request.app.state.portal
     try:
-        job = await portal.jobs.start(name, argv, on_success=portal.server.restart)
+        job = await portal.jobs.start(name, argv, on_success=portal.server.restart, prepare=prepare)
     except Busy as error:
         return await documents_page(request, str(error), 409)
+    except OSError as error:
+        return await documents_page(request, f"the file cannot be saved: {error}", 500)
     if not job.running:
         return await documents_page(request, job.output, 409)
     return await documents_page(request, f"Started {name}.")
@@ -621,16 +624,17 @@ async def documents_load(request: Request) -> Response:
         if target.exists() and not form.get("overwrite"):
             return await documents_page(request, f"{name} is already in the folder; tick overwrite to replace it",
                                         409)
-        if portal.jobs.lock.locked():
-            return await documents_page(request, "a job or another change is running; wait for it to finish", 409)
-        target.write_bytes(await upload.read())
+        content = await upload.read()
+
+        def prepare() -> None:
+            target.write_bytes(content)
     else:
         name = str(form.get("file", ""))
         if name not in jsonl_files(portal):
             return await documents_page(request, "choose a .jsonl file in the folder, or upload one", 400)
-        target = folder / name
+        target, prepare = folder / name, None
     return await _start(request, f"clm-load-documents {collection}",
-                        ["clm-load-documents", str(portal.environment), collection, str(target)])
+                        ["clm-load-documents", str(portal.environment), collection, str(target)], prepare)
 
 
 async def documents_derive(request: Request) -> Response:

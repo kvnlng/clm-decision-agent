@@ -4,6 +4,7 @@
 import time
 
 import pytest
+from starlette.datastructures import UploadFile
 
 from conftest import post, sign_in
 
@@ -58,6 +59,27 @@ def test_an_upload_does_not_overwrite_without_the_tick(client, environment, runn
     assert existing.read_text() == "old\n" and not runner.seen
     assert upload(client, token, "handbook.jsonl", b"new\n", overwrite="on").status_code == 200
     assert existing.read_text() == "new\n"
+
+
+@pytest.mark.parametrize("installed", [{"clm-server", "clm-derive"}])
+def test_an_upload_is_not_saved_when_clm_load_documents_is_not_installed(client, environment, runner):
+    token = sign_in(client)
+    response = upload(client, token, "handbook.jsonl", b'{"id": "hb-1"}\n')
+    assert response.status_code == 409 and "clm-load-documents is not installed" in response.text
+    assert not (environment.parent / "handbook.jsonl").exists() and not runner.seen
+
+
+def test_an_upload_is_not_saved_when_a_job_starts_while_it_arrives(client, environment, portal, monkeypatch):
+    read = UploadFile.read
+
+    async def read_while_a_job_starts(self, *args):
+        await portal.jobs.lock.acquire()
+        return await read(self, *args)
+    monkeypatch.setattr(UploadFile, "read", read_while_a_job_starts)
+    token = sign_in(client)
+    response = upload(client, token, "handbook.jsonl", b'{"id": "hb-1"}\n')
+    assert response.status_code == 409 and "wait" in response.text
+    assert not (environment.parent / "handbook.jsonl").exists()
 
 
 def test_derive_runs_clm_derive_run(client, environment, runner):

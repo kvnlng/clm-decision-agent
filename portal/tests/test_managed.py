@@ -130,7 +130,7 @@ def recorder(release=None, code=0, output="done\n"):
 
 
 @pytest.mark.anyio
-async def test_a_second_job_waits_for_the_first():
+async def test_a_second_job_is_refused_while_the_first_runs():
     release = threading.Event()
     jobs = managed.Jobs(runner=recorder(release), script=lambda name: Path("/bin") / name)
     first = await jobs.start("load", ["clm-load-documents", "a"])
@@ -141,6 +141,43 @@ async def test_a_second_job_waits_for_the_first():
     await jobs.wait()
     assert not first.running and first.returncode == 0 and "done" in first.output and jobs.current() is None
     assert jobs.last() is first and len(jobs.runner.seen) == 1
+
+
+@pytest.mark.anyio
+async def test_a_job_can_start_once_the_last_one_finished():
+    jobs = managed.Jobs(runner=recorder(), script=lambda name: Path("/bin") / name)
+    first = await jobs.start("load", ["clm-load-documents", "a"])
+    await jobs.wait()
+    second = await jobs.start("derive", ["clm-derive", "run"])
+    await jobs.wait()
+    assert not first.running and not second.running and second.returncode == 0 and jobs.last() is second
+    assert [argv[1:] for argv, _ in jobs.runner.seen] == [["a"], ["run"]] and not jobs.lock.locked()
+
+
+@pytest.mark.anyio
+async def test_prepare_runs_only_once_the_job_holds_the_lock():
+    release = threading.Event()
+    jobs = managed.Jobs(runner=recorder(release), script=lambda name: Path("/bin") / name)
+    seen = []
+    await jobs.start("load", ["clm-load-documents", "a"], prepare=lambda: seen.append(jobs.lock.locked()))
+    with pytest.raises(managed.Busy):
+        await jobs.start("load", ["clm-load-documents", "b"], prepare=lambda: seen.append("second"))
+    release.set()
+    await jobs.wait()
+    missing = managed.Jobs(runner=recorder(), script=lambda name: None)
+    await missing.start("load", ["clm-load-documents", "c"], prepare=lambda: seen.append("missing"))
+    assert seen == [True]
+
+
+@pytest.mark.anyio
+async def test_a_failed_prepare_runs_no_job_and_frees_the_lock():
+    jobs = managed.Jobs(runner=recorder(), script=lambda name: Path("/bin") / name)
+
+    def fail():
+        raise OSError("disk full")
+    with pytest.raises(OSError, match="disk full"):
+        await jobs.start("load", ["clm-load-documents", "a"], prepare=fail)
+    assert not jobs.lock.locked() and jobs.current() is None and not jobs.runner.seen
 
 
 @pytest.mark.anyio
