@@ -85,17 +85,10 @@ def describe(env: Environment) -> dict:
                                  "approvals": list(scenario.approvals)}
                           for name, scenario in env.scenarios.items()},
             **({"collections": {name: {"description": collection.description, "filters": collection.filters,
-                                       "built": env.store.built(name),
-                                       **({"resources": _resources_note(name)} if env.document_tools else {})}
+                                       "built": env.store.built(name)}
                                 for name, collection in env.collections.items()}} if env.collections else {}),
             **({"topics": env.topics()} if env.topics() else {}),
             **({"derived": _derived(env)} if env.slots else {})}
-
-
-def _resources_note(name: str) -> str:
-    return (f"Each document is document://{name}/ID and each passage document://{name}/ID/PASSAGE, as document_{name} "
-            f"returns them; the documents are listed as resources when the collection holds at most "
-            f"{LISTED_DOCUMENTS} documents when the server starts.")
 
 
 def _derived(env: Environment) -> dict:
@@ -193,28 +186,53 @@ def _add_document_tools(add: Callable, env: Environment, name: str, collection) 
             inspect.Signature([ident, _optional("depth", int, 1)], return_annotation=_RESULT))
 
 
-def _json(run: Callable[[], dict]) -> str:
+def _json(trace, uri: str, run: Callable[[], dict]) -> str:
     """A resource's content: what run returns, as JSON the way a tool's result is; a failure is a ResourceError
-    carrying the one-line reason, as a tool's is a ToolError."""
-    try:
-        return pydantic_core.to_json(run(), fallback=str).decode()
-    except (engine.StepError, derived.DerivedError) as error:
-        raise ResourceError(str(error)) from error
-    # The owner's code and the store can fail in any way; the client should still learn why
-    except Exception as error:  # pylint: disable=broad-exception-caught
-        raise ResourceError(f"{type(error).__name__}: {error}") from error
+    carrying the one-line reason, as a tool's is a ToolError. With `trace`, the read is written to it like a call,
+    named by its URI."""
+    with trace.call(uri) if trace else contextlib.nullcontext({}) as record:
+        try:
+            found = pydantic_core.to_json(run(), fallback=str).decode()
+            record["outcome"] = {"ok": True}
+            return found
+        except (engine.StepError, derived.DerivedError) as error:
+            raise ResourceError(str(error)) from error
+        # The owner's code and the store can fail in any way; the client should still learn why
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            raise ResourceError(f"{type(error).__name__}: {error}") from error
 
 
-def _add_document_resources(server: MCPServer, env: Environment, add: Callable) -> None:
+def in_force(env: Environment) -> dict:
+    """The derived entries admitted to decide, each with its origin, status and source; the source's quote only when
+    the document tools are offered. The whole layer, with entries not in force, is the portal's."""
+    entries = {}
+    for name in env.admitted:
+        slot = env.slots[name]
+        if slot.kind == "decisions":
+            decision = env.decisions[name]
+            status, source, more = decision.status, decision.source, {}
+        else:
+            entry = env.derived_facts[slot.node][slot.property]
+            status, source = entry.get("status"), entry.get("source")
+            more = {"node": slot.node, "property": slot.property, "value": entry.get("value")}
+        cited = {key: value for key, value in (source or {}).items() if env.document_tools or key != "quote"}
+        entries[name] = {"kind": slot.kind, "origin": "derived", "status": status, "source": cited, **more}
+    return {"admit": list(env.admit), "entries": entries}
+
+
+def _add_document_resources(server: MCPServer, env: Environment, add: Callable, trace) -> None:
     """Templates for a document and a passage, and every document of a small enough collection listed."""
     def document(collection: str, id: str) -> str:  # pylint: disable=redefined-builtin
-        return _json(lambda: engine.run_document(env, collection, {"id": id}))
+        return _json(trace, f"document://{collection}/{id}",
+                     lambda: engine.run_document(env, collection, {"id": id}))
 
     def passage(collection: str, id: str, passage: str) -> str:  # pylint: disable=redefined-builtin
-        return _json(lambda: engine.run_document(env, collection, {"id": id, "passage": passage}))
+        return _json(trace, f"document://{collection}/{id}/{passage}",
+                     lambda: engine.run_document(env, collection, {"id": id, "passage": passage}))
     server.resource("document://{collection}/{id}", name="document", mime_type=JSON,
-                    description="One document of a collection with its passages, as document_COLLECTION returns "
-                                "it.")(document)
+                    description="One document of a collection with its passages, as document_COLLECTION returns it. "
+                                "Each document is also listed when its collection holds at most "
+                                f"{LISTED_DOCUMENTS} documents when the server starts.")(document)
     server.resource("document://{collection}/{id}/{passage}", name="passage", mime_type=JSON,
                     description="One passage of a document, by its label, as document_COLLECTION returns it.")(passage)
     for name in env.collections:
@@ -225,30 +243,30 @@ def _add_document_resources(server: MCPServer, env: Environment, add: Callable) 
                 lambda name=name, ident=ident: engine.run_document(env, name, {"id": ident}))
 
 
-def _add_resources(server: MCPServer, env: Environment) -> None:
-    """The environment's data as resources: describe, every rule, the documents when there are document tools, and
-    the derived layer when there is one."""
+def _add_resources(server: MCPServer, env: Environment, trace) -> None:
+    """The environment's data as resources: describe, every rule when there is a rule tool, the documents when there
+    are document tools, and the derived entries in force when there is a derived layer."""
     def add(uri: str, name: str, description: str, run: Callable[[], dict]) -> None:
         server.add_resource(FunctionResource(uri=uri, name=name, description=description, mime_type=JSON,
-                                             fn=lambda: _json(run)))
+                                             fn=lambda: _json(trace, uri, run)))
 
     add("environment://describe", "describe", "What describe returns: the environment's queries, decisions, "
         "calculations, scenarios, collections, topics and derived slots.", lambda: describe(env))
-    rules = sorted(name for name, decision in env.decisions.items() if decision.rule)
-    for name in rules:
-        add(f"rule://{name}", f"rule {name}",
-            f"What the rule tool returns for {name}: {env.decisions[name].description}",
-            lambda name=name: explain_rule(env, name))
-    if rules:
+    if env.topics():
+        for name in sorted(name for name, decision in env.decisions.items() if decision.rule):
+            add(f"rule://{name}", f"rule {name}",
+                f"What the rule tool returns for {name}: {env.decisions[name].description}",
+                lambda name=name: explain_rule(env, name))
         server.resource("rule://{name}", name="rule", mime_type=JSON,
                         description="One rule, supplied or derived, with its origin and status, as the rule tool "
-                                    "returns it.")(lambda name: _json(lambda: explain_rule(env, name)))
+                                    "returns it.")(lambda name: _json(trace, f"rule://{name}",
+                                                                      lambda: explain_rule(env, name)))
     if env.collections and env.document_tools:
-        _add_document_resources(server, env, add)
+        _add_document_resources(server, env, add, trace)
     if env.slots:
-        add("derived://layer", "derived layer", "The derived layer as stored: every rule, fact and conflict derived "
-            "from the documents, with its status, check and who decided it.",
-            lambda: derived.read(env.path.resolve().parent))
+        add("derived://in-force", "derived entries in force", "The derived entries in force: each rule and fact "
+            "read from the documents and admitted to decide, with its origin, status and source.",
+            lambda: in_force(env))
 
 
 def _add_prompt(server: MCPServer, env: Environment) -> None:
@@ -305,6 +323,6 @@ def build_environment_server(env: Environment, trace: tracing.TraceWriter | None
             lambda args: explain_rule(env, args["name"]), _signature({"name": "string"}))
     add("describe", "The environment: its queries, decisions, calculations and scenarios, with their parameters.",
         lambda _: describe(env), _signature({}))
-    _add_resources(server, env)
+    _add_resources(server, env, trace)
     _add_prompt(server, env)
     return server

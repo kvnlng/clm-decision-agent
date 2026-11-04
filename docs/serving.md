@@ -137,7 +137,8 @@ workspace's outbound network rules must allow it.
 `--trace <file>` writes one line per call: its time, and how much went on waiting for CLM, encoding, the heads, each of the
 scenario's tools and matching stored corrections, with the texts and tokens encoded and how many came from the cache. For
 an environment, each line counts the queries, decisions, calculations and judgements with each kind's time; a scenario's
-line gives the branches kept, rejected and failed, and the best.
+line gives the branches kept, rejected and failed, and the best. A resource read is written the same way, named by its
+URI (`rule://vesting`), with the caller and whether it failed.
 
 ```bash
 uv run clm-server my_scenario.toml --http --trace calls.jsonl

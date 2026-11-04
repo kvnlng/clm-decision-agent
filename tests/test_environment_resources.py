@@ -4,13 +4,14 @@ with a stand-in store so no PostgreSQL or Ollama is needed."""
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import dataclasses
 import json
+import shutil
 from pathlib import Path
 
 import pytest
 from fake_documents import FakeEmbedder, FakeStore
 from mcp import Client, MCPError
 
-from clm_decision import derived, environment_server, instructions
+from clm_decision import derived, environment_server, instructions, tracing
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
 
@@ -68,16 +69,73 @@ async def test_an_unknown_rule_says_which_rules_there_are():
             await client.read_resource("rule://nope")
 
 
+def copied(tmp_path, status_of: dict):
+    """The handbook in tmp_path, with the named derived decisions given another status."""
+    folder = tmp_path / "handbook"
+    shutil.copytree(HANDBOOK, folder, ignore=shutil.ignore_patterns("runs"))
+    layer = derived.read(folder)
+    for name, status in status_of.items():
+        layer["decisions"][name]["status"] = status
+    derived.write(folder, layer)
+    return load_environment(folder / "environment_derived.toml", store=store(), embedder=FakeEmbedder())
+
+
 @pytest.mark.anyio
-async def test_the_derived_layer_is_a_resource_only_when_the_environment_has_one():
-    async with Client(build_environment_server(load("environment_derived.toml"))) as client:
-        found = await read(client, "derived://layer")
+async def test_the_derived_resource_holds_only_the_entries_in_force(tmp_path):
+    env = copied(tmp_path, {"vesting": "rejected", "tuition_eligible": "proposed"})
+    async with Client(build_environment_server(env)) as client:
+        found = await read(client, "derived://in-force")
         rule = await read(client, "rule://match_eligible")
-    assert found == derived.read(HANDBOOK) and found["decisions"]
+    assert set(found["entries"]) == set(env.admitted)
+    assert "vesting" not in found["entries"] and "tuition_eligible" not in found["entries"]
+    match = found["entries"]["match_eligible"]
+    assert match["origin"] == "derived" and match["status"] == "approved" and match["kind"] == "decisions"
+    assert match["source"]["document"] and match["source"]["passages"] and match["source"]["quote"]
+    assert found["admit"] == ["approved"]
     assert rule["origin"] == "derived" and rule["status"] == "approved" and rule["source"]["document"]
     async with Client(build_environment_server(load())) as client:
         listed = {str(resource.uri) for resource in (await client.list_resources()).resources}
-    assert "derived://layer" not in listed
+    assert not any(uri.startswith("derived://") for uri in listed)
+
+
+@pytest.mark.anyio
+async def test_without_document_tools_the_derived_resource_holds_no_quote(tmp_path):
+    env = dataclasses.replace(copied(tmp_path, {}), document_tools=False)
+    async with Client(build_environment_server(env)) as client:
+        found = await read(client, "derived://in-force")
+    assert found["entries"] and all("quote" not in entry["source"] for entry in found["entries"].values())
+    assert all(entry["source"]["document"] for entry in found["entries"].values())
+
+
+@pytest.mark.anyio
+async def test_a_resource_read_is_traced_like_a_tool_call_and_so_is_a_failed_one(tmp_path):
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
+    async with Client(build_environment_server(load(), trace=writer)) as client:
+        await client.read_resource("rule://match_eligible")
+        await client.read_resource("document://handbook/hb-welcome/(1)")
+        with pytest.raises(MCPError):
+            await client.read_resource("rule://nope")
+    writer.close()
+    records = [json.loads(line) for line in (tmp_path / "trace.jsonl").read_text().splitlines()]
+    assert [(record["tool"], record["outcome"]) for record in records] == [
+        ("rule://match_eligible", {"ok": True}), ("document://handbook/hb-welcome/(1)", {"ok": True}),
+        ("rule://nope", {"error": "ResourceError"})]
+    assert all(record["ms"] >= 0 for record in records)
+
+
+@pytest.mark.anyio
+async def test_rule_resources_are_offered_only_with_the_rule_tool():
+    env = load()
+    decisions = {name: dataclasses.replace(decision, rule=dataclasses.replace(decision.rule, governs=()))
+                 if decision.rule else decision for name, decision in env.decisions.items()}
+    env = dataclasses.replace(env, decisions=decisions)
+    assert not env.topics()
+    async with Client(build_environment_server(env)) as client:
+        tools = {tool.name for tool in (await client.list_tools()).tools}
+        listed = {str(resource.uri) for resource in (await client.list_resources()).resources}
+        templates = {template.uri_template for template in (await client.list_resource_templates()).resource_templates}
+    assert "rule" not in tools
+    assert not any(uri.startswith("rule://") for uri in listed | templates)
 
 
 @pytest.mark.anyio
@@ -101,17 +159,19 @@ async def test_a_document_and_a_passage_read_as_the_document_tool_returns_them()
 
 
 @pytest.mark.anyio
-async def test_a_small_collection_lists_each_document_and_describe_says_the_limit():
+async def test_a_small_collection_lists_each_document_and_the_template_says_the_limit():
     async with Client(build_environment_server(load())) as client:
         resources = {str(resource.uri): resource for resource in (await client.list_resources()).resources}
-        templates = {template.uri_template for template in (await client.list_resource_templates()).resource_templates}
-        described = await read(client, "environment://describe")
+        templates = {template.uri_template: template
+                     for template in (await client.list_resource_templates()).resource_templates}
+        described = await client.call_tool("describe", {})
     documents = sorted(uri for uri in resources if uri.startswith("document://"))
     assert len(documents) == 13 and "document://handbook/hb-welcome" in documents
     assert resources["document://handbook/hb-401k-2026"].description.startswith("Meridian")
-    assert {"document://{collection}/{id}", "document://{collection}/{id}/{passage}"} <= templates
-    note = described["collections"]["handbook"]["resources"]
+    assert {"document://{collection}/{id}", "document://{collection}/{id}/{passage}"} <= set(templates)
+    note = templates["document://{collection}/{id}"].description
     assert f"at most {environment_server.LISTED_DOCUMENTS} documents" in note
+    assert set(described.structured_content["collections"]["handbook"]) == {"description", "filters", "built"}
 
 
 @pytest.mark.anyio

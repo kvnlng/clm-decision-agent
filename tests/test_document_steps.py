@@ -107,10 +107,7 @@ def test_document_and_citations_are_steps(env):
 def test_describe_lists_collections_with_their_date(env):
     assert describe(env)["collections"] == {"cases": {
         "description": "Court opinions on non-competes", "filters": {"state": "string", "year": "integer"},
-        "built": BUILT, "resources": (
-            "Each document is document://cases/ID and each passage document://cases/ID/PASSAGE, as document_cases "
-            "returns them; the documents are listed as resources when the collection holds at most 100 documents "
-            "when the server starts.")}}
+        "built": BUILT}}
 
 
 @pytest.mark.anyio
