@@ -649,14 +649,16 @@ nothing else:
 
 Both get the same tools and instructions: start from `describe`; run the scenario rather than combine queries and
 decisions; never calculate; name the rejected branches, with reasons and the dependencies behind them; cite the steps
-relied on; say plainly when no tool can answer part of the question.
+relied on; say plainly when no tool can answer part of the question. A line that names a tool the server does not
+offer (the scenario tool, or `rules`) is left out, as in the server's `answer_question` prompt.
 
 `--no-tools` asks the question alone, with no server and a short prompt of its own (answer the employee's question;
 say so when you do not know): the baseline of a model with no access to your data. Every figure in its answer that is
 not in the question is listed as one no tool returned.
 
 The question, answer, every call, the model and the time taken go as JSON to the environment's git-ignored `runs/`
-(for a URL, `runs/` in the current folder). Claude's credentials are the Anthropic SDK's usual ones; none are stored.
+(for a URL, `runs/` in the current folder). `clm-new-environment` writes a `.gitignore` for it, so it stays out of git
+wherever the folder is. Each run gets its own file: a second run in the same second gets `-2`. Claude's credentials are the Anthropic SDK's usual ones; none are stored.
 
 The number check then lists any figure in the answer that no tool returned. A figure matches a tool's number when that
 number, in the answer's unit and rounded to its decimals, is the figure: "$1.2 million" matches 1234567, and "18.4%"
