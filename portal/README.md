@@ -106,8 +106,9 @@ Product Line X has three components: ...
 ```
 
 The chat sends the key in `DECISION_SERVER_KEY` (a shared key or an OAuth token) as a bearer token, over https or
-to this computer only, and never prints it. Follow-up questions keep the conversation. `/tools` lists the tools; `/quit` leaves. Results over 1,500
-characters are shortened on screen (the model gets them whole); `--full` prints them in full.
+to this computer only, and never prints it. Follow-up questions keep the conversation. `/tools` lists the tools;
+`/quit` leaves. Results over 1,500 characters are shortened on screen (the model gets them whole); `--full` prints
+them in full.
 
 ### Any model
 

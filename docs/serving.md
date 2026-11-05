@@ -32,7 +32,7 @@ uv run clm-server my_scenario.toml --http [--host 127.0.0.1] [--port 8000] [--re
 - It listens on this computer only by default. For callers elsewhere, set `--host`, name the address they use with
   `--allowed-host` (for example `--allowed-host decisions.example.org`), and put HTTPS in front: the key travels in
   every request. An allowed host is taken on any port, and so is a page served over https from it; calls from the
-  server's own computer (`127.0.0.1`, `localhost`) are still taken too.
+  server's own computer (`127.0.0.1`, `localhost`, `[::1]`) are still taken too.
 - A text CLM reads may be at most 32,000 characters: in decide, decide_many, check_call (with its call) and correct,
   and in an environment's judge tools. CLM reads only its last 2,048 tokens, and a longer text would hold up other
   callers while it is read. A longer one is refused.
@@ -204,8 +204,8 @@ encoded and, for an environment, steps per call. A stage no call had is left out
 
 - The trace leaves out the requests' text. `--trace-text` adds it; the trace then needs the same care as the corrections
   record ([data-handling.md](data-handling.md)). It covers `decide`, `decide_many`, `check_call` and `correct`; an
-  environment's tools' arguments, such as a search's query, are never written to the trace. The trace file is made readable by its
-  owner only, like the record.
+  environment's tools' arguments, such as a search's query, are never written to the trace. The trace file is made
+  readable by its owner only, like the record.
 - Tracing is off by default and adds little: a few clock readings and counts per call. A background thread writes the
   file; if it cannot, the server says so once and stops tracing, and decisions carry on.
 - On a Mac, the MLX build encodes and applies the heads inside its own code, so its trace counts the heads' time as
