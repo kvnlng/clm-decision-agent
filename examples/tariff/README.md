@@ -3,91 +3,87 @@
 A COO asks: *"With the recent tariff hikes in Region A, should we shift our primary component sourcing for Product
 Line X to Region B, and what would be the impact on our Q3 profit margins and SLA delivery times?"*
 
-This folder is a made-up manufacturer set up as an environment ([docs/environment.md](../../docs/environment.md)),
-so that the question can be answered from its graph, its rules and its levers, with every figure traced.
+The folder is a made-up manufacturer set up as an environment ([docs/environment.md](../../docs/environment.md)):
+the answer comes from its graph, rules and levers, every figure traced.
 
 ## The company
 
-- **Product Line X** (PX) sells 10,000 units a quarter at $250. Each unit has a housing (plastics), a controller
-  board (electronics) and a drive motor (electromechanical).
-- **Region A suppliers:** Arden Plastics, Arden Circuits and Aster Motors. Delivery takes 9 to 10 days, the defect
-  rate is under 1%, and freight is $4 a unit.
-- **Region B suppliers:** Bayline Components (housing and board) and Borealis Motors. Each part costs $1–2 more,
-  delivery takes 13 to 14 days, the defect rate is about 1.2%, and freight is $9 a unit.
-- **Key clients:** Northwind Hospitals and Corvid Logistics (strategic tier) and Bluepeak Retail (standard tier).
-  Harbour Schools buys too, but is not a key client.
-- **The planted dependency:** each Region A supplier relies on a different raw-material provider, but both Region B
-  suppliers depend on **Kestrel Polymers**, in Region C.
+`graph/nodes.csv` and `graph/edges.csv` (20 nodes, 24 edges) hold every supplier's prices, lead times, defect rates
+and freight; the owner's functions are in `tariff_functions.py`. What the findings depend on:
 
-The graph is in `graph/` (20 nodes, 24 edges) and the owner's functions are in `tariff_functions.py`.
+- Product Line X (`PX`): 10,000 units a quarter at $250; a housing (plastics), a controller board (electronics)
+  and a drive motor (electromechanical).
+- Region A suppliers (Arden Plastics, Arden Circuits, Aster Motors): 9 to 10 days, under 1% defects. Region B
+  (Bayline Components, Borealis Motors): $1–2 more a part, 13 to 14 days, about 1.2% defects, far less tariff.
+- Key clients: Northwind Hospitals and Corvid Logistics (strategic), Bluepeak Retail (standard); Harbour Schools
+  is not key.
+- The planted dependency: each Region A supplier has its own raw-material provider; both Region B suppliers depend
+  on **Kestrel Polymers** in Region C.
 
 ## The rules
 
-| Rule | File | Says |
-|---|---|---|
-| Tariff rate | `rules/tariff_rate.dmn` | Region A after the hike: 25% on plastics, 30% on electronics, 25% on electromechanical. Region B: 5%, 8%, 6% |
-| SLA threshold | `rules/sla_threshold.dmn` | Deliveries may slip by at most 5 days for a strategic client, 10 for a standard one |
-| Quality threshold | `rules/quality_threshold.dmn` | Product Line X allows a defect rate of at most 1.5% |
-| Supply concentration | `rules/supply_concentration.dmn` | No raw-material provider may carry more than 60% of supply |
-| News risk | `rules/news_risk.dmn` | No supplier in use may have news CLM judges a delivery risk with probability above 0.82 |
+| Rule (`rules/*.dmn`) | Threshold |
+|---|---|
+| `tariff_rate` | Region A after the hike: 25% plastics, 30% electronics, 25% electromechanical. Region B: 5%, 8%, 6% |
+| `sla_threshold` | Deliveries may slip at most 5 days for a strategic client, 10 for a standard one |
+| `quality_threshold` | Defect rate at most 1.5% |
+| `supply_concentration` | No raw-material provider may carry more than 60% of supply |
+| `news_risk` | No supplier in use may have news CLM judges a delivery risk with probability above 0.82 |
 
-The last three are the `sourcing` scenario's limits, so every branch checks them all: the SLA rule once per key
-client. A product with no key clients would fail every branch, because the SLA limit is then never checked; that is
-deliberate. An owner who wants such products compared would check the rule once with a neutral input, or leave the
-limit out of the scenario.
+The `sourcing` scenario's limits are the SLA, quality and concentration rules, checked by every branch, the SLA rule
+once per key client. A product with no key clients fails every branch, since the SLA limit is never checked; that
+is deliberate. To compare such products, check the rule once with a neutral input or leave the limit out.
 
 ## The levers
 
-The share of each component bought from Region B: 0, 50% or 100%. The objective is the Q3 margin. A branch's lead
-time is each component's volume-weighted lead time, and the product waits for its slowest component. The delivery
-extension is measured against buying everything in Region A. A component with no offer in a region the branch
-buys from, or a supplier outside Region A and Region B, stops the branch with an error that names it.
+The lever is the share of each component bought from Region B: 0, 50% or 100%; the objective is the Q3 margin.
+Lead time is volume-weighted per component and the product waits for its slowest; the extension is measured against
+buying everything in Region A. A component with no offer in a region the branch buys from, or a supplier outside
+Regions A and B, stops the branch with an error naming it.
 
-| Region B share | Q3 margin | Delivery extension | Defect rate | Largest share on one provider | Result |
+| Region B share | Q3 margin | Extension | Defect rate | Largest share on one provider | Result |
 |---|---|---|---|---|---|
 | 0 | $662,500 | 0 days | 0.80% | 33% | kept |
 | 50% | $704,900 | 2 days | 1.02% | 50%, Kestrel Polymers | **kept, best** |
 | 100% | $747,300 | 4 days | 1.23% | 100%, Kestrel Polymers | rejected: supply concentration |
 
-Moving everything would earn the most, and it meets the delivery and quality limits. It is rejected because all
-supply would then depend on Kestrel Polymers. Half is the best branch no limit rejects.
+Moving everything earns the most and meets the delivery and quality limits, but all supply would depend on Kestrel
+Polymers. Half is the best branch no limit rejects.
 
 ## The news
 
-Three suppliers have news on the graph (the `news` column of `graph/nodes.csv`). Borealis Motors, Region B's motor
-supplier: workers at its only plant have voted to strike from 1 August. Bayline Components has opened a second
-line, and Arden Plastics was named supplier of the year. No rule can read that, so the `sourcing_with_news` scenario
-asks CLM, through the `delivery_risk` judge, whether each news line about a supplier in use is a delivery risk. The
-highest probability goes to the `news_risk` limit. The `sourcing` scenario is unchanged, and never loads CLM.
+Three suppliers have news (the `news` column of `graph/nodes.csv`): a strike at Borealis Motors' only plant from
+1 August, a second line at Bayline, an award for Arden Plastics. No rule can read that, so `sourcing_with_news`
+asks CLM through the `delivery_risk` judge whether each news line about a supplier in use is a delivery risk and
+passes the highest probability to `news_risk`. `sourcing` is unchanged and never loads CLM.
 
 | Region B share | News judged (CLM's probability of a delivery risk) | Result |
 |---|---|---|
-| 0 | Arden Plastics' award 0.792 | **kept, best** |
-| 50% | Arden 0.792, Bayline's new line 0.772, Borealis' strike 0.921 | rejected: news risk |
-| 100% | Bayline 0.772, Borealis 0.921 | rejected: supply concentration and news risk |
+| 0 | Arden's award 0.792 | **kept, best** |
+| 50% | Arden 0.792, Bayline's line 0.772, Borealis' strike 0.921 | rejected: news risk |
+| 100% | Bayline 0.772, Borealis 0.921 | rejected: supply concentration, news risk |
 
-**How the threshold was chosen.** `judge_news.py` asks the same question of twelve made-up, labelled news lines
-(`news_cases.jsonl`) and prints each probability, on MLX on the Mac:
+**How the threshold was chosen.** `judge_news.py` asks the same question of twelve made-up, labelled lines
+(`news_cases.jsonl`). On MLX on the Mac:
 
-| Probability | Delivery risk? | News |
+| Probability | Risk? | News |
 |---|---|---|
-| 0.975 | yes | Coriander Metals has filed for insolvency |
-| 0.950 | yes | Flooding has closed Bayline's port |
-| 0.921 | yes | Borealis Motors' workers have voted to strike |
-| 0.919 | yes | A cyberattack has shut Altamira Resins' ordering systems |
-| 0.904 | yes | Region A has banned exports of electric motors |
-| 0.843 | yes | A fire destroyed Halden Steel's rolling mill |
-| 0.792 | no | Arden Plastics was named supplier of the year |
-| 0.772 | no | Bayline opened a second assembly line |
-| 0.758 | no | Borealis published unchanged prices |
-| 0.715 | no | Arden Circuits appointed a new chief executive |
-| 0.656 | no | Aster Motors moved its head office |
-| 0.470 | no | Kestrel Polymers renewed its supply contracts |
+| 0.975 | yes | Coriander Metals insolvent |
+| 0.950 | yes | Flooding closed Bayline's port |
+| 0.921 | yes | Borealis Motors' strike vote |
+| 0.919 | yes | Cyberattack shut Altamira Resins' ordering |
+| 0.904 | yes | Region A banned motor exports |
+| 0.843 | yes | Fire destroyed Halden Steel's mill |
+| 0.792 | no | Arden Plastics supplier of the year |
+| 0.772 | no | Bayline opened a second line |
+| 0.758 | no | Borealis' prices unchanged |
+| 0.715 | no | Arden Circuits' new chief executive |
+| 0.656 | no | Aster Motors moved head office |
+| 0.470 | no | Kestrel Polymers renewed contracts |
 
-The two groups separate, so 0.82, between 0.792 and 0.843, rejects every risk and none of the others. **But the gap
-is only 0.05, and the question leans towards yes:** an award scored 0.79. CLM's probabilities are relative, not
-calibrated, and twelve lines are a small sample. A milder risk, or harmless news worded more alarmingly, could land
-on the wrong side. The judgement is a reason for a person to look at Borealis Motors, not a verdict to act on alone.
+The groups separate, so 0.82 rejects every risk and none of the others. But the gap is only 0.05 and the question
+leans towards yes (an award scored 0.79); CLM's probabilities are relative, not calibrated, and twelve lines are a
+small sample. The judgement is a reason for a person to look at Borealis Motors, not a verdict to act on alone.
 
 ## Run it
 
@@ -99,10 +95,10 @@ uv run python examples/tariff/judge_news.py   # the news measurement, with CLM
 ```
 
 On Neo4j: load the graph, then set `[graph] backend = "neo4j"` in `environment.toml`. Each query's Cypher is beside
-its function, and `tests/test_graph_neo4j.py -m slow` checks that both graphs give the same rows and branches
-([docs/environment.md](../../docs/environment.md#on-neo4j)). Reload the graph whenever `graph/` changes: a database
-loaded before the `news` column has no news, so `sourcing_with_news` would find none and decide the news limit with
-0.0 (its trace then says "no supplier in use has news").
+its function; `tests/test_graph_neo4j.py -m slow` checks both graphs give the same rows and branches
+([docs/environment.md](../../docs/environment.md#on-neo4j)). Reload whenever `graph/` changes: a database loaded
+before the `news` column has no news, so `sourcing_with_news` decides the news limit with 0.0 ("no supplier in use
+has news").
 
 ```bash
 set -a; . ./.neo4j-local.env; set +a
@@ -111,62 +107,33 @@ uv run clm-load-graph examples/tariff/environment.toml
 
 ## What happened when the models were asked
 
-On 29 October 2026, the question above went to Claude Opus 5.5 twice and to `gemma4:26b` three times, running
-locally through Ollama on an M5 Max. All the runs used the built-in graph.
+On 29 October 2026 the question above went to Claude Opus 5.5 (API) and `gemma4:26b` (Ollama, M5 Max). Runs 1–5:
+built-in graph, server unable to judge news. Run 6: Neo4j, shorter question. Runs 7–8: server able to judge news,
+models not told. Calls: D `describe`, S `scenario_sourcing`, N `scenario_sourcing_with_news`.
 
-| Run | Tool calls | Recommendation | Named Kestrel Polymers | Said both Region B suppliers depend on it | Figures no tool returned | Time |
-|---|---|---|---|---|---|---|
-| Claude, 1 | `describe`, `scenario_sourcing` | half to Region B | yes | yes | none | not recorded |
-| Claude, 2 | `describe`, `scenario_sourcing` | half to Region B | yes | yes | **$42,400** | 17.8 s |
-| gemma4, 1 | `describe`, `scenario_sourcing` | half to Region B | yes | no | none | 20.8 s |
-| gemma4, 2 | `describe`, `scenario_sourcing` | half to Region B | yes | no | none | 12.1 s |
-| gemma4, 3 | `describe`, `scenario_sourcing` | half to Region B | yes | no | none | 19.0 s |
+| Run | Calls | Time | Recommendation | What went wrong |
+|---|---|---|---|---|
+| 1 Claude | D, S | not recorded | half to Region B, right | nothing |
+| 2 Claude | D, S | 17.8 s | half, right | gave the gain as **$42,400**, its own arithmetic on two tool figures: flagged by the number check; correct, but traced to no step |
+| 3 gemma4 | D, S | 20.8 s | half, right | did not say why Kestrel Polymers carries all the supply, though the instructions ask for the dependency behind a rejection |
+| 4 gemma4 | D, S | 12.1 s | half, right | same |
+| 5 gemma4 | D, S | 19.0 s | half, right | same |
+| 6 gemma4, Neo4j | D, S | 14.6 s | half, right | headed the 0% branch "Rejected" though it passed every limit and only ranked lower; the number check checks figures, not words |
+| 7 Claude, news | D, N, S | 30.0 s | stay in Region A, right | nothing |
+| 8 gemma4, news | D, S | 15.2 s | half, wrong | never ran the news scenario, so missed the strike; every figure right for a question without the news |
 
-- **Every run reached the same decision, by the same two calls.** That is the design working: the scenario did the
-  deciding, and the models reported it.
-- **Claude's second answer broke the rule against calculating.** It gave the gain of moving half as "$42,400". That
-  is the difference between two figures the tools returned, worked out by the model, and the number check flagged
-  it. The arithmetic happens to be right, but the figure came from the model, not from any traced step.
-- **Claude's answers were fuller, and explained the dependency.** They listed:
-  - the tariff rates;
-  - the three key clients by name and tier;
-  - the margin rate and tariff cost of every branch;
-  - that both Region B suppliers buy from Kestrel Polymers.
+- Runs 1–6 made the same two calls and reached the same decision: the scenario decided, the models reported.
+- Claude's answers were fuller (tariff rates, the key clients by name and tier, every branch's margin rate and
+  tariff cost, the Kestrel dependency) and named what the analysis leaves out: shares between 50% and 60%,
+  transition time, switching costs, supplier capacity. gemma4's were shorter (margin, extension, the defect rate once
+  in three, the rejection naming Kestrel), did no arithmetic of their own, printed figures as given ("704,900.0")
+  and never said what was not modelled. gemma4 was free and local; Claude about as fast, for an API call.
+- With the news, Claude explained both rejections (the strike at 0.92; Kestrel and the strike), ran `sourcing` to
+  show half would win without the news, warned unprompted that the award scored 0.79 and the line 0.77 so a person
+  should check the strike, and said it cannot test a mix such as motors staying in Region A. gemma4 never looked:
+  the framework gives the evidence; looking is the agent's choice. To have the news always checked, offer one
+  scenario with the news limit, not two.
 
-  Both said what the analysis leaves out. The first named shares between 50% and 60%, and transition time; the
-  second named switching costs and supplier capacity.
-- **gemma4's answers were shorter, and never did arithmetic of their own.** They gave:
-  - the margin and the delivery extension;
-  - in one of the three, the defect rate;
-  - the rejection with its reason, naming Kestrel Polymers.
-
-  None said why Kestrel carries all the supply (both Region B suppliers depend on it), although the instructions
-  ask for the dependency behind a rejection. None mentioned what was not modelled. They printed figures as the
-  tools gave them ("704,900.0").
-- **gemma4 was free and stayed on the Mac.** Claude was about as fast, at the cost of an API call.
-- **On Neo4j, gemma4 made one labelling mistake.** In a sixth run, with the example on Neo4j and a shorter question,
-  it made the same two calls, took 14.6 s and recommended half. But it headed the 0% branch "Rejected", although it
-  passed every limit and only ranked lower. The number check cannot catch that: it checks figures, not words.
-
-**With the news, the two models gave different answers.** The same question went to each model once more, with the
-server able to judge news. Neither was told about the news.
-
-| Run | Tool calls | Recommendation | Mentioned the strike | Figures no tool returned | Time |
-|---|---|---|---|---|---|
-| Claude | `describe`, `scenario_sourcing_with_news`, `scenario_sourcing` | stay in Region A | yes | none | 30.0 s |
-| gemma4 | `describe`, `scenario_sourcing` | half to Region B | no | none | 15.2 s |
-
-- **Claude chose the news scenario and recommended staying in Region A.** It said why half was rejected (the strike,
-  judged 0.92), and why everything was rejected (Kestrel Polymers and the strike). It also ran `sourcing` to show
-  half would be best without the news. Unprompted, it warned that CLM also scored the award 0.79 and the new line
-  0.77, so the rejection rests on a narrow gap and a person should check the strike. It said the model cannot test
-  a mix such as keeping motors in Region A.
-- **gemma4 ran the scenario without the news and recommended half.** It was twice as fast and its figures were all
-  traced, but it did not run the scenario that checks the news, so it missed the strike. The number check cannot
-  catch that: every figure was right, for a question without the news.
-- So the framework gives the agent the evidence; choosing to look at it is still the agent's. An owner who wants the
-  news always checked should offer one scenario, with the news limit, rather than two.
-
-Eight runs on a small, made-up graph show the pattern works with both models. They don't measure how often an agent
-gets it right. A fair next measure would be many varied questions, each scored for whether the right branch was
-recommended, whether the rejected branch and its dependency were named, and how many figures were flagged.
+Eight runs on a small, made-up graph show the pattern works with both models, not how often an agent gets it right.
+A fair next measure: many varied questions, each scored for the right branch, the rejected branch and its dependency
+named, and figures flagged.

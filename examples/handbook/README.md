@@ -1,18 +1,12 @@
 # Employee handbook
 
-**Not HR, tax or legal advice.** Meridian Logistics, its employees and its handbook are made up for this example.
-Only the 2026 IRS limit on 401(k) contributions is real, from
-[IRS Notice 2025-67](https://www.irs.gov/pub/irs-drop/n-25-67.pdf).
+**Not HR, tax or legal advice.** Meridian Logistics, its employees and its handbook are made up. Only the 2026 IRS
+limit on 401(k) contributions is real, from [IRS Notice 2025-67](https://www.irs.gov/pub/irs-drop/n-25-67.pdf).
 
-This is the framework's example of **private documents**: a company's own handbook that no model has seen. The
-[non-compete example](../noncompete/README.md) used public law, which Claude already knows, so it could not show
-what a local document collection adds. Here the answers exist only in Meridian's handbook and records, and the same
-questions are asked six ways: with no tools; with the rules only; with the rules and the handbook; with the handbook
-and no rules; and with rules **derived from the handbook** by a model and checked, by Claude or by the local model.
-
-The framework's principle is that a rule is **supplied** (written by the owner) or, when it is not, **derived** from
-the documents and **checked** before a person approves it, and that which kind it is is never hidden
-([docs/environment.md](../../docs/environment.md#derived-rules-and-facts)). This example measures what deriving costs.
+The framework's example of **private documents**: a handbook no model has seen, where the
+[non-compete example](../noncompete/README.md) used public law Claude already knows. A rule is **supplied** by the
+owner or **derived** from the documents by a model and **checked** before a person approves it, never hidden which
+([docs/environment.md](../../docs/environment.md#derived-rules-and-facts)); this measures what deriving costs.
 
 ## The questions
 
@@ -28,153 +22,110 @@ Each asked by one made-up employee, naming the company, their id and the date (1
 
 | Part | What |
 |---|---|
-| `handbook.jsonl` | 12 policies in 13 documents (the 401(k) policy in two editions), their numbered parts as passages: the 401(k) plan summary as restated on 1 January 2026, and its **2024 edition, superseded** (a different match formula, cap, waiting period and vesting, with `effective_until` 2025-12-31), paid time off, parental leave, tuition, dress code by office, and seven unrelated policies with figures of their own. The figures are deliberately not the typical ones |
-| `graph/` | Eight employees (hire date, office, salary, contribution rate, unused leave), and the plan's match cap and IRS limit |
-| `rules/` | Five DMN tables, each citing the handbook section it comes from: when the match begins, vesting, the carryover limit, parental leave, tuition |
-| `handbook_functions.py` | The employee's record as of a date, the calculations (the match, the days carried and forfeited, leave pay, tuition repaid), and one scenario per question |
+| `handbook.jsonl` | 12 policies in 13 documents, their numbered parts as passages: the 401(k) plan summary as restated on 1 January 2026 and its **superseded 2024 edition** (a different match formula, cap, waiting period and vesting; `effective_until` 2025-12-31), paid time off, parental leave, tuition, dress code by office, and seven unrelated policies with figures of their own. The figures are deliberately not the typical ones |
+| `graph/` | Eight employees (hire date, office, salary, contribution rate, unused leave) and the plan's match cap and IRS limit. `nodes_without_plan_figures.csv` keeps the plan's id without its figures, for deriving |
+| `rules/` | Five DMN tables: when the match begins, vesting, the carryover limit, parental leave, tuition. Each rule in `environment.toml` cites the handbook document it comes from |
+| `handbook_functions.py` | The employee's record as of a date, the calculations (match, days carried and forfeited, leave pay, tuition repaid) and one scenario per question |
 | `answer_key.toml` | What a good answer says, worked out by hand from the handbook; a test checks the rules and calculations against it, never the reverse |
-| `environment_derived.toml` | The same questions with the five rules and the plan's six terms (IRS limit, match cap, and the match's two tiers and rates) as **slots** to derive; the employees' records stay supplied, and `graph/nodes_without_plan_figures.csv` keeps the plan's id without its figures. The match is a generic two-tier `tiered_match`: its shape is still written by hand, as are the other calculations |
-| `environment_documents_only.toml` | The employees' records, the calculations and the handbook, and no rules or plan figures: the agent reads every rule and figure itself |
-| `derived/` | Claude's derived layer, committed so the variant runs without an API key, as checked again with the stricter check: all 11 entries approved (below). **Its approvals are scripted** (`measure.py: scripted approval of every checked entry, not a person`): no person approved them |
-
-## Running it
-
-PostgreSQL with pgvector and Ollama with `embeddinggemma`, as for noncompete
-([docs/environment.md](../../docs/environment.md) covers documents).
-
-```bash
-set -a; . ./.postgres-local.env; set +a
-uv run clm-load-documents examples/handbook/environment.toml handbook examples/handbook/handbook.jsonl \
-    --source "Meridian handbook (made up)"
-uv run clm-agent examples/handbook/environment.toml "I work at Meridian Logistics; I'm employee e_2001, and \
-today is 1 December 2026. What is the company match on my 401(k), and what is the maximum?"
-```
+| `derived/` | Claude's derived layer, committed so the derived setup runs without an API key: all 11 entries approved under the current check (below). **The approvals are scripted, not a person's** (`measure.py: scripted approval of every checked entry, not a person`) |
 
 ## The setups
 
-- **No tools**: `clm-agent --no-tools`, the question alone, with a short prompt: answer the employee's question, and
-  say so when you do not know. This stands for an employee asking a general chatbot.
-- **Rules only**: `environment_without_documents.toml`. The scenarios give the right figures and name the handbook
-  sections the rules cite, but not the sections' text, and there is no tool to search or read the handbook. Each
-  rule's own statement and reason restate its policy in a sentence, figures included.
-- **Rules and handbook**: `environment.toml`. The rules' citations carry the sections' text, and the agent can
-  search and read the whole handbook.
-- **Handbook only**: `environment_documents_only.toml`. No rules and no plan figures; the agent searches the
-  handbook and passes the figures it reads to the calculations itself. With the calculations it is the strongest
-  fair competitor to derived rules.
-- **Derived (Claude's layer)**: `environment_derived.toml` with the rules and figures Claude derived, answered by
-  Claude and by gemma4.
-- **Derived locally**: the same with gemma4's own layer, answered by gemma4: nothing leaves the machine.
+| Setup | Environment | What the agent has |
+|---|---|---|
+| No tools | `clm-agent --no-tools` | The question and a short prompt: answer, and say so when you do not know. Stands for a general chatbot |
+| Rules only | `environment_without_documents.toml` | The scenarios give the right figures and name the handbook sections the rules cite, not their text; no tool searches or reads the handbook. Each rule's statement and reason restate its policy, figures included |
+| Rules and handbook | `environment.toml` | The rules' citations carry the sections' text; the agent can search and read the whole handbook |
+| Handbook only | `environment_documents_only.toml` | The employees' records, the calculations and the handbook; no rules or plan figures. The agent reads every rule and figure and passes them to the calculations itself. The strongest fair competitor to derived rules |
+| Derived (Claude's layer) | `environment_derived.toml` | The five rules and the plan's six terms (IRS limit, match cap, the match's two tiers and rates) as **slots**, filled by Claude; answered by Claude and by gemma4. The employees' records stay supplied; the match is a generic two-tier `tiered_match` whose shape, like the other calculations and the scenarios, is written by hand |
+| Derived locally | `environment_derived.toml` | The same with gemma4's own layer, answered by gemma4: nothing leaves the machine |
+| Fewer tools | a copy of `environment.toml` in `runs/measure/fewer_tools/` | Rules and handbook behind `[serve] tools = ["describe", "scenario_*", "search_*", "document_*"]`, written by `measure.py` ([Fewer tools](#fewer-tools)) |
 
-A seventh, **fewer tools**, is rules and handbook behind a shorter tool list: `measure.py` writes a copy of
-`environment.toml` to `runs/measure/fewer_tools/` with `[serve] tools = ["describe", "scenario_*", "search_*",
-"document_*"]` ([Fewer tools](#fewer-tools)).
+## Running it
+
+Needs PostgreSQL with pgvector and Ollama with `embeddinggemma` ([docs/environment.md](../../docs/environment.md)).
+
+```bash
+set -a; . ./.postgres-local.env; set +a
+```
+
+```bash
+uv run clm-load-documents examples/handbook/environment.toml handbook examples/handbook/handbook.jsonl \
+    --source "Meridian handbook (made up)"
+```
+
+```bash
+uv run clm-agent examples/handbook/environment.toml "I work at Meridian Logistics; I'm employee e_2001, and \
+today is 1 December 2026. What is the company match on my 401(k), and what is the maximum?"
+```
 
 ## Deriving the rules
 
 ```bash
 uv run clm-derive run examples/handbook/environment_derived.toml handbook --backend claude --as-of 2026-12-01
+```
+
+```bash
 uv run clm-derive status examples/handbook/environment_derived.toml decisions carryover_limit approved --by NAME
 ```
 
-`run` gives the model the handbook documents in force on the date (never the superseded 2024 edition), renders the
-table it describes, and checks the entry mechanically: the edition, the quote word for word in the cited passages,
-every figure in the quote, and only the slot's names. A failed entry is asked for once more with its failures.
-Only an approved entry decides; an unfilled slot makes its scenario's branch fail, saying why.
-`measure.py derive BACKEND` does this afresh and then approves every checked entry **by script**, standing in for a
-person, so the measurement shows what that approval would let through. `measure.py compare` then holds each layer
-against a **second key**: the hand-written `rules/*.dmn` (evaluated over every bound in either table, one either
-side, and 0; both booleans; never a negative value, since `employee` never gives negative days or years),
-`graph/nodes.csv`, and the match's tiers as `company_match` writes them by hand.
+`run` gives the model the documents in force on the date (never the 2024 edition), renders the table it describes
+and checks the entry: the edition; the quote whole and word for word in the cited passages ("up to 1" is not in "up
+to 10"); every figure in the statement, reason and rows in the quote, a range's upper bound included, except ISO
+dates, section references (§ 4(2), 6(3), 401(k)) and bare years (2026, not $2026 or 2026 days); and only the slot's
+names. A failed entry is asked once more with its failures. Only an approved entry decides; an unfilled slot fails
+its scenario's branch, saying why.
 
-After a review the check was made stricter: a range's upper bound (`[0..4]`) now counts as a figure, a quote must
-match whole words and numbers ("up to 1" is no longer found in "up to 10"), and a rule's reason is checked like its
-statement. In a statement or reason, ISO dates, section references (§ 4(2), Section 6(1), or bare: 6(3), 401(k)) and
-a bare year (2026, but not $2026, 2026% or 2026 days) are not policy figures and are not checked; every other number
-is. `measure.py recheck BACKEND` checked both kept layers again with it, asking no model: every entry back to
-proposed, checked, and the checked ones approved by script. The table is the result. "First try" is how many passed
-the old check at once; under the new check no entry was sent back to the model, so it is no guide to a retry now.
+`measure.py derive BACKEND` approves every checked entry **by script**, to show what a person's approval would let
+through; `recheck` sets each entry back to proposed and checks it again with the current check, asking no model;
+`compare` holds each layer against a **second key**: `rules/*.dmn` over every bound in either table, one either
+side and 0, never negative, and both booleans; `graph/nodes.csv`; and the tiers as `company_match` writes them.
+gemma4 is asked without thinking (with it, under the JSON schema, it ran past 100,000 tokens on the first slot). Its
+layer is a second run: the first, with document ids inside headings rather than on a `Document id:` line, cited two
+documents by the whole heading and both failed, and had the same two tier figures wrong
+(`runs/measure/first-gemma4-run-second_key.json`, not committed).
 
-| Layer | Passes the check | Right by the second key | **Checked but wrong** | Failed but right |
-|---|---|---|---|---|
-| Claude (claude-opus-5-5) | 11 of 11 | 11 of 11 | **0** | 0 |
-| gemma4:26b | 9 of 11 | 9 of 11 | **2** | 2 |
+| Layer | Passes the check | Right by the second key | **Checked but wrong** | Failed but right | Under the first, looser check | Notes |
+|---|---|---|---|---|---|---|
+| Claude (claude-opus-5-5) | 11 of 11 | 11 of 11 | **0** | 0 | 11 of 11 passed, 8 at the first try; wrong 0 | Reasons name dates and sections ("in force on 2026-12-01", "Section 6(1)"); four right tables failed before those were exempt |
+| gemma4:26b | 9 of 11 | 9 of 11 | **2** | 2 | 10 of 11 passed, 9 at the first try; wrong 2 | Wrong: the tiers as 100% and 50% of pay (key: 3% and 3%). Failed but right: carryover (a row `[0..4]`, 4 not in the quote) and tuition (the passages' whole text as labels; failed both checks) |
 
-Under the first, looser check: Claude 11 of 11 passed (8 at the first try), gemma4 10 of 11 (9), with the same
-checked-but-wrong counts, 0 and 2.
-
-- **Claude's layer matched every hand-written rule and figure, and passes the stricter check.** Its reasons name
-  dates, years and sections ("the 2026 401(k) plan summary, in force on 2026-12-01", "Section 6(1)"), which are not
-  policy figures and are exempt; before those exemptions, four of its right tables failed. Under the looser check
-  all 11 passed too, three on the second try.
-- **gemma4 confused the match's tiers with its rates, and the check passed them.** It gave the first tier as 100%
-  of pay and the second as 50% (the key: 3% and 3%), quoting "Meridian matches 100% of the first 3% of pay you
-  contribute, and 50% of the next 3%". Every figure is in the quote, so the mechanical check cannot tell a rate from
-  a width: only a person reading the entry would. That is exactly what the scripted approval let through, and it
-  made one answer wrong (below).
-- **gemma4's carryover table now fails** on the stricter check: a row `[0..4]` whose 4 is not in the quote. It gives
-  the right answers for every count of years. Its tuition table was right but failed both checks: it gave the
-  passages' whole text as their labels.
-- The first gemma4 derivation ran with a prompt that showed each document's id inside its heading; gemma4 cited two
-  documents by the whole heading and both failed. The prompt now gives `Document id:` on its own line and the layer
-  above is the second run. The first run's comparison, kept in `runs/measure/first-gemma4-run-second_key.json` (not
-  committed), shows the same two tier figures wrong. gemma4 is also asked without thinking: with thinking, under the
-  JSON schema, it generated over 100,000 tokens on the first slot without answering.
-- Deriving the 11 slots took under a minute with gemma4 and about two minutes with Claude.
+No entry was sent back to the model under the current check, so the first-try counts are no guide to a retry now.
+Deriving the 11 slots took under a minute with gemma4, about two minutes with Claude. **The check cannot tell a rate
+from a width**: gemma4's tiers quote "Meridian matches 100% of the first 3% of pay you contribute, and 50% of the
+next 3%", every figure is in it, the script approved them, and one answer was wrong (below).
 
 ## A second reading
 
-The mechanical check proves each figure is in the quote, not that it is in the right place. `clm-derive check` can
-also make a **second reading** ([docs/environment.md](../../docs/environment.md#a-second-reading)): another model,
-given the cited document and the slot but never the first answer, derives each entry again, and an entry the two
-readings disagree on fails the check (tables over the grid above, figures within 0.5%). A second reading that cannot
-be used, such as a table that does not parse, fails it too. `environment_derived.toml` names no second reader, so the
-committed layer is checked exactly as before.
+The check proves each figure is in the quote, not that it is in the right place. A **second reading** by another
+model, given the cited document and the slot but never the first answer, fails an entry the two readings disagree on
+or that it cannot produce ([docs/environment.md](../../docs/environment.md#a-second-reading));
+`environment_derived.toml` names none, so the committed layer is checked as before. `measure.py second FIRST BACKEND
+MODEL` read each kept layer again, leaving it as it was, and counted against the second key; "flagged" is a right
+entry the second reading disagreed with, a false alarm a person must look at. One run each; timings not recorded.
 
-`measure.py second FIRST BACKEND MODEL` read each kept layer again, asking no first model and leaving the kept layer
-as it was, and counted against the second key. "Flagged" is a right entry the second reading did not agree with: a
-false alarm a person must look at. One run each; a difference of one is noise.
+| First reader | Second reader | Wrong entries caught | Right entries flagged | Pass both | Pass both but wrong | What the second reader read |
+|---|---|---|---|---|---|---|
+| gemma4:26b | Claude (claude-opus-5-5) | **2 of 2** | 0 of 9 | 7 of 11 | 0 | Both tiers ("100 against 3", "50 against 3") |
+| gemma4:26b | granite4:micro | 2 of 2 | **5 of 9** | 3 of 11 | 0 | Widths right (3 and 3) but both rates as 3 too, so all four tier figures disagreed; three tables with no row for some years or days; other vesting percentages |
+| gemma4:26b | qwen3:14b (9.3 GB) | **1 of 2** | 2 of 9 | 6 of 11 | **1** | First tier caught (100 against 3); second tier as 50% of pay, as gemma4 had; a right rate flagged (3 read as the rate); one table does not parse (`>& 4`) |
+| Claude (claude-opus-5-5) | gemma4:26b | none to catch | **3 of 11** | 8 of 11 | 0 | Rates and widths confused both ways (a first rate of 3, a second width of 50); `any value` in a tuition cell, which does not parse |
 
-| First reader | Second reader | Wrong entries caught | Right entries flagged | Pass both | Pass both but wrong |
-|---|---|---|---|---|---|
-| gemma4:26b | Claude (claude-opus-5-5) | **2 of 2** | 0 of 9 | 7 of 11 | 0 |
-| gemma4:26b | granite4:micro | 2 of 2 | **5 of 9** | 3 of 11 | 0 |
-| gemma4:26b | qwen3:14b | **1 of 2** | 2 of 9 | 6 of 11 | **1** |
-| Claude (claude-opus-5-5) | gemma4:26b | none to catch | **3 of 11** | 8 of 11 | 0 |
-
-- **Claude as second reader caught both of gemma4's wrong tiers** ("100 against 3", "50 against 3") and agreed with
-  every right entry. That is not fully local: the documents go to Claude.
-- **granite4:micro caught both, at the cost of five false alarms.** It read the two widths right (3 and 3), but
-  read both rates as 3 as well, so it disagreed with all four tier figures, two of them right; three of its tables
-  had no row for some years or days, and its vesting table gave other percentages. 5 of gemma4's 9 right entries
-  were flagged, 4 of them ones the mechanical check passes. Too weak to be useful, so one more local model was
-  pulled, as the design allowed.
-- **qwen3:14b (9.3 GB) made gemma4's mistake on the second tier, and agreed with it.** It caught the first tier
-  (100 against 3) but read the second tier as 50% of pay, as gemma4 had, so a wrong entry passed both checks. It
-  flagged a right rate (reading 3 as the rate) and wrote one table the code cannot parse (`>& 4`). **Agreement is not
-  proof**: two readers can make the same mistake, and here one did. A fully local second reading did not close the
-  gap in this run.
-- **gemma4 reading Claude's right layer raised 3 false alarms.** It confused the tiers' rates and widths both ways
-  (a first rate of 3, a second width of 50) and wrote a tuition table with `any value` in a cell, which does not
-  parse. A person would have had to look at three right entries to approve them.
-- What a person still reviews: every entry, since only approval lets one decide. The second reading changes which
-  ones they are told to look at: with Claude reading gemma4's layer, the four that fail (the two wrong tiers, and the
-  carryover and tuition tables the mechanical check already failed) say where the readings differ.
-- The tables came from the layers as derived for the measurement above; nothing was derived again by a first
-  reader. Timings were not recorded.
+Claude as second reader is not local: the documents go to Claude. granite4:micro's false alarms include 4 entries
+the mechanical check passes, so one more local model was tried. **qwen3:14b agreed with gemma4's wrong second tier,
+so the entry passed both checks: agreement is not proof**, and a fully local second reading did not close the gap. A
+person still reviews every entry; the second reading changes which ones they are told to look at (with Claude
+reading gemma4's layer, the two wrong tiers and the carryover and tuition tables the check already failed).
 
 ## What was measured
 
 `measure.py run` asked each question once in each setup, on Claude (claude-opus-5-5) and on gemma4:26b through
-Ollama, on a Mac: 55 answers, all on the same prompt (the agent's instructions gained a line about derived rules,
-so the first three setups were run again). `measure.py score` compared them with the key. Claude read, for each
-figure the key lists, the value each answer gives and whether it is stated as fact or hedged; it is told what each
-figure is about, never its value. One run each, so a difference of one is noise.
-
-The derived rows were answered from the layers as approved under the first, looser check. Claude's layer is approved
-the same under the current check. gemma4's now leaves carryover and tuition unapproved, so it would answer questions
-1 and 3 from derived rules (question 1 still with the wrong tiers) and fail 2 and 4 visibly; those answers were not
-asked again.
+Ollama, on a Mac: 55 answers on one prompt (the first three setups were run again when the agent's instructions
+gained a line about derived rules). `measure.py score` had Claude read, for each figure the key lists, the value an
+answer gives and whether it is fact or hedged, told what the figure is about but never its value. One run each, so a
+difference of one is noise. The derived rows used the layers as approved under the looser check; gemma4's now
+leaves carryover and tuition unapproved, so it would fail questions 2 and 4 visibly and still answer 1 with the wrong
+tiers. Claude's seconds in the first four setups were measured while Ollama was busy, so may be a little high.
 
 | Setup | Model | Key figures right | Wrong as fact | Not given | Hedged | Verdicts right | Section cited | Seconds (mean) |
 |---|---|---|---|---|---|---|---|---|
@@ -190,52 +141,34 @@ asked again.
 | Derived (Claude's layer) | gemma4 | 14 of 17 | 0 | 3 | 0 | 4 of 4 | 2 of 5 | 13 |
 | Derived locally (gemma4's layer) | gemma4 | 13 of 17 | 2 | 2 | 0 | 4 of 4 | 3 of 5 | 17 |
 
-What it says:
-
-- **Derived rules did as well as hand-written ones here, when Claude derived them** and the looser check passed
-  them: 17 of 17 on Claude, the same as rules and handbook. gemma4 answering from Claude's layer gave 14 of 17, as it did with the hand-written rules and
-  the handbook, leaving figures out (the match cap and IRS limit; the boot allowance) rather than getting them wrong.
-- **Fully local, derivation lost.** gemma4 answering from its own layer stated two wrong figures as fact, on question
-  1: a match of $3,680 (the key: $3,220) and a maximum of $6,300 (the key: $4,140), both from the tier figures the
-  check passed and the script approved. With supplied or Claude-derived rules no answer stated a key figure wrongly.
-- **Handbook only was close on Claude, not on gemma4.** Claude, reading the handbook and calling the calculations
-  itself, gave 16 of 17 (it left out the IRS limit); gemma4 gave 10 of 17, one of them wrong as fact:
-  it passed the match's rates to `tiered_match` wrongly and answered a match of $32.20. It was also the slowest
-  setup. The rules earn their keep most with the local model.
-- **The superseded 2024 edition was tested only where nothing filtered it.** Derivation is given the documents in
-  force, so it never saw the 2024 edition. In handbook only, Claude read it, said it was replaced on 1 January 2026
-  and did not use it. With rules, the agents went straight to the scenarios on questions 1 to 4.
-- **Without the company's data there is no answer at all.** No tools: 1 of 17 figures (Claude: the public IRS
-  limit), no verdicts; both models said they could not know Meridian's plan, and Claude's six hedged figures were
-  what is typical elsewhere. The no-tools prompt tells the model to say when it does not know; a chatbot without that
-  instruction was not tested.
-- **The handbook adds the one question no rule covers.** With rules only, both models missed question 5's $150 boot
-  allowance, which only the handbook gives; with the handbook Claude found it and gemma4 did not this time.
-  gemma4 also left out the IRS limit and vested percentage on question 1 with the handbook, giving 14 of 17 against
-  16 with rules only: one run, so this may be noise.
-- **gemma4 was about as fast as Claude** (13 to 17 s a question) except with the handbook only (24 s). It cited
-  handbook sections less often from Claude's derived layer (2 of 5).
-- Seconds for Claude's first four setups were measured while Ollama was busy with another job, so they may be a
-  little high; the differences are within a run's noise anyway.
-- **Figures no tool returned** were mostly the models' own arithmetic and the handbook's text quoted ("$920 a year
-  in match", "$3,600 more in total"); they are flagged in each answer file and not graded, since the key does not
-  hold them.
-- What is still written by hand: the employees' records, the two-tier shape of the match, the other calculations
-  and the scenarios. Only the five tables and six plan figures were derived. The scripted approval is not a person.
+Claude-derived rules did as well as hand-written ones; gemma4 from Claude's layer left figures out (the match cap,
+IRS limit and boot allowance) rather than getting them wrong. **Fully local, derivation lost**: gemma4 from its own
+layer stated two wrong figures as fact on question 1, a match of $3,680 (key $3,220) and a maximum of $6,300 (key
+$4,140), from the tiers the check passed; with supplied or Claude-derived rules no answer stated a key figure
+wrongly. **Handbook only was close on Claude, not on gemma4**, which passed the rates to `tiered_match` wrongly,
+answered a match of $32.20 and was slowest: the rules earn their keep most with the local model. With no tools,
+Claude's one figure was the public IRS limit and its six hedged figures what is typical elsewhere; both models said
+they could not know Meridian's plan, as the prompt tells them to (a chatbot without that instruction was not
+tested). Only the handbook gives question 5's $150 boot allowance: Claude found it, gemma4 did not this time, and
+also left out the IRS limit and vested percentage on question 1, two fewer figures than with rules only, which may
+be noise. The 2024 edition was filtered out of derivation; Claude in handbook only read it and said it was replaced
+on 1 January 2026; with rules the agents went straight to the scenarios. Figures no tool returned, mostly the
+models' own arithmetic ("$920 a year in match"), are flagged in each answer file and not graded.
 
 ### Fewer tools
 
-On 4 November 2026 gemma4:26b answered the five questions twice more, one run each: from the full rules-and-handbook
-server (22 tools) and from the same server limited by `[serve]` to `describe`, the scenarios and the `search_` and
-`document_` tools (7 tools; `measure.py run --setups documents,fewer_tools`). Both gave **13 of 17** key figures and
-**none wrong as fact**; 4 were not given each time. The limited list cited the handbook's section more often (5 of 5
-against 3 of 5) and made fewer calls (11 against 17), but gave one verdict fewer (3 of 4 against 4 of 4): on question
-1 it gave the match and the maximum without saying it had begun, and left out the cap and vesting, which the full
-list's answer gave after calling `rules`; on question 3 it gave the two weekly pay figures the full list's answer
-left out. Seconds were about the same (12.8 against 13.5 a question). One run each, so the differences are noise:
-here a shorter tool list neither helped nor hurt the local model. These two runs differ from the table's
-rules-and-handbook row (14 of 17) by one figure, which is the run-to-run noise.
+On 4 November 2026 gemma4:26b answered the five questions twice more, one run each (`measure.py run --setups
+documents,fewer_tools`): from the full rules-and-handbook server and from the fewer-tools copy of it.
 
-The reader of the figures is Claude, choosing from what the answer says; it may read an answer kindly. The key and
-the policies were written by the same author, which makes the key easy to check against the handbook but says
-nothing about a real company's handbook, which is longer, contradicts itself and changes more often.
+| Tool list | Tools | Key figures right | Wrong as fact | Not given | Verdicts right | Section cited | Calls | Seconds (mean) |
+|---|---|---|---|---|---|---|---|---|
+| Full | 22 | 13 of 17 | 0 | 4 | 4 of 4 | 3 of 5 | 17 | 13.5 |
+| Limited | 7 | 13 of 17 | 0 | 4 | 3 of 4 | 5 of 5 | 11 | 12.8 |
+
+The verdict the limited list missed: on question 1 it gave the match and the maximum without saying the match had
+begun, and left out the cap and vesting the full list gave after calling `rules`; on question 3 it gave two weekly
+pay figures the full list left out. The differences, and the one figure against the rules-and-handbook row above,
+are noise: a shorter tool list neither helped nor hurt the local model.
+
+The reader of the figures is Claude and may read an answer kindly. The key and the policies have the same author,
+which says nothing about a real handbook: longer, self-contradicting and changing more often.

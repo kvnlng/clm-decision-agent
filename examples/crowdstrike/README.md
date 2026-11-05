@@ -1,72 +1,46 @@
 # The CrowdStrike day
 
-On 19 July 2024 a faulty CrowdStrike update crashed Windows machines around the world. US
-airlines cancelled 3,548 flights that day, Delta alone 1,325, and hundreds of thousands of
-passengers needed a new plan at once. This example replays that day: a decision server has to
-decide, for every passenger who writes in, how to help them.
-
-The flights are real. Everything else (seats, passengers, fares, messages and the rebooking
-policy) is made up for the demo, generated from a seed so every run is the same.
+On 19 July 2024 a faulty CrowdStrike update crashed Windows machines worldwide; US airlines cancelled
+3,548 flights that day, Delta alone 1,325. A decision server replays the day, deciding for every
+passenger who writes in how to help them. The flights are real; seats, passengers, fares, messages and
+the policy are made up from a seed, so every run is the same.
 
 ## The flights
 
-`flights.csv.gz` holds every US flight of 19 July 2024, and those of 20 July leaving before noon,
-with times as minutes from 19 July 00:00 UTC. `airports.csv` gives each airport's UTC offset in
-minutes and its city, for showing local times and places.
-
-Source: Bureau of Transportation Statistics, "Reporting Carrier On-Time Performance (1987-present)",
-July 2024. A U.S. Government Work, in the public domain.
-
-To rebuild it, download the July 2024 file from
-<https://www.transtats.bts.gov/DL_SelectFields.aspx?gnoyr_VQ=FGJ&QO_fu146_anzr=b0-gvzr> (the
-"Prezipped File" for 2024, July), unzip it, and run:
+`flights.csv.gz`: every US flight of 19 July 2024 and those of 20 July leaving before noon, times in
+minutes from 19 July 00:00 UTC; `airports.csv`: each airport's UTC offset and city. Source: Bureau of
+Transportation Statistics, "Reporting Carrier On-Time Performance (1987-present)", July 2024, a U.S.
+Government Work in the public domain. To rebuild, download the July 2024 "Prezipped File" from
+<https://www.transtats.bts.gov/DL_SelectFields.aspx?gnoyr_VQ=FGJ&QO_fu146_anzr=b0-gvzr>, unzip it, and run:
 
 ```bash
 uv run python examples/crowdstrike/make_extract.py <the unzipped CSV>
 ```
 
-BTS gives local times without time zones. The script works out each airport's offset from the
-schedule itself, and drops the 8 flights whose own schedule contradicts itself.
-
-## What the world knows
-
-The search for alternatives uses each flight's real departure and arrival, delays included, so the
-options it offers know how the day turned out. The policy's right answers use the same knowledge.
+BTS gives local times without zones; the script works out offsets from the schedule itself and drops
+the 8 flights whose schedule contradicts itself. Alternatives and right answers use the real departures
+and arrivals, delays included.
 
 ## The scenario
 
-`scenario.toml` decides for one booking at a time, or many at once with `decide_many`. Each request
-carries the booking in its context: `{"booking": "<id>", "now": <minute>}` (without `now`, the moment
-the passenger wrote). The routes are the six answers of `policy.md`, whose sections are their
-descriptions word for word.
+`scenario.toml` decides one booking at a time, or many with `decide_many`; each request's context is
+`{"booking": "<id>", "now": <minute>}` (without `now`, the moment the passenger wrote). The routes are
+the six answers of `policy.md`, whose sections are their descriptions word for word.
 
-- **Before the route is chosen**, `situation` states the passenger's position in plain sentences:
-  the booking, what happened to it, the fare, and the soonest journeys still possible (our own
-  flights today, then a partner's, then ours tomorrow morning). The route is decided from the
-  message and these facts.
-- **On the rebooking routes**, `alternatives` offers up to three journeys as the options, soonest
-  first, and CLM chooses one.
-- **The actions** hold the whole party's seats on the chosen journey, book a hotel for an
-  overnight, refund, and draft the reply. A hold that loses the race for the last seats fails,
-  naming the full flight, and then no hotel is booked and no "we have booked you" reply is drafted.
-- **The questions**: how firm a time to arrive by is, whether someone vulnerable travels, rail or
-  air, and how upset the passenger is. Flight facts are given to none of them.
+| Step | What it does |
+|---|---|
+| `situation`, before the route | Plain sentences: the booking, what happened to it, the fare, the soonest journeys still possible (our own flights today, then a partner's, then ours tomorrow morning). The route is decided from the message and these facts. |
+| `alternatives`, on the rebooking routes | Up to three journeys as the options, soonest first; CLM chooses one. |
+| Actions | Hold the party's seats, book a hotel for an overnight, refund, draft the reply. A hold that loses the race for the last seats fails, naming the full flight; then no hotel and no "we have booked you" reply. |
+| Questions | How firm a deadline is, whether someone vulnerable travels, rail or air, how upset the passenger is. None hears flight facts. |
 
-The tools see only what a booking record holds: the flights, the party and the fare. What the
-passenger wants, any time they must arrive by and how they feel reach the server only through
-their message.
-
-Two calls worth knowing about:
-
-- **Times are compared by the tool, not by CLM.** For 5% of the day's passengers the right answer
-  turns on whether a flight lands before a time they must arrive by. CLM compares meanings; it does
-  not do arithmetic. So `situation` finds clock times in the message ("by 18:00", "09:00 on 20 July")
-  and says of each journey whether it lands before or after them. Whether the time is a must is
-  CLM's judgment. The parser reads the forms the generated messages use; real messages would need
-  more.
-- **Choosing the option is mostly arithmetic here.** Under this policy the right journey is always
-  the one that lands first, and its option says so. A high option score shows CLM reads that
-  sentence, not that it weighs journeys.
+The tools see only the booking record; what the passenger wants, any deadline and how they feel reach
+the server only through the message. Two caveats. Times are compared by the tool, not CLM: 5% of
+answers turn on whether a flight lands before a deadline, so `situation` finds clock times in the
+message ("by 18:00", "09:00 on 20 July") and says whether each journey lands before or after (how firm
+the time is stays CLM's judgment; the parser reads only the generated messages' forms). And the right
+journey is always the one that lands first, and its option says so: a high option score shows CLM reads
+that sentence, not that it weighs journeys.
 
 ## Training and checking
 
@@ -76,17 +50,14 @@ uv run clm-train examples/crowdstrike/scenario.toml
 uv run clm-evaluate examples/crowdstrike/scenario.toml --cases examples/crowdstrike/check.cases.jsonl
 ```
 
-`write_examples.py` writes 250 examples of each route from seed 1's day, with the facts and
-options the scenario's own tools give, and 100 check cases of each route from seed 0's day, the
-demo's. A fifth of the message pool's lines, chosen by a hash of the text, is kept out of training
-and used only for the check cases, so the check is on wording CLM never saw. `clm-evaluate --cases` runs them
-through the server's own steps, without actions, reports every result per class and suggests a
-confidence threshold.
+`write_examples.py` writes 250 examples per route from seed 1's day and 100 check cases per route from
+seed 0's (the demo's), with the facts and options the scenario's own tools give; a fifth of the message
+pool, chosen by a hash of the text, is kept for the check cases only, so the check is on wording CLM
+never saw. `clm-evaluate --cases` runs them through the server's own steps without actions, reports
+every result per class and suggests a confidence threshold.
 
-### What it did
-
-On an Apple M5 Max (64 GB, MLX, the 8-bit CLM), trained on the 1,500 examples, checked on the 600
-unseen cases (each count is right of all with that answer):
+Apple M5 Max (64 GB, MLX, the 8-bit CLM), trained on the 1,500, checked on the 600 unseen cases (each
+count is right of all with that answer):
 
 | | Released | Trained |
 |---|---|---|
@@ -104,15 +75,11 @@ unseen cases (each count is right of all with that answer):
 | Travel mode: air / either | 0, 80 of 377, 95 | 375, 88 |
 | Upset: calm / annoyed / angry | 0, 213, 22 of 245, 257, 98 | 195, 159, 49 |
 
-- **Most wrong routes are caught.** 119 of the 152 wrong routes fell below the confidence
-  threshold, so no action would run on them; 33 (6% of all) were confidently wrong.
-- **Agent and Overnight are the hardest routes.** Agent covers two different cases: a message too
-  vague to act on, and a firm deadline nothing meets on a fare that can't be refunded. Overnight
-  turns on there being nothing today, which several facts together say.
-- **On its own held-back examples training gave 76%, where a plain classifier on the same vectors
-  gave 89%.** The heads have room to improve.
-- **Rail is not trained.** Only 180 of the day's 99,806 bookings prefer the train (it is offered
-  only within the north-east corridor), so the examples hold none.
+33 routes (6%) were confidently wrong. Agent and Overnight are hardest: Agent covers two cases (too
+vague, or a firm deadline nothing meets on a non-refundable fare), Overnight needs several facts
+together. Training gave 76% on its own held-back examples where a plain classifier on the same vectors
+gave 89%: the heads have room to improve. Rail is not trained; only 180 of the day's 99,806 bookings
+prefer it (north-east corridor only).
 
 ## The demo
 
@@ -121,17 +88,10 @@ uv run python examples/crowdstrike/replay_day.py examples/crowdstrike/scenario.t
 uv run python examples/crowdstrike/compare_models.py examples/crowdstrike/scenario.toml
 ```
 
-`replay_day.py` plays the coordinator. It starts the decision server (with `--trace`), sends the day's
-messages through `decide_many` a simulated minute at a time, and redraws a scoreboard: decisions a second,
-how many were automatic and how many went to a person (and why), seat holds made and lost, and accuracy.
-It keeps its own copy of the seats and makes the same holds the server reports, so every booking is
-judged against the seats left when it was decided. `--url` uses a server already running over HTTP.
-
-`compare_models.py` gives CLM, a local language model and Claude the same 600 check cases: the message,
-the situation's facts, every rebooking route's journeys (fetched beforehand) and the policy's route
-descriptions. The language models answer with a route and a journey and call no tools. Claude runs at
-effort `low` with JSON output and the policy cached; a refusal would count as wrong. The Claude models
-need credentials (`ant auth login` or `ANTHROPIC_API_KEY`) and are skipped without them.
+| Script | What it does |
+|---|---|
+| `replay_day.py` | The coordinator: starts the server (with `--trace`), sends the day's messages through `decide_many` a simulated minute at a time, and redraws a scoreboard (decisions a second, automatic against sent to a person and why, holds made and lost, accuracy). It keeps its own copy of the seats and makes the holds the server reports, so each booking is judged against the seats left when it was decided. `--url` uses a server already running over HTTP. |
+| `compare_models.py` | Gives CLM, a local language model and Claude the same 600 check cases: the message, the situation's facts, every rebooking route's journeys (fetched beforehand) and the policy's route descriptions. The language models answer with a route and a journey and call no tools. Claude runs at effort `low` with JSON output and the policy cached; a refusal counts as wrong. The Claude models need credentials (`ant auth login` or `ANTHROPIC_API_KEY`) and are skipped without them. |
 
 ### CLM against language models
 
@@ -158,24 +118,15 @@ Per route (right of 100):
 | CLM | 81 | 85 | 69 | 81 | 62 | 70 |
 | Qwen3-4B | 95 | 91 | 89 | 75 | 2 | 8 |
 
-- **On this Mac, Claude was both more accurate and faster.** With 8 calls at once, Claude's calls work
-  out to about 2 seconds each; CLM's time is almost all encoding on the Mac's GPU. More concurrent calls
-  would make Claude faster still, up to its rate limits. On a data-centre GPU CLM is much faster (see
-  [the whole day](#the-whole-day-on-a-data-centre-gpu)), but that was measured on the replay, not on
-  this comparison.
-- **CLM costs nothing per decision and keeps the messages on the machine.** Haiku would cost about $15
-  for the day, Sonnet about $158.
-- **CLM marks answers it is unsure of.** 119 of its 152 wrong routes were marked uncertain, so no action
-  ran and they went to a person. The language models were not asked for a confidence, so none of their
-  answers is marked; asking them for one is a different harness, not measured here. Not every wrong
-  answer acts: an Agent answer hands over to a person, and an unusable reply runs nothing. The price of
-  CLM's marking is that it hands many right answers to a person too (see the replay below).
-- **Claude does worst on Refund and Agent**, the routes that turn on what the passenger wants (no
-  longer to travel, or a message too vague to act on) or on a time nothing meets. CLM, trained on the
-  policy's examples, does better there; its own weakest routes are Overnight (69) and No_Action (70).
-  Qwen3-4B almost never answers Agent (2) or No_Action (8), and 36 of its replies could not be used.
-- The comparison cost about $1.05 in API calls (600 cases on each Claude model, at about 1,370 input
-  tokens a case, 852 of them cached).
+On this Mac, Claude was both more accurate and faster: about 2 seconds a call at 8 at once (more
+concurrency would be faster still), while CLM's time is almost all encoding on the Mac's GPU; on a
+data-centre GPU CLM is much faster ([the whole day](#the-whole-day-on-a-data-centre-gpu), measured on
+the replay, not here). CLM marks answers it is unsure of, so most of its wrong routes ran no action,
+but many right answers go to a person too; the language models were not asked for a confidence (a
+different harness, not measured), and not every wrong answer acts: an Agent answer hands over to a
+person, an unusable reply runs nothing. Claude does worst on Refund and Agent, the routes that turn on what
+the passenger wants or on a time nothing meets. The comparison cost about $1.05 in API calls (about
+1,370 input tokens a case, 852 cached).
 
 ### An agent's proposals, checked
 
@@ -183,25 +134,19 @@ Per route (right of 100):
 uv run python examples/crowdstrike/check_calls.py examples/crowdstrike/scenario.toml
 ```
 
-Another airline's agent, run by its own AI, proposes both a rebooking (`hold_seats`) and a refund
-(`issue_refund`) for the same passenger, and asks `check_call` about each: the message and the proposed
-call, nothing else. On the 200 check cases whose right answer is Rebook or Refund (the M5 Max, trained
-heads, approved at 0.5):
+Another airline's agent proposes both a rebooking (`hold_seats`) and a refund (`issue_refund`) for the
+same passenger and asks `check_call` about each, with the message and the call only. The 200 check
+cases whose right answer is Rebook or Refund; M5 Max, trained heads, approved at 0.5:
 
 | Right answer | Rebooking approved | Refund approved | Caught: right approved, wrong refused | Right call has the higher probability |
 |---|---|---|---|---|
 | Rebook (100) | 62 | 29 | 36 | 82 |
 | Refund (100) | 15 | 83 | 78 | 87 |
 
-- **As a yes or no, `check_call` is weak here:** it caught 114 of 200. It approved the refund for 29
-  passengers who wanted to travel, and refused the rebooking for 38 of them. No threshold does
-  materially better: the best, about 0.49, caught 116; 0.4 caught 111, 0.6 caught 103. Training covered the route and the questions, not `check_call`'s own
-  question.
-- **Compared with each other, the two proposals are told apart in 169 of 200.** An agent unsure between
-  calls can ask about each and take the more probable one.
-- **`decide` is the better check.** Its route was right for 162 of the same 200, and across all 600 check
-  cases 119 of its 152 wrong routes were marked uncertain, so no action ran. An agent that wants a second opinion on a
-  refund does better asking what to do than asking whether its own plan is right.
+As a yes or no, `check_call` is weak here: 114 of 200 caught, and no threshold does materially better
+(0.49 caught 116; 0.4, 111; 0.6, 103), because training covered the route and the questions, not
+`check_call`'s own question. Compared with each other the proposals are told apart in 169 of 200.
+`decide` is the better check: right for 162 of the same 200, most wrong routes marked uncertain.
 
 ### The day at Atlanta, replayed
 
@@ -221,20 +166,18 @@ Every booking starting at Atlanta, 9,704 bookings and 15,503 passengers, from 04
 Per route: Rebook 3,860 of 4,558, Rebook_Partner 73 of 94, Overnight 282 of 433, Refund 1,240 of 1,633,
 Agent 812 of 1,454, No_Action 1,262 of 1,532.
 
-- **Encoding is all the time.** The trace puts 100% of each `decide_many` call in CLM's encoding; the
-  tools (searching for alternatives, holding seats) take about 3 ms a call.
-- **Too many go to a person.** The confidence threshold of 0.6 keeps wrong answers not marked uncertain to 5%,
-  but marks 43% of all bookings uncertain, most of them answered rightly. Lowering it is not the answer:
-  on the check cases `clm-evaluate --cases` suggests 0.63 as the lowest threshold at which the routes kept
-  are 90% right. Better-trained heads are what would move that balance.
-- Seats lost to a race are real: 28 bookings were offered a journey whose last seats went to someone
-  decided a moment earlier, and their hold failed visibly, as it should.
+The trace puts 100% of each `decide_many` call in CLM's encoding; the tools take about 3 ms a call. Too
+many go to a person: the threshold of 0.6 keeps wrong-and-not-marked to 5% but marks 43% uncertain,
+most of them right; lowering it is not the answer (`clm-evaluate --cases` suggests 0.63 as the lowest
+threshold at which kept routes are 90% right), better-trained heads are. The 28 lost holds are real
+races, failed visibly.
 
 ### The whole day on a data-centre GPU
 
-The day's 99,806 decisions arrive over 41.5 hours. What matters for a server is whether it keeps up
-with them as they arrive, so the table puts the day's demand next to what each machine decided a
-second (the trained heads, `decide_many` with every tool and action, as in the replay):
+The day's 99,806 decisions arrive over 41.5 hours; the table puts that demand next to what each machine
+decided a second (trained heads, `decide_many` with every tool and action, as in the replay): the Mac
+from Atlanta's replay, the A100 from the first 27,511 bookings (stopped to change machines), the H100
+from the whole day. "Falls behind" is a minute-by-minute queue of arrivals at each rate.
 
 | | Decisions a second | Busiest minute's share of it | Falls behind |
 |---|---|---|---|
@@ -243,28 +186,16 @@ second (the trained heads, `decide_many` with every tool and action, as in the r
 | NVIDIA A100 80 GB (torch, bf16) | 19.2 | 56% | never |
 | NVIDIA H100 80 GB SXM (torch, bf16) | 51.1 | 21% | never |
 
-The Mac's rate is from Atlanta's replay, the A100's from the first 27,511 bookings of the day (the
-run was stopped to change machines), the H100's from the whole day: 32.5 minutes for all 99,806.
-"Falls behind" is a queue, minute by minute, of the day's arrivals at each rate.
+One A100 keeps up with the whole day and an H100 decides 4.8 times what the busiest minute needs; the
+Mac does not keep up at the peaks. The GPU is the limit: encoding is 96% of each call on both, the
+server's one CPU core mostly waits. The H100 got slightly fewer right than the A100; a different GPU's
+training or its rounding could each account for it, not measured.
 
-- **One A100 keeps up with the whole day; an H100 decides 4.8 times as many as the busiest minute
-  needs.** The Mac does not keep up at the peaks: a passenger writing then would wait up to 4.5
-  minutes.
-- **On the first 3,000 bookings**, rows of 1,024, 2,048 and 4,096 tokens gave 18.8, 18.8 and 17.5 a
-  second on the A100 and 45.4, 46.6 and 43.7 on the H100: about 2.5 times as fast, with 2,048 (the
-  default) best on both. Before texts were packed into rows without padding and every request's options
-  were ranked in one pass, the A100 managed 11.0 a second over the day's first 40,717 bookings.
-- **The GPU is the limit.** Encoding is 96% of each call on both GPUs. The H100 was busy 82% of the
-  run on average (sampled every 5 seconds), drawing about 480 of its 700 W when sampled and using 16 GB of its 80; the server used one CPU core,
-  most of it waiting for the GPU.
-- **Two copies of the model on one H100 are not faster.** Run side by side on the same 3,000 bookings
-  they made 24.2 and 24.1 a second, 48.3 together against one copy's 46.6: one copy already fills the
-  GPU. More copies only make sense for different scenarios.
-- **The H100 got slightly fewer right.** On the same 3,000 bookings, 2,379 right routes against the
-  A100's 2,399, with heads trained again on each machine (2 minutes 40 seconds on the H100, the model's
-  download included). Training on a different GPU and its rounding could each account for it; which it
-  is was not measured.
-- Over the whole day 75,615 routes were right (76%) and 5,216 (5.2%) were wrong and not marked
-  uncertain; 46,030 (46%) were marked uncertain and went to a person (43% at Atlanta). Seat holds:
-  23,050 made, 123 lost to a passenger decided just before. The later hours are harder than the
-  first: the A100's first 27,511 bookings were 79% right.
+| | A100 | H100 |
+|---|---|---|
+| The run | first 27,511 bookings, 79% right | 32.5 minutes for all 99,806: 75,615 right (76%), 5,216 (5.2%) wrong and not marked uncertain, 46,030 (46%) uncertain (43% at Atlanta); 23,050 holds made, 123 lost. The later hours are harder than the first |
+| First 3,000 bookings, rows of 1,024 / 2,048 / 4,096 tokens | 18.8 / 18.8 / 17.5 a second | 45.4 / 46.6 / 43.7 (2,048, the default, best on both) |
+| Right on those 3,000, heads retrained on each machine | 2,399 | 2,379 (training 2 minutes 40 seconds, download included) |
+| Before packing texts into rows without padding and ranking each request's options in one pass | 11.0 a second over the first 40,717 | |
+| GPU use | | busy 82% of the run (sampled every 5 seconds), about 480 of 700 W, 16 of 80 GB |
+| Two copies of the model on one GPU, same 3,000 | | 24.2 and 24.1 a second, 48.3 together against one copy's 46.6: one copy already fills it; more copies only make sense for different scenarios |
