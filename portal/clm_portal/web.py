@@ -45,15 +45,18 @@ OPERATOR_NOTE = ("The portal restarts its own server after every change. The ser
                  "start: its operator restarts it, or redeploys from git, to pick up approved changes.")
 TESTING_BANNER = "Testing: unapproved derived rules are deciding."
 BACKENDS = ("openai", "claude")
+STILL_ASKING = "A question is still being answered; wait for it, then try again."
 
 
 @dataclass
 class Session:
-    """A signed-in person: the name they gave, the token every form carries, and their conversation."""
+    """A signed-in person: the name they gave, the token every form carries, and their conversation, which
+    `asking` guards while a question is answered."""
     name: str
     csrf: str
     expires: float
     ask: dict = field(default_factory=dict)
+    asking: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
 
 class Portal:  # pylint: disable=too-few-public-methods
@@ -457,11 +460,37 @@ def make_model(backend: str, model: str | None, url: str | None, http: httpx.Asy
     return chat.OpenAIModel(http, model or chat.STARTER_MODEL, url or chat.OLLAMA_V1, key)
 
 
-def _ask_settings(portal: Portal, form) -> tuple[str, str, str]:
-    backend = str(form.get("backend") or portal.options.get("backend") or "openai")
+class _OwnErrors:  # pylint: disable=too-few-public-methods
+    """A model whose every failure in a turn is a ClientError, so the chat shows it as the model's error and takes
+    the question back out, rather than `answering()` calling it the server not answering."""
+
+    def __init__(self, model):
+        self.model = model
+
+    def __getattr__(self, name: str):
+        return getattr(self.model, name)
+
+    async def turn(self, messages: list[dict], tools: list[dict]):
+        """The model's turn; any failure but a ClientError becomes one."""
+        try:
+            return await self.model.turn(messages, tools)
+        except chat.ClientError:
+            raise
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            raise chat.ClientError(f"the model failed: {error or type(error).__name__}") from error
+
+
+def _ask_settings(portal: Portal, form, before: tuple | None = None) -> tuple[str, str, str]:
+    """The backend, model and URL a question goes to. The started --model is the default only for the started
+    --backend, and a model name the page kept from the `before` backend is dropped when the backend changes."""
+    started = portal.options.get("backend") or "openai"
+    backend = str(form.get("backend") or started)
     if backend not in BACKENDS:
         backend = "openai"
-    model = str(form.get("model") or "").strip() or portal.options.get("model") or ""
+    model = str(form.get("model") or "").strip()
+    if before and before[0] != backend and model == before[1]:
+        model = ""
+    model = model or (portal.options.get("model") if backend == started else "") or ""
     url = str(form.get("model_url") or "").strip() or portal.options.get("model_url") or ""
     return backend, model, url
 
@@ -504,7 +533,7 @@ def ask_body(portal: Portal, session: Session, message: str = "", draft: str = "
             '</button></form>')
 
 
-async def ask_page(request: Request) -> Response:  # pylint: disable=too-many-locals
+async def ask_page(request: Request) -> Response:
     """GET and POST /ask: the chat, one question at a time, kept per session. Tools named for a dry run must be the
     server's, or nothing is sent; the dry-run names and full results are kept for the next question."""
     portal, session = request.app.state.portal, request.state.session
@@ -517,7 +546,16 @@ async def ask_page(request: Request) -> Response:  # pylint: disable=too-many-lo
     if not portal.server.running:
         return page(portal, session, "Ask", ask_body(portal, session, "The portal's server is not running: "
                                                      f"{portal.server.error or 'see Configuration'}"), status=409)
-    settings = _ask_settings(portal, form)
+    # Refused rather than queued, as changing() does: a queued double-click would run the same tools twice
+    if session.asking.locked():
+        return page(portal, session, "Ask", ask_body(portal, session, STILL_ASKING, question), status=409)
+    async with session.asking:
+        return await _ask(portal, session, form, question)
+
+
+async def _ask(portal: Portal, session: Session, form, question: str) -> Response:  # pylint: disable=too-many-locals
+    """One question answered into the session's conversation, while it holds `session.asking`."""
+    settings = _ask_settings(portal, form, session.ask.get("settings"))
     if session.ask.get("settings") != settings:
         session.ask = {"settings": settings, "messages": None, "turns": []}
     lines: list[str] = []
@@ -532,7 +570,7 @@ async def ask_page(request: Request) -> Response:  # pylint: disable=too-many-lo
     unknown: list[str] = []
     try:
         async with httpx.AsyncClient() as http:
-            model = portal.make_model(*settings, http)
+            model = _OwnErrors(portal.make_model(*settings, http))
             if session.ask["messages"] is None:
                 session.ask["messages"] = model.start()
                 mark = len(session.ask["messages"])
@@ -559,8 +597,11 @@ async def ask_page(request: Request) -> Response:  # pylint: disable=too-many-lo
 
 
 async def ask_clear(request: Request) -> Response:
-    """POST /ask/clear: start a new conversation."""
-    request.state.session.ask = {}
+    """POST /ask/clear: start a new conversation, unless a question is still being answered."""
+    portal, session = request.app.state.portal, request.state.session
+    if session.asking.locked():
+        return page(portal, session, "Ask", ask_body(portal, session, STILL_ASKING), status=409)
+    session.ask = {}
     return RedirectResponse("/ask", status_code=303)
 
 

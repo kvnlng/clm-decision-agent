@@ -1,11 +1,14 @@
 """Tests for Ask: the chat in a page, against the stand-in server and a scripted model, and the testing switch."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import asyncio
+
+import anyio
 import httpx
 import pytest
 
 from clm_portal import chat, web
-from conftest import post, sign_in
+from conftest import KEY, ORIGIN, csrf_of, post, sign_in
 from test_chat import reply, scripted
 
 
@@ -92,6 +95,72 @@ def test_ask_shows_results_in_full_only_when_asked(client, portal):
     last = page[page.index("Full?"):]
     assert "more characters" not in last and f"The passage (1) of {long_id}, as stored." in last
     assert 'name="full" checked' in page
+
+
+def test_a_model_that_fails_is_shown_as_its_error_not_as_the_server_not_answering(client, portal):
+    failing = scripted([])
+
+    async def turn(_messages, _tools):
+        raise ValueError("Error code: 401 - invalid x-api-key")
+    failing.turn = turn
+    portal.make_model = lambda *args: failing
+    token = sign_in(client)
+    page = post(client, "/ask", token, {"question": "Who?", "backend": "openai"}).text
+    assert "[error: " in page and "invalid x-api-key" in page and "not answering" not in page
+    seen: list[dict] = []
+    failing.turn = scripted([reply("Here.")], seen).turn
+    post(client, "/ask", token, {"question": "Now?", "backend": "openai"})
+    assert [item["content"] for item in seen[0]["messages"] if item["role"] == "user"] == ["Now?"]
+
+
+def test_a_model_name_kept_from_one_backend_is_not_sent_to_the_other(client, portal):
+    models = []
+
+    def make_model(backend, model, _url, _http):
+        models.append((backend, model))
+        return scripted([reply("Yes.")])
+    portal.make_model = make_model
+    portal.options = {"backend": "openai", "model": "granite4:micro"}
+    token = sign_in(client)
+    post(client, "/ask", token, {"question": "One?", "backend": "openai"})
+    assert 'name="model" value="granite4:micro"' in client.get("/ask").text
+    for backend, model in (("claude", "granite4:micro"), ("claude", ""), ("openai", ""), ("claude", "claude-x")):
+        post(client, "/ask", token, {"question": "Again?", "backend": backend, "model": model})
+    assert models == [("openai", "granite4:micro"), ("claude", ""), ("claude", ""), ("openai", "granite4:micro"),
+                      ("claude", "claude-x")]
+
+
+@pytest.mark.anyio
+async def test_a_second_question_while_one_is_answered_is_refused_and_the_conversation_stays_whole(portal):
+    seen: list[dict] = []
+    entered, gate = asyncio.Event(), asyncio.Event()
+    model = scripted([reply("First.")], seen)
+    answer = model.turn
+
+    async def turn(messages, tools):
+        entered.set()
+        await gate.wait()
+        return await answer(messages, tools)
+    model.turn = turn
+    portal.make_model = lambda *args: model
+    await portal.server.start()
+    app = web.create_app(portal, KEY, "127.0.0.1", 8400)
+    origin = {"Origin": ORIGIN}
+    with anyio.fail_after(5):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as http:
+            await http.post("/sign-in", data={"key": KEY, "name": "Kevin"}, headers=origin)
+            form = {"csrf": csrf_of((await http.get("/")).text), "backend": "openai"}
+            first = asyncio.create_task(http.post("/ask", data={**form, "question": "One"}, headers=origin))
+            await entered.wait()
+            second = await http.post("/ask", data={**form, "question": "Two"}, headers=origin)
+            cleared = await http.post("/ask/clear", data=form, headers=origin)
+            gate.set()
+            answered = await first
+    assert second.status_code == 409 and "still being answered" in second.text and ">Two</textarea>" in second.text
+    assert cleared.status_code == 409 and "still being answered" in cleared.text
+    assert answered.status_code == 200 and "First." in answered.text
+    assert [item["content"] for item in seen[0]["messages"] if item["role"] == "user"] == ["One"]
+    assert [question for question, _ in next(iter(portal.sessions.values())).ask["turns"]] == ["One"]
 
 
 LLM_KEY = "the-model-key-not-a-secret"
