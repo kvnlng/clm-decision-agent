@@ -75,4 +75,3 @@ def refusal(refused: list[int]) -> str | None:
     # The variable may hold an OAuth token as well as a shared key: either is sent as a bearer token
     sent = "with no key" if not os.environ.get(KEY_ENV) else f"with the key or token in {KEY_ENV}"
     return f"the server refused the call ({refused[0]}), {sent}"
-

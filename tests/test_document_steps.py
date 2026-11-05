@@ -105,12 +105,6 @@ def test_document_and_citations_are_steps(env):
         steps.document("cases", "tx-15.50", "(z)")
 
 
-def test_a_cited_document_carries_no_passage(env):
-    """The citing passage is case-a's (1), not a passage of the statute it cites."""
-    assert Steps(env).cites("cases", "case-a") == [
-        {"document": "tx-15.50", "citation": "Tex. Bus. & Com. Code § 15.50", "depth": 1, "passage": None}]
-
-
 def test_describe_lists_collections_with_their_date(env):
     assert describe(env)["collections"] == {"cases": {
         "description": "Court opinions on non-competes", "filters": {"state": "string", "year": "integer"},

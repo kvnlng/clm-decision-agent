@@ -529,7 +529,8 @@ def test_run_on_a_collection_no_slot_names_is_refused_and_writes_nothing(path):
 def test_run_in_an_environment_with_no_slots_says_it_declares_none(path):
     text = path.read_text(encoding="utf-8")
     path.write_text(text[:text.index("[derived.")], encoding="utf-8")
-    with pytest.raises(derive.DeriveError, match=r"no slot .* 'handbook'; the environment declares no \[derived\] slots$"):
+    with pytest.raises(derive.DeriveError,
+                       match=r"no slot .* 'handbook'; the environment declares no \[derived\] slots$"):
         derive.run(path, "handbook", good(), ON)
 
 
@@ -600,5 +601,5 @@ def test_the_check_commands_second_reading_of_a_slot_that_is_gone_is_not_made(pa
                         {"checked": 0, "proposed": 0, "stale": 0, "untouched": 0, "undigested": 0, "agreed": 0,
                          "disagreed": 0, "not_made": 1})
     assert derive.main(["check", str(path), "--as-of", "2026-12-01"]) == 0
-    [(record, failures)] = calls
+    (record, failures), = calls  # pylint: disable=unbalanced-tuple-unpacking
     assert record["error"] == "the environment has no facts slot k401_2026.gone" and "could not be made" in failures[0]

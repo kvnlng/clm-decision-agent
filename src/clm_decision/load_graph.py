@@ -39,7 +39,7 @@ def _apart(names: set[str], neo4j, what: tuple[str, str]) -> None:
         made[neo4j(name)] = name
 
 
-def load(graph: Graph, driver, database: str) -> dict:
+def load(graph: Graph, driver, database: str) -> dict:  # pylint: disable=too-many-locals
     """Replace the database's contents with the graph -> {"nodes": n, "edges": n}."""
     nodes = sorted(graph.nodes(), key=lambda node: node["kind"])
     edges = sorted(graph.edges(), key=lambda edge: edge["relation"])

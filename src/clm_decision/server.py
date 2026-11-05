@@ -350,6 +350,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+# pylint: disable-next=too-many-return-statements,too-many-branches
 def main(argv: list[str] | None = None) -> int:
     """Command-line entry point; returns the process exit code. Messages go to stderr: stdout is MCP's."""
     args = _parser().parse_args(argv)
