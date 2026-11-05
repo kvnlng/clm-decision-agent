@@ -14,8 +14,9 @@ and the supplied value stands. check re-runs the check on every proposed or chec
 When [derived] names a second_reader, run and check also make a second reading of each entry they check: that
 model, which must not be the layer's, derives it again from its cited document without seeing the first answer,
 and an entry it disagrees with, or could not read, fails the check (second_reading).
-status is a person's decision: approved, rejected, or a conflict resolved. The model is Claude (the agent extra) or a
-local model through Ollama, as clm-agent reaches them; errors are one line and a non-zero exit.
+status is a person's decision: approved, rejected, proposed (to check it again), or a conflict resolved or open;
+only check sets checked. The model is Claude (the agent extra) or a local model through Ollama, as clm-agent
+reaches them; errors are one line and a non-zero exit.
 """
 from __future__ import annotations
 
@@ -415,8 +416,9 @@ def run(path: str | Path, collection: str, extractor: Extractor, on: date, *, fr
     -> {slot: status}, for the collection's slots."""
     env = load_environment(path, today=on)
     if not any(slot.collection == collection for slot in env.slots.values()):
-        raise DeriveError(f"no slot in [derived] is in collection {collection!r}; the slots are in "
-                          f"{', '.join(repr(name) for name in sorted({s.collection for s in env.slots.values()}))}")
+        names = ", ".join(repr(name) for name in sorted({s.collection for s in env.slots.values()}))
+        raise DeriveError(f"no slot in [derived] is in collection {collection!r}; "
+                          + (f"the slots are in {names}" if names else "the environment declares no [derived] slots"))
     reader = reader_for(env)
     refuse_same_model(reader, extractor.model)
     folder = env.path.resolve().parent

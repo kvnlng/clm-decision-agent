@@ -526,6 +526,13 @@ def test_run_on_a_collection_no_slot_names_is_refused_and_writes_nothing(path):
         assert derived.path(path.parent).read_bytes() == before
 
 
+def test_run_in_an_environment_with_no_slots_says_it_declares_none(path):
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text[:text.index("[derived.")], encoding="utf-8")
+    with pytest.raises(derive.DeriveError, match=r"no slot .* 'handbook'; the environment declares no \[derived\] slots$"):
+        derive.run(path, "handbook", good(), ON)
+
+
 def in_contracts(path):
     """The match cap slot moved to a collection of its own, contracts."""
     path.write_text(path.read_text(encoding="utf-8").replace(
