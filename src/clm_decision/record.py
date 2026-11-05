@@ -18,26 +18,30 @@ def new_key() -> bytes:
     return Fernet.generate_key()
 
 
+def _key_source(scenario: Scenario) -> str:
+    if scenario.record_key_env:
+        return f"the variable {scenario.record_key_env}"
+    return str(scenario.record_key_file)
+
+
 def record_key(scenario: Scenario) -> bytes | None:
     """The key the scenario names for its record, or None if it asks for no encryption."""
     if scenario.record_key_env:
         key = os.environ.get(scenario.record_key_env, "").strip().encode()
         if not key:
             raise ScenarioError(f"record.key_env: the variable {scenario.record_key_env} is not set")
-        source = f"the variable {scenario.record_key_env}"
     elif scenario.record_key_file:
         try:
             key = scenario.record_key_file.read_bytes().strip()
         except OSError as error:
             raise ScenarioError(f"record.key_file: cannot read the key file {scenario.record_key_file}: "
                                 f"{error.strerror}") from error
-        source = str(scenario.record_key_file)
     else:
         return None
     try:
         Fernet(key)
     except ValueError as error:
-        raise ScenarioError(f"record: {source} is not a key made by `clm-record newkey`") from error
+        raise ScenarioError(f"record: {_key_source(scenario)} is not a key made by `clm-record newkey`") from error
     return key
 
 
@@ -118,6 +122,31 @@ def locked_lines(path: Path, key: bytes | None) -> int:
             except ValueError:
                 locked += 1
     return locked
+
+
+def check_record(scenario: Scenario) -> bytes | None:
+    """The record's key, once the record is ready to be written: created or made private to its owner, and with no
+    line under another key. Raises ScenarioError otherwise."""
+    key, path = record_key(scenario), scenario.record_path
+    locked = locked_lines(path, key)
+    if locked:
+        lines = "1 line of" if locked == 1 else f"{locked} lines of"
+        verb = "is" if locked == 1 else "are"
+        how = f"with a key other than {_key_source(scenario)}" if key else "and the scenario names no key"
+        # Writing to such a record would leave a file that no single key can read
+        raise ScenarioError(f"record: {lines} {path.name} {verb} encrypted {how}; set the key the record was "
+                            f"written with, or move the record aside")
+    try:
+        touch_record(path)
+    except OSError as error:
+        raise ScenarioError(f"record: cannot write {path}: {error.strerror}") from error
+    return key
+
+
+def skipped_note(skipped: int, path: Path) -> str:
+    """The line saying that load_records skipped lines of the record at `path`."""
+    lines = "1 unreadable line" if skipped == 1 else f"{skipped} unreadable lines"
+    return f"{lines} skipped in {Path(path).name}; a missing or different record key would cause this"
 
 
 def load_records(path: Path, key: bytes | None = None) -> tuple[list[dict], int]:

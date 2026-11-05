@@ -9,8 +9,8 @@ import stat
 import pytest
 from conftest import BASE_TOML
 
-from clm_decision.record import (append_record, load_records, locked_lines, new_key, record_key, route_verdicts,
-                                 save_correction)
+from clm_decision.record import (append_record, check_record, load_records, locked_lines, new_key, record_key,
+                                 route_verdicts, save_correction)
 from clm_decision.record import main as record_main
 from clm_decision.scenario import ScenarioError, load_scenario
 
@@ -231,3 +231,31 @@ def test_old_kinds_are_skipped(tmp_path):
     append_record(path, {"kind": "tool", "state_text": "x", "calls": [], "clm": {}, "human": True})
     append_record(path, {"kind": "reply", "state_text": "x", "route": "Tech", "human": {"acceptable": True}})
     assert load_records(path) == ([], 2)
+
+
+def test_check_record_refuses_a_record_written_under_another_key(write_scenario, monkeypatch):
+    monkeypatch.setenv("DEMO_RECORD_KEY", new_key().decode())
+    scenario = with_record(write_scenario, 'key_env = "DEMO_RECORD_KEY"\n')
+    append_record(scenario.record_path, route_record("User: a", "Billing", "Tech"), key=new_key())
+    with pytest.raises(ScenarioError, match=r"1 line of scenario\.corrections\.jsonl is encrypted with a key other "
+                                            r"than the variable DEMO_RECORD_KEY"):
+        check_record(scenario)
+
+
+def test_check_record_refuses_an_encrypted_record_when_no_key_is_named(write_scenario):
+    scenario = load_scenario(write_scenario())
+    append_record(scenario.record_path, route_record("User: a", "Billing", "Tech"), key=new_key())
+    with pytest.raises(ScenarioError, match=r"is encrypted and the scenario names no key"):
+        check_record(scenario)
+
+
+def test_check_record_makes_the_record_private_and_returns_the_key(write_scenario, monkeypatch):
+    key = new_key()
+    monkeypatch.setenv("DEMO_RECORD_KEY", key.decode())
+    scenario = with_record(write_scenario, 'key_env = "DEMO_RECORD_KEY"\n')
+    assert check_record(scenario) == key
+    assert stat.S_IMODE(scenario.record_path.stat().st_mode) == 0o600
+    scenario.record_path.chmod(0o644)
+    append_record(scenario.record_path, route_record("User: a", "Billing", "Tech"), key=key)
+    assert check_record(scenario) == key
+    assert stat.S_IMODE(scenario.record_path.stat().st_mode) == 0o600

@@ -24,7 +24,7 @@ from . import tracing
 from .clm_common import ClmError
 from .evaluate import agreement as replay_agreement
 from .dataset import labels
-from .record import load_records, record_key, save_correction
+from .record import check_record, load_records, record_key, save_correction, skipped_note
 from .environment import Environment, is_environment, load_environment
 from .environment_server import build_environment_server
 from .scenario import Scenario, ScenarioError, load_scenario
@@ -248,7 +248,9 @@ def load(path: str):
     router, note = make_router(scenario)
     print(f"CLM is using {note}.", file=sys.stderr)
     if scenario.live_corrections:
-        records, _ = load_records(scenario.record_path, key)
+        records, skipped = load_records(scenario.record_path, key)
+        if skipped:
+            print(skipped_note(skipped, scenario.record_path), file=sys.stderr)
         if router.load_verdicts(records, scenario):
             print(f"Reusing {len(router.verdicts)} corrections from {scenario.record_path.name}.", file=sys.stderr)
     return scenario, router, tools
@@ -325,6 +327,9 @@ def main(argv: list[str] | None = None) -> int:
         if not is_environment(args.scenario):
             # Checked before CLM loads, which takes a while
             serving.choose(serve, tool_names(args.review), tool_names(True))
+        if args.review:
+            # correct writes the record, so it must take this key; checked before CLM loads too
+            check_record(load_scenario(args.scenario))
         loaded = load_any(args.scenario, args.admit_derived.split(",") if args.admit_derived else None)
         trace = tracing.TraceWriter(args.trace, text=args.trace_text, read_only=serve.read_only) \
             if args.trace else None

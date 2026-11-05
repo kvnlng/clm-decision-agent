@@ -24,7 +24,7 @@ from . import clm_schema
 from .clm_common import ClmError
 from .dataset import reviewed_row
 from .decision import decide_many, routed_text
-from .record import route_verdicts, load_records, record_key
+from .record import route_verdicts, load_records, record_key, skipped_note
 from .scenario import ScenarioError, load_scenario
 from .tools import load_tools
 
@@ -337,7 +337,7 @@ def main(argv: list[str] | None = None) -> int:
               "in the MCP Inspector (docs/getting-started.md, \"Looking inside the server\").")
         return 0
     if skipped:
-        print(f"{skipped} unreadable lines skipped in {scenario.record_path.name}")
+        print(skipped_note(skipped, scenario.record_path))
     try:
         from .clm_router import make_router  # pylint: disable=import-outside-toplevel
         router, clm_note = make_router(scenario)

@@ -197,6 +197,17 @@ def test_main_trains_with_the_torch_backend(write_scenario, monkeypatch, tmp_pat
     assert json.loads((tmp_path / "my.heads" / "training.json").read_text())["clm_backend"] == "torch"
 
 
+def test_main_says_how_many_record_lines_it_could_not_read(write_scenario, monkeypatch, capsys):
+    from conftest import BASE_TOML  # pylint: disable=import-outside-toplevel
+    from clm_decision.record import append_record, new_key  # pylint: disable=import-outside-toplevel
+    path = write_scenario(BASE_TOML.replace('model_id = "test/clm"', 'model_id = "test/clm"\nheads = "my.heads"'))
+    path.with_name("scenario.examples.jsonl").write_text(json.dumps({"text": "charged twice", "route": "Billing"}))
+    append_record(load_scenario(path).record_path, {"kind": "route", "state_text": "User: a", "human": "Tech",
+                                                   "clm": {"route": "Billing", "confidence": 0.8}}, key=new_key())
+    assert train.main([str(path)]) == 2      # too few examples, after the record is read
+    assert "1 unreadable line skipped in scenario.corrections.jsonl" in capsys.readouterr().err
+
+
 def test_the_optimizer_steps_as_mlx_adamw_does():
     # MLX's AdamW, which the heads were first trained with, decays first and skips Adam's bias correction
     param = nn.Parameter(torch.tensor([1.0, -2.0]))

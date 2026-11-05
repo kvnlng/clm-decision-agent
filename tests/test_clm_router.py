@@ -4,6 +4,7 @@
 # pylint: disable=missing-function-docstring,missing-class-docstring,redefined-outer-name
 # pylint: disable=unused-argument,attribute-defined-outside-init,use-implicit-booleaness-not-comparison
 import json
+import sys
 
 import numpy as np
 import pytest
@@ -346,7 +347,6 @@ def test_a_trained_ranking_goes_stale_with_its_instructions(write_scenario):
 
 def test_without_the_clm_extra_the_error_says_how_to_install_it(monkeypatch):
     import importlib  # pylint: disable=import-outside-toplevel
-    import sys  # pylint: disable=import-outside-toplevel
     from clm_decision.clm_common import ClmError  # pylint: disable=import-outside-toplevel
     monkeypatch.setitem(sys.modules, "huggingface_hub", None)      # None makes the import fail, as when not installed
     monkeypatch.delitem(sys.modules, "clm_decision.clm_router")
@@ -365,15 +365,24 @@ def fake_mlx_build(folder):
     return str(folder)
 
 
+@pytest.fixture
+def own_clm_mlx(monkeypatch):
+    """The import path and clm_mlx modules as they were, once the test is done with its own clm_mlx."""
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    before = {name: module for name, module in sys.modules.items() if name.split(".")[0] == "clm_mlx"}
+    for name in before:
+        del sys.modules[name]
+    yield
+    for name in [name for name in sys.modules if name.split(".")[0] == "clm_mlx"]:
+        del sys.modules[name]
+    sys.modules.update(before)
+
+
 def test_the_mlx_build_is_downloaded_at_a_pinned_commit_and_does_not_shadow_other_modules(tmp_path, monkeypatch,
-                                                                                         capsys):
-    import sys  # pylint: disable=import-outside-toplevel
+                                                                                         capsys, own_clm_mlx):
     seen = {}
     folder = fake_mlx_build(tmp_path)
     monkeypatch.setattr(clm_router, "snapshot_download", lambda **kwargs: seen.update(kwargs) or folder)
-    monkeypatch.setattr(sys, "path", list(sys.path))
-    monkeypatch.delitem(sys.modules, "clm_mlx", raising=False)
-    monkeypatch.delitem(sys.modules, "clm_mlx.engine", raising=False)
     clm_router.load_mlx_engine("mlx-community/CLM-v0.1-8B-MLX-8bit")
     assert seen == {"repo_id": "mlx-community/CLM-v0.1-8B-MLX-8bit",
                     "revision": clm_router.MLX_REVISIONS["mlx-community/CLM-v0.1-8B-MLX-8bit"]}
@@ -381,14 +390,11 @@ def test_the_mlx_build_is_downloaded_at_a_pinned_commit_and_does_not_shadow_othe
     assert capsys.readouterr().err == ""
 
 
-def test_an_mlx_build_with_no_pinned_commit_is_taken_as_it_is_now_with_a_warning(tmp_path, monkeypatch, capsys):
-    import sys  # pylint: disable=import-outside-toplevel
+def test_an_mlx_build_with_no_pinned_commit_is_taken_as_it_is_now_with_a_warning(tmp_path, monkeypatch, capsys,
+                                                                                   own_clm_mlx):
     seen = {}
     folder = fake_mlx_build(tmp_path)
     monkeypatch.setattr(clm_router, "snapshot_download", lambda **kwargs: seen.update(kwargs) or folder)
-    monkeypatch.setattr(sys, "path", list(sys.path))
-    monkeypatch.delitem(sys.modules, "clm_mlx", raising=False)
-    monkeypatch.delitem(sys.modules, "clm_mlx.engine", raising=False)
     clm_router.load_mlx_engine("someone/CLM-MLX-custom")
     assert seen["revision"] is None
     assert "someone/CLM-MLX-custom has no pinned commit" in capsys.readouterr().err
