@@ -554,6 +554,17 @@ def test_a_fresh_run_keeps_the_entries_of_slots_in_other_collections(path):
     assert layer["decisions"]["carryover_limit"]["status"] == "checked"
 
 
+def test_a_fresh_run_drops_the_entries_of_slots_no_longer_declared(path):
+    run(path, good())
+    approve_all(path.parent)
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text[:text.index("[derived.facts.k401_2026.match_cap]")], encoding="utf-8")
+    run(path, good())
+    assert "k401_2026.match_cap" in derived.read(path.parent)["facts"]   # kept by a run without --fresh
+    run(path, good(), fresh=True)
+    assert "k401_2026.match_cap" not in derived.read(path.parent)["facts"]
+
+
 def test_the_command_lists_only_the_collections_slots_and_says_nothing_derived_only_of_them(path, monkeypatch,
                                                                                           capsys):
     run(path, good())

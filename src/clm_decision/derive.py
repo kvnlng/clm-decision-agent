@@ -15,8 +15,8 @@ When [derived] names a second_reader, run and check also make a second reading o
 model, which must not be the layer's, derives it again from its cited document without seeing the first answer,
 and an entry it disagrees with, or could not read, fails the check (second_reading).
 status is a person's decision: approved, rejected, proposed (to check it again), or a conflict resolved or open;
-only check sets checked. The model is Claude (the agent extra) or a local model through Ollama, as clm-agent
-reaches them; errors are one line and a non-zero exit.
+only the mechanical check (run or check) sets checked. The model is Claude (the agent extra) or a local model through
+Ollama, as clm-agent reaches them; errors are one line and a non-zero exit.
 """
 from __future__ import annotations
 
@@ -410,9 +410,9 @@ def _replace(folder: Path, layer: dict) -> None:
 
 def run(path: str | Path, collection: str, extractor: Extractor, on: date, *, fresh: bool = False) -> dict:
     """Derive every slot in the collection that is not approved or rejected on an unchanged edition, or every slot
-    in it with `fresh`, and write the layer with its conflicts; other collections' entries are kept. The tables are
-    written aside and replace the old ones only once every slot is derived, so a run that stops leaves the tables
-    and the layer as they were. Raises DeriveError, writing nothing, when no slot is in the collection.
+    in it with `fresh`, which also drops the entries of slots no longer declared, and write the layer with its
+    conflicts; other collections' entries are kept. The tables are written aside and replace the old ones only once
+    every slot is derived, so a run that stops leaves the tables and the layer as they were. Raises DeriveError, writing nothing, when no slot is in the collection.
     -> {slot: status}, for the collection's slots."""
     env = load_environment(path, today=on)
     if not any(slot.collection == collection for slot in env.slots.values()):
@@ -438,9 +438,9 @@ def _derive_all(env: Environment, collection: str, extractor: Extractor, reader:
     """The layer run writes: each slot derived (and read again with `reader`) unless kept, with its conflicts."""
     folder = env.path.resolve().parent
     old = derived.read(folder)
-    if fresh:   # only the collection's entries are dropped, so other collections' decisions are kept
+    if fresh:   # the collection's entries and those of slots gone are dropped; other collections' are kept
         old = {**old, **{kind: {name: entry for name, entry in old[kind].items()
-                                if name not in env.slots or env.slots[name].collection != collection}
+                                if name in env.slots and env.slots[name].collection != collection}
                          for kind in ("decisions", "facts")}}
     layer = {**old, "collection": collection, "model": extractor.model,
              "derived_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
@@ -533,8 +533,8 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-loca
     ran.add_argument("--ollama-url", default=OLLAMA_URL)
     ran.add_argument("--as-of", help="the date documents must be in force on (default: today)")
     ran.add_argument("--fresh", action="store_true",
-                     help="derive every slot in the collection again, approved and rejected ones too; other "
-                     "collections' entries are kept")
+                     help="derive every slot in the collection again, approved and rejected ones too, and drop the "
+                     "entries of slots no longer declared; other collections' entries are kept")
     checked = commands.add_parser("check", help="check every proposed or checked entry again")
     checked.add_argument("environment")
     checked.add_argument("--as-of", help="the date documents must be in force on (default: today)")
