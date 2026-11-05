@@ -2,8 +2,9 @@
 
 A figure in the answer matches a tool's number when the tool's number, in the answer's unit and rounded to the
 answer's decimals, is the figure: "$1.2 million" matches 1234567, "18.4%" matches 0.1843 or 18.43. Halves round
-up, and signs are not compared ("fell by 12%" matches -0.12). Not checked: digits inside a word (Q3, A100), dates
-and times, years from 1900 to 2100, and bare whole numbers from 0 to 10 ("3 branches").
+up, and signs are not compared ("fell by 12%" matches -0.12). A lowercase "m" is millions or metres, so "$3m"
+matches 3000000 and "400 m" matches 400. Not checked: digits inside a word (Q3, A100, 12.5kg), dates and times,
+years from 1900 to 2100 written without a comma, and bare whole numbers from 0 to 10 ("3 branches").
 """
 from __future__ import annotations
 
@@ -12,9 +13,11 @@ import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
-_FIGURE = re.compile(r"(?<![\w.])(\$)?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
-                     r"(?:\s*(%|k|m|M|million|bn|billion)\b|\s*(%))?(?![\w])")
-_SCALES = {"k": (1e3,), "m": (1e6,), "M": (1e6,), "million": (1e6,), "bn": (1e9,), "billion": (1e9,),
+# The digits are atomic, so "12.5kg" is digits inside a word, never "12" before an unknown unit
+_FIGURE = re.compile(r"(?<![\w.])(\$)?((?>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?))"
+                     r"(?:\s*(%|k|m|M|million|bn|billion)\b|\s*(%))?(?![\w.,]\d|\w)")
+# "m" is millions ("$3m") or metres ("400 m"), so either matches
+_SCALES = {"k": (1e3,), "m": (1e6, 1.0), "M": (1e6,), "million": (1e6,), "bn": (1e9,), "billion": (1e9,),
            "%": (1.0, 0.01)}
 # Dates and times are not figures: 2026-10-29, 16:07
 _DATES = re.compile(r"\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}")
@@ -41,7 +44,8 @@ def _figures(text: str) -> list[Number]:
 
 def _checked(number: Number) -> bool:
     plain = number.scales == (1.0,) and number.decimals == 0 and not number.text.startswith("$")
-    return not (plain and (number.value <= 10 or 1900 <= number.value <= 2100))
+    # "2,000" is written as a figure, not a year
+    return not (plain and "," not in number.text and (number.value <= 10 or 1900 <= number.value <= 2100))
 
 
 def numbers_in(text: str) -> list[Number]:
