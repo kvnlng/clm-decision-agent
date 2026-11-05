@@ -30,10 +30,21 @@ def _label(text: str, what: str) -> str:
     return text
 
 
+def _apart(names: set[str], neo4j, what: tuple[str, str]) -> None:
+    """Refuse two names that Neo4j would make one, as the built-in graph keeps them apart."""
+    made: dict[str, str] = {}
+    for name in sorted(names):
+        if neo4j(name) in made:
+            raise ValueError(f"{what[0]}s '{made[neo4j(name)]}' and '{name}' both become the {what[1]} :{neo4j(name)}")
+        made[neo4j(name)] = name
+
+
 def load(graph: Graph, driver, database: str) -> dict:
     """Replace the database's contents with the graph -> {"nodes": n, "edges": n}."""
     nodes = sorted(graph.nodes(), key=lambda node: node["kind"])
     edges = sorted(graph.edges(), key=lambda edge: edge["relation"])
+    _apart({node["kind"] for node in nodes}, lambda kind: kind[:1].upper() + kind[1:], ("kind", "label"))
+    _apart({edge["relation"] for edge in edges}, str.upper, ("relation", "type"))
     statements = [("MATCH (n) DETACH DELETE n", {})]
     for kind, group in groupby(nodes, key=lambda node: node["kind"]):
         label = _label(kind, "kind")

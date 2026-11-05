@@ -131,6 +131,9 @@ ORDER BY s.id"""
 - each edge becomes a relationship typed by the relation in capitals, carrying the edge's other columns;
 - `Node.id` is made unique.
 
+Two kinds that would become one label, such as `site` and `Site`, or two relations that would become one type, stop
+the load, since the built-in graph keeps them apart.
+
 The delete and the copy are one transaction, so a load that fails leaves the graph that was there. A very large graph
 may need a higher `db.memory.transaction.max`.
 

@@ -146,6 +146,21 @@ def test_a_load_that_fails_partway_changes_nothing():
     assert len(driver.pending) == 3 and driver.committed == []
 
 
+def test_kinds_or_relations_differing_only_in_case_are_refused(tmp_path):
+    """Neo4j would merge them into one label or type, where the built-in graph keeps them apart."""
+    from clm_decision.graph import Graph  # pylint: disable=import-outside-toplevel
+    (tmp_path / "nodes.csv").write_text("id,kind,name\nA,site,A\nB,Site,B\n", encoding="utf-8")
+    (tmp_path / "edges.csv").write_text("source,relation,target\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="^kinds 'Site' and 'site' both become the label :Site$"):
+        load_graph.load(Graph.from_csv(tmp_path / "nodes.csv", tmp_path / "edges.csv"), FakeDriver(), "neo4j")
+    (tmp_path / "nodes.csv").write_text("id,kind,name\nA,site,A\nB,site,B\n", encoding="utf-8")
+    (tmp_path / "edges.csv").write_text("source,relation,target\nA,depends_on,B\nB,Depends_on,A\n",
+                                        encoding="utf-8")
+    with pytest.raises(ValueError, match="^relations 'Depends_on' and 'depends_on' both become the type "
+                                         ":DEPENDS_ON$"):
+        load_graph.load(Graph.from_csv(tmp_path / "nodes.csv", tmp_path / "edges.csv"), FakeDriver(), "neo4j")
+
+
 def _sorted(rows):
     return sorted(rows, key=repr)
 
