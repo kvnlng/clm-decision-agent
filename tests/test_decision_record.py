@@ -84,6 +84,24 @@ def test_a_value_in_the_question_is_supplied(calls):
     assert decision_record.build("Should we, for product P1?", calls)["supplied"] == {"product": ["P1"]}
 
 
+def _scenario_call(supplied: dict) -> dict:
+    return call("scenario_x", {}, {"scenario": "x", "objective": "o", "maximise": True, "best": None, "ranking": [],
+                                   "branches": [], "supplied": supplied})
+
+
+def test_a_value_inside_a_word_or_an_exempt_number_is_not_supplied():
+    supplied = {"state": "NY", "home": "CA", "plans": 3, "year": 2026, "note": "", "job_related": True}
+    record = decision_record.build("Is there any issue, because of my agreement?", [_scenario_call(supplied)])
+    assert not record["supplied"] and set(record["chosen_by_agent"]) == set(supplied)
+
+
+def test_a_value_the_question_gives_as_a_word_or_a_figure_is_supplied():
+    supplied = {"state": "NY", "plans": 3, "year": 2026, "rate": 0.2, "budget": 1200000}
+    record = decision_record.build("In NY, which of 3 plans in 2026 at 20% fits $1.2 million?",
+                                   [_scenario_call(supplied)])
+    assert set(record["supplied"]) == set(supplied) and not record["chosen_by_agent"]
+
+
 def test_a_missing_item_the_agent_filled_in_stays_to_ask(write_rules_env):
     env, rules_result = write_rules_env
     calls = [call("rules", {"topic": "open_site"}, rules_result),

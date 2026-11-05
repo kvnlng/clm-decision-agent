@@ -32,7 +32,8 @@ class Number:
     decimals: int
 
 
-def _figures(text: str) -> list[Number]:
+def figures(text: str) -> list[Number]:
+    """Every figure in the text, the ones the check does not look at too."""
     found = []
     for match in _FIGURE.finditer(_DATES.sub(" ", text)):
         digits = match.group(2).replace(",", "")
@@ -50,7 +51,7 @@ def _checked(number: Number) -> bool:
 
 def numbers_in(text: str) -> list[Number]:
     """The figures in the text that the check looks at."""
-    return [number for number in _figures(text) if _checked(number)]
+    return [number for number in figures(text) if _checked(number)]
 
 
 def _values(result) -> list[float]:
@@ -64,7 +65,7 @@ def _values(result) -> list[float]:
     if isinstance(result, (int, float)):
         return [float(result)]
     if isinstance(result, str):
-        return [number.value * number.scales[0] for number in _figures(result)]
+        return [number.value * number.scales[0] for number in figures(result)]
     return []
 
 
