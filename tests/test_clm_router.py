@@ -296,6 +296,24 @@ def test_mlx_prefetch_uses_the_builds_vectors():
     assert ("state", ["a\n\nUrgent?", "b\n\nUrgent?"]) in engine.engine.vectors
 
 
+class SmallCacheMlxBuild(FakeMlxBuild):
+    """An MLX build whose _vectors fails, as the real one does, when one call has more texts than its cache."""
+
+    cache_size = 4
+
+    def _vectors(self, texts, which):
+        assert len(texts) <= self.cache_size
+        super()._vectors(texts, which)
+        return [[float(len(text))] for text in texts]
+
+
+def test_mlx_state_vectors_stay_within_the_builds_cache():
+    engine = clm_router.MlxEngine.__new__(clm_router.MlxEngine)
+    engine.engine = SmallCacheMlxBuild()
+    texts = [f"state {'x' * i}" for i in range(10)]
+    assert engine.state_vectors(texts).tolist() == [[float(len(text))] for text in texts]
+
+
 def test_decide_many_of_nothing_on_a_real_engine(scenario):
     from test_clm_torch import CONFIG, FakeEncoder, tiny_weights  # pylint: disable=import-outside-toplevel
     from clm_decision.clm_torch import TorchEngine, TorchHeads  # pylint: disable=import-outside-toplevel
