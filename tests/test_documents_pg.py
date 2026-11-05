@@ -187,6 +187,49 @@ def test_a_lost_connection_is_opened_again(opens):
     assert store.ids("cases", 3) == ["case-a"] and store.connection is fresh
 
 
+def test_a_replaced_connection_is_closed(opens):
+    lost, fresh = FakeConnection(fail=("SELECT id", psycopg.OperationalError("the connection is lost"))), \
+        FakeConnection(rows=[("case-a",)])
+    opens += [lost, fresh]
+    store = documents_pg.connect_postgres(NEVER, "x")
+    assert store.ids("cases", 3) == ["case-a"] and lost.closed
+
+
+def test_a_database_still_down_is_tried_once_per_read(opens, monkeypatch):
+    """While PostgreSQL is down each read waits for one connect timeout, not two, before its one line."""
+    tries = []
+
+    def connect(**options):
+        if opens:
+            return opens.pop(0)
+        tries.append(options)
+        raise psycopg.OperationalError("connection refused")
+    monkeypatch.setattr(psycopg, "connect", connect)
+    opens.append(FakeConnection(fail=("SELECT id", psycopg.OperationalError("the connection is lost"))))
+    store = documents_pg.connect_postgres(NEVER, "x")
+    with pytest.raises(StepError, match=r"^documents at 127.0.0.1:1/nowhere: connection refused$"):
+        store.ids("cases", 3)
+    assert len(tries) == 1
+    with pytest.raises(StepError, match=r"connection refused$"):
+        store.ids("cases", 3)
+    assert len(tries) == 2
+
+
+def test_a_new_connection_that_cannot_take_vectors_is_closed(opens, monkeypatch):
+    lost, fresh = FakeConnection(fail=("SELECT id", psycopg.OperationalError("the connection is lost"))), \
+        FakeConnection()
+    opens += [lost, fresh]
+
+    def register_vector(connection):
+        if connection is fresh:
+            raise psycopg.ProgrammingError("vector type not found in the database")
+    monkeypatch.setattr(pgvector.psycopg, "register_vector", register_vector)
+    store = documents_pg.connect_postgres(NEVER, "x")
+    with pytest.raises(StepError, match=r"vector type not found in the database$"):
+        store.ids("cases", 3)
+    assert fresh.closed
+
+
 def test_a_failing_statement_is_not_run_again(opens):
     connection = FakeConnection(fail=("SELECT id", psycopg.errors.UndefinedTable('relation "documents" does not '
                                                                                  'exist')))

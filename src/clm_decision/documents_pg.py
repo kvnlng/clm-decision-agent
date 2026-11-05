@@ -8,6 +8,7 @@ document). load_documents.py fills them.
 from __future__ import annotations
 
 import json
+import threading
 
 from .scenario import ScenarioError, StepError
 
@@ -53,7 +54,11 @@ def connect_postgres(settings, password: str) -> PostgresStore:
 
     def reconnect():
         fresh = psycopg.connect(**options)
-        register_vector(fresh)
+        try:
+            register_vector(fresh)
+        except psycopg.Error:
+            fresh.close()
+            raise
         return fresh
     try:
         connection = psycopg.connect(**options)
@@ -99,20 +104,31 @@ class PostgresStore:
 
     def __init__(self, connection, where: str, reconnect=None):
         self.connection, self.where, self.reconnect = connection, where, reconnect
+        self._swap = threading.Lock()
+
+    def _lost(self) -> bool:
+        return self.reconnect is not None and (self.connection.closed or self.connection.broken)
 
     def _connection(self):
-        """The connection, opened again first when a restart, a sleep or a timeout has lost it."""
-        if self.reconnect is not None and (self.connection.closed or self.connection.broken):
-            self.connection = self.reconnect()
+        """The connection, opened again first when a restart, a sleep or a timeout has lost it. One thread opens it
+        and closes the lost one; the others wait and use the new one."""
+        if self._lost():
+            with self._swap:
+                if self._lost():
+                    lost = self.connection
+                    self.connection = self.reconnect()
+                    lost.close()
         return self.connection
 
     def _rows(self, sql: str, params) -> list[tuple]:
         import psycopg  # pylint: disable=import-outside-toplevel
         try:
+            # A database still down fails here, once, rather than being tried again below
+            connection = self._connection()
             try:
-                return self._connection().execute(sql, params).fetchall()
+                return connection.execute(sql, params).fetchall()
             except psycopg.OperationalError:
-                if self.reconnect is None or not (self.connection.closed or self.connection.broken):
+                if self.reconnect is None or not (connection.closed or connection.broken):
                     raise
                 # Lost while idle: these are reads, so run the statement once more on a new connection
                 return self._connection().execute(sql, params).fetchall()
