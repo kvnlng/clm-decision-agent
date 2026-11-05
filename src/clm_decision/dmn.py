@@ -3,7 +3,7 @@
 A table is read from a DMN XML file (any DMN namespace version). Each input's expression text is the name of the
 variable it reads; each output's name is the key of the result. Supported:
 
-    hit policies    UNIQUE (the default), FIRST, COLLECT
+    hit policies    UNIQUE (the default), FIRST, COLLECT (with no aggregation: every matching rule's outputs)
     input entries   -   a literal (1.5, "Region B", true)   < <= > >= = != with a number
                     ranges [a..b] (a..b) [a..b) (a..b]   comma-separated lists of these   not(...)
     output entries  number, string and boolean literals
@@ -187,6 +187,9 @@ def load_table(path: Path) -> Table:
     hit_policy = table.get("hitPolicy", "UNIQUE")
     if hit_policy not in HIT_POLICIES:
         raise DmnError(f"{path.name}: hit policy {hit_policy} is not supported ({', '.join(HIT_POLICIES)})")
+    if aggregation := table.get("aggregation"):
+        raise DmnError(f"{path.name}: COLLECT aggregation {aggregation} is not supported; remove it to get every "
+                       "matching rule's outputs")
     expressions = [(_children(item, "inputExpression") or [None])[0] for item in _children(table, "input")]
     inputs = [_text(expression).strip() if expression is not None else "" for expression in expressions]
     types = [expression.get("typeRef", "") if expression is not None else "" for expression in expressions]
@@ -198,6 +201,18 @@ def load_table(path: Path) -> Table:
     return Table(name, inputs, types, outputs, hit_policy, _rules(path, table, len(inputs), len(outputs)))
 
 
+def _matches(table: Table, rule: Rule, values: list) -> bool:
+    """Whether every test of the rule passes, stopping at the first that fails; a number test given something else
+    names its own input."""
+    for name, test, value in zip(table.inputs, rule.tests, values):
+        try:
+            if not test(value):
+                return False
+        except _NotANumber as error:
+            raise DmnError(f"{table.name}: {name} must be a number, not {value!r}") from error
+    return True
+
+
 def evaluate(table: Table, inputs: dict) -> dict:
     """-> {"outputs": ..., "fired": [rule ids]}; for COLLECT, outputs is a list of dicts, one per rule fired.
     Raises DmnError for a missing input, for no matching rule (UNIQUE, FIRST) or for two (UNIQUE)."""
@@ -205,11 +220,7 @@ def evaluate(table: Table, inputs: dict) -> dict:
     if missing:
         raise DmnError(f"{table.name}: missing input {', '.join(missing)}")
     values = [inputs[name] for name in table.inputs]
-    try:
-        fired = [rule for rule in table.rules if all(test(value) for test, value in zip(rule.tests, values))]
-    except _NotANumber as error:
-        name = next(name for name in table.inputs if inputs[name] is error.args[0])
-        raise DmnError(f"{table.name}: {name} must be a number, not {error.args[0]!r}") from error
+    fired = [rule for rule in table.rules if _matches(table, rule, values)]
     if table.hit_policy == "COLLECT":
         return {"outputs": [dict(zip(table.outputs, rule.values)) for rule in fired],
                 "fired": [rule.id for rule in fired]}

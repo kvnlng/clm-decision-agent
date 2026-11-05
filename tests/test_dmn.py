@@ -72,3 +72,16 @@ def test_a_bad_entry_is_refused_at_load(tmp_path, table, problem):
 def test_a_number_test_on_text_is_an_error():
     with pytest.raises(DmnError, match="quality_threshold: defect_rate must be a number, not '0.9'"):
         evaluate(load_table(TABLES / "quality.dmn"), {"defect_rate": "0.9"})
+
+
+def test_a_number_test_on_text_names_its_own_input_when_another_holds_the_same_text():
+    with pytest.raises(DmnError, match="count must be a number, not 'B'"):
+        evaluate(load_table(TABLES / "forms.dmn"), {"size": 50, "grade": "B", "count": "B"})
+
+
+def test_a_collect_aggregation_is_refused_at_load(tmp_path):
+    table = (TABLES / "collect.dmn").read_text(encoding="utf-8").replace(
+        'hitPolicy="COLLECT"', 'hitPolicy="COLLECT" aggregation="SUM"')
+    (tmp_path / "sum.dmn").write_text(table, encoding="utf-8")
+    with pytest.raises(DmnError, match="^sum.dmn: COLLECT aggregation SUM is not supported"):
+        load_table(tmp_path / "sum.dmn")
