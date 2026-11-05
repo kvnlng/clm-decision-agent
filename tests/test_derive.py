@@ -249,6 +249,17 @@ def test_status_command_with_a_second_reader_approves_only_after_a_reading_since
     assert derive.main([*status, "approved", "--by", "kevin"]) == 0
 
 
+def test_status_command_reads_the_second_reader_only_to_approve(path, capsys):
+    run(path, good())
+    path.write_text(path.read_text(encoding="utf-8").replace(
+        '[derived]\ncollection = "handbook"', '[derived]\ncollection = "handbook"\nsecond_reader = "oops"'),
+        encoding="utf-8")
+    status = ["status", str(path), "decisions", "carryover_limit"]
+    assert derive.main([*status, "rejected", "--by", "kevin"]) == 0
+    assert derive.main([*status, "approved", "--by", "kevin"]) == 2
+    assert "derived.second_reader: must be a table" in capsys.readouterr().err
+
+
 def test_check_command_moves_a_corrected_entry_to_checked(path):
     run(path, Canned(carryover_limit=[CARRYOVER], k401_2026__match_cap=[{**CAP, "value": 6400}]))
     layer = derived.read(path.parent)
