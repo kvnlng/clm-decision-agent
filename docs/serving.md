@@ -26,10 +26,10 @@ uv run clm-server my_scenario.toml --http [--host 127.0.0.1] [--port 8000] [--re
 ```
 
 The address is `http://<host>:<port>/mcp`, MCP's Streamable HTTP, without sessions. **Every request must send
-`Authorization: Bearer <key>`** (the scheme in any case); anything else gets `401 {"error": "missing or wrong key"}`,
-and the server will not start without the key variable. It listens on this computer only by default; for callers
-elsewhere, set `--host`, name their address with `--allowed-host`, and put HTTPS in front, since the key travels in
-every request.
+`Authorization: Bearer <key>`**, with `Bearer` in any letter case. Anything else gets
+`401 {"error": "missing or wrong key"}`, and the server will not start without the key variable. It listens on this
+computer only by default; for callers elsewhere, set `--host`, name their address with `--allowed-host`, and put HTTPS
+in front, since the key travels in every request.
 
 A text CLM reads may be at most 32,000 characters, in `decide`, `decide_many`, `check_call` (with its call),
 `correct` and an environment's judge tools; a longer one is refused. CLM reads only its last 2,048 tokens, and a
@@ -37,8 +37,9 @@ longer text would hold up other callers while it is read.
 
 Leave out `--review` for real callers: any caller with the key could save corrections, which become training data.
 
-For Claude Code: `claude mcp add --transport http decisions http://127.0.0.1:8000/mcp --header "Authorization: Bearer <the key>"`,
-then `/mcp` to see the tools. The MCP Inspector connects as an outside agent would ([below](#inspecting-a-server)).
+For Claude Code: `claude mcp add --transport http decisions http://127.0.0.1:8000/mcp --header "Authorization: Bearer
+<the key>"`, then `/mcp` to see the tools. The MCP Inspector connects as an outside agent would
+([below](#inspecting-a-server)).
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -46,7 +47,7 @@ then `/mcp` to see the tools. The MCP Inspector connects as an outside agent wou
 | `--review` | off | Also offer `correct` and `agreement`; scenarios only |
 | `--http` | stdio | Serve Streamable HTTP at `/mcp` |
 | `--host`, `--port` | `127.0.0.1`, `8000` | Where to listen |
-| `--allowed-host HOST` | this computer | A host callers name (`decisions.example.org`), taken on any port, as is a page served over https from it; `127.0.0.1`, `localhost` and `[::1]` are still taken; repeatable |
+| `--allowed-host HOST` | this computer | A host that callers name (`decisions.example.org`), accepted on any port, as is a page served over https from it. `127.0.0.1`, `localhost` and `[::1]` are still accepted. Repeatable |
 | `--auth key\|oauth` | `key` | A shared key, or JWTs from an OIDC issuer (next section) |
 | `--key-env VAR` | `DECISION_SERVER_KEY` | The variable holding the key |
 | `--issuer URL` | `DECISION_OAUTH_ISSUER` | The token issuer; HTTPS except on this computer |
@@ -114,9 +115,9 @@ uv run clm-server my_scenario.toml --http --auth oauth \
 
 The Inspector's page, and what it shows for each example, is in
 [getting-started.md](getting-started.md#looking-inside-the-server). A server already running over HTTP is reached with
-its address and the `Authorization` header: on the page, or from the command line (Node; `npx` downloads it), for a
-check you can repeat. With the handbook server running, its documents in PostgreSQL
-([examples/handbook](../examples/handbook/README.md)):
+its address and the `Authorization` header: on the page, or from the command line, for a check you can repeat (the
+command line needs Node; `npx` downloads the Inspector). With the handbook server running and its documents in
+PostgreSQL ([examples/handbook](../examples/handbook/README.md)):
 
 ```bash
 export DECISION_SERVER_KEY=<a long random key>
@@ -150,15 +151,15 @@ uv run clm-server examples/service_desk/scenario.toml --read-only
   ending in `*` matches every tool starting with the rest (`query_*`, `search_*`, `scenario_*`); `describe` cannot be
   excluded. A name or pattern that matches no tool stops start-up with one line naming it and the tools there are.
   For a scenario, `correct` and `agreement` count as its tools with or without `--review`, so a file can exclude them.
-- This limits what agents are offered; it is not an access boundary. The key or OAuth is: give a caller you would
-  not trust with a tool no access to the server.
+- This limits what agents are offered; it is not an access boundary. The key or OAuth is the boundary: a caller you
+  would not trust with a tool should have no access to the server at all.
 - What is not offered is gone everywhere: from the tool list; from `describe`, which lists it under `left_out` so an
   agent does not look for it; from the resources that stand for the same thing (rule resources with the `rule` tool,
   a collection's documents with `document_COLLECTION`); and from the `answer_question` prompt and the server's
   instructions where they name a tool. A scenario of an environment still runs every query, decision and
   calculation it needs: the selection limits what the agent can call, not what runs inside a scenario.
 - `--read-only`: a routing scenario's `decide` and `decide_many` run every informing tool and no acting tool; each
-  acting tool is reported `skipped` with the reason "read-only server", and both are marked read-only. `--review`
+  acting tool is reported `skipped` with the reason "read-only server", and both tools are marked read-only. `--review`
   writes the record, so the two together stop start-up. An environment's tools only read already, so `--read-only`
   changes nothing but `describe`. Either way `describe` says `"read_only": true` and each trace line carries
   `read_only`.
@@ -194,13 +195,13 @@ uv run clm-trace-report calls.jsonl
 
 Each trace line gives a call's time and how much went on waiting for CLM, encoding, the heads, each of the scenario's
 tools and matching stored corrections, with the texts and tokens encoded and how many came from the cache. An
-environment's line counts the queries, decisions, calculations and judgements with each kind's time; a scenario's
-gives the branches kept, rejected and failed, and the best. A resource read is traced the same way, named by its URI
-(`rule://vesting`), with the caller and whether it failed.
+environment's line counts the queries, decisions, calculations and judgements with each kind's time; a `scenario_`
+tool's line gives the branches kept, rejected and failed, and the best. A resource read is traced the same way, named by
+its URI (`rule://vesting`), with the caller and whether it failed.
 
-The report gives each kind of call (`decide`, `check_call`, ...) a table of stages (mean, median, 95th and 99th
-percentile in milliseconds, share of the time), then the cache hit rate, texts and tokens per call, padding's share
-of what was encoded and, for an environment, steps per call. A stage no call had is left out.
+The report gives each kind of call (`decide`, `check_call`, ...) a table of stages, with each stage's mean, median,
+95th and 99th percentile in milliseconds and its share of the time. Then come the cache hit rate, texts and tokens
+per call, padding's share of what was encoded and, for an environment, steps per call. A stage no call had is left out.
 
 - `--trace-text` adds the requests' text: for a scenario, the text of `decide`, `decide_many`, `check_call` and
   `correct`; for an environment, each tool call's arguments as JSON (a resource read is traced by its URI only). The
@@ -214,8 +215,8 @@ of what was encoded and, for an environment, steps per call. A stage no call had
 
 ### One at a time or many at once
 
-Decisions a second (encoding's share of the time) on the example scenario's 318 example messages, each run in a fresh
-server, measured before packing (below) and not measured again:
+The table gives decisions a second, with encoding's share of the time in brackets, on the example scenario's 318
+example messages. Each run was in a fresh server, measured before packing (below) and not measured again:
 
 | Calls | M5 Max, 64 GB, MLX | A100 80 GB, torch |
 |---|---|---|
@@ -232,15 +233,15 @@ its own encoder and does neither.
 | Measured | Result |
 |---|---|
 | Row size, A100 | 1,024 and 2,048 tokens equally fast; 4,096 7% slower; 8,192 25% slower: the mask makes attention cover the whole row |
-| Tools' share, A100 | The example's tools at first made a new HTTP client per call, about 17 ms each, which held `decide_many` to 23 a second until they shared one ([scenario.md](scenario.md#tools)); their share grows as CLM gets faster |
-| Packing's effect on routes | A text's numbers differ very slightly encoded together, so a near tie can flip: 2 of the 318 did on the Mac, 1 on the A100, all about 0.50 against 0.49, well below the confidence threshold; no acting tool ran |
+| Tools' share, A100 | The example's tools at first made a new HTTP client per call, about 17 ms each, which held `decide_many` to 23 a second until they shared one ([scenario.md](scenario.md#tools)). Their share grows as CLM gets faster |
+| Packing's effect on routes | A text's numbers differ very slightly when it is encoded with others, so a near tie can flip. 2 of the 318 did on the Mac and 1 on the A100, all about 0.50 against 0.49, well below the confidence threshold; no acting tool ran |
 | Holding the lock | A `decide_many` call holds CLM for its batch, so other calls wait: 1,000 requests take about 20 seconds on the A100 |
 | H100 80 GB (SXM) | The CrowdStrike example decided 2.5 times as fast as on the A100, 46.6 against 18.8 a second on the same 3,000 bookings, and the whole day of 99,806 in 32.5 minutes ([its README](../examples/crowdstrike/README.md#the-whole-day-on-a-data-centre-gpu)) |
 
 ## On Linux
 
-CLM runs inside the server's process, on the backend the scenario's `[clm]` table names; which backend fits which
-machine and what each needs are in [models.md](models.md), and what has been checked, the A100 included, in
+CLM runs inside the server's process, on the backend the scenario's `[clm]` table names. Which backend fits which
+machine, and what each needs, is in [models.md](models.md); what has been checked, the A100 included, is in
 [its table](models.md#what-has-been-checked). To install without a checkout, in a virtual environment:
 
 ```bash

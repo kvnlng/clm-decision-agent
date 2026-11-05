@@ -20,14 +20,14 @@ about patient care out of scope.
 
 ## Your environment, and the decisions over it
 
-**Your environment is the tools you define:** queries over your data, actions such as opening a ticket, and rules
-(DMN tables, calculations, limits). The framework runs them, records what each returned and traces every step. A
-decision runs over it in one of two styles:
+**An environment is what you define:** queries over your data, actions such as opening a ticket, and rules: DMN
+tables, calculations and limits. The framework runs them, records each result and traces every step. Decisions over
+an environment come in two styles:
 
 | | **Routing** | **Weighing options** |
 |---|---|---|
 | Decides | A message's route, many at once | A question with alternatives: "move Product Line X to Region B?" |
-| How | CLM picks the route from the message and your informing tools' facts; your acting tools carry it out | Queries supply figures, calculations work out each alternative, rules reject those over a limit, an objective ranks the rest |
+| How | CLM picks the route from the message and your informing tools' facts; your acting tools carry it out | Queries supply figures, calculations work out each alternative, rules reject those over a limit and an objective ranks the rest |
 | CLM | Ranks the options | Only in a **judge**: a yes/no question of text no rule can read |
 | The agent | Talks to the person, acts on the decision | Chooses what to run and reports it; never calculates; every figure is checked |
 | File | `scenario.toml` | `environment.toml` |
@@ -36,20 +36,20 @@ decision runs over it in one of two styles:
 
 `clm-server` serves one file at a time, so the two styles cannot yet share tools. A CLM does not generate text: it
 says which listed option fits a situation, with a probability (Kwok et al. 2026,
-[Contrastive-LM/CLM](https://github.com/Contrastive-LM/CLM)); this project runs the authors' model with PyTorch, or
+[Contrastive-LM/CLM](https://github.com/Contrastive-LM/CLM)). This project runs the authors' model with PyTorch, or
 community MLX builds on a Mac.
 
 ## Installing
 
-Python 3.12 to 3.14, [uv](https://docs.astral.sh/uv/), and for CLM one of:
+You need Python 3.12 to 3.14, [uv](https://docs.astral.sh/uv/), and for CLM one of:
 
 | Hardware | Backend | First run downloads | |
 |---|---|---|---|
 | Mac, Apple Silicon, 16 GB or more | MLX | about 8 GB | |
 | Linux, NVIDIA GPU of 24 GB or more | PyTorch | about 16 GB | Set the torch backend in the scenario's `[clm]` table; install a C compiler and Python's headers (`sudo apt install build-essential python3.12-dev` on Ubuntu). A CPU works, slowly: [serving](serving.md#on-linux) |
 
-In a checkout: `uv sync`, then `uv run <command>`. As a package (the core, about 50 MB, serves environments without
-judges), or uninstalled with `uvx`, which lets an MCP client or the Inspector start a server:
+In a checkout, run `uv sync`, then `uv run <command>`. Installed as a package, the core (about 50 MB) serves
+environments without judges; `uvx` runs it uninstalled, so an MCP client or the Inspector can start a server:
 
 ```bash
 pip install "clm-decision-agent @ git+https://github.com/kvnlng/clm-decision-agent"               # the core
@@ -66,10 +66,10 @@ uvx --from "clm-decision-agent[documents] @ git+https://github.com/kvnlng/clm-de
 | `documents` | The PostgreSQL driver and pgvector, for collections of documents |
 | `agent` | The Anthropic SDK, for `clm-agent` with Claude; Ollama needs nothing more |
 
-Commands, each with `--help` (one needing a missing extra says which): `clm-server`, `clm-agent`,
-`clm-new-scenario`, `clm-new-environment`, `clm-synthesize`, `clm-train`, `clm-evaluate`, `clm-record`,
-`clm-load-graph`, `clm-load-documents`, `clm-registry`, `clm-trace-report`, `clm-derive`. The Python package is
-`clm_decision`.
+The commands are `clm-server`, `clm-agent`, `clm-new-scenario`, `clm-new-environment`, `clm-synthesize`,
+`clm-train`, `clm-evaluate`, `clm-record`, `clm-load-graph`, `clm-load-documents`, `clm-registry`,
+`clm-trace-report` and `clm-derive`. Each has `--help`, and one that needs a missing extra says which. The Python
+package is `clm_decision`.
 
 ## Try an example
 
@@ -82,9 +82,10 @@ uv run clm-agent examples/tariff/environment.toml \
 ```
 
 `clm-agent` is a reference agent, Claude by default (your usual Anthropic credentials) or `--backend ollama`
-(`gemma4:26b`); it answers from the server's tools, then lists any figure no tool returned.
+(`gemma4:26b`). It answers from the server's tools, then lists any figure no tool returned.
 
-**Service desk**, routing, is trained first, under a minute; as released, CLM gets about half the routes right:
+**Service desk**, routing, is trained first, in under a minute, since as released CLM gets about half the routes
+right:
 
 ```bash
 uv run clm-train examples/service_desk/scenario.toml
@@ -94,11 +95,11 @@ npx -y @modelcontextprotocol/inspector@2.13.0 \
 ```
 
 In the Inspector ([Looking inside the server](#looking-inside-the-server)), call `decide` with `text` "I need access
-to the oncology registry for an audit, needed this week": route (Data_Access) and probabilities, each question's
-answer, the informing tools' facts, the rules, the ticket really opened in the mock tracker. `--review` adds
-`correct`, which saves the right route, and `agreement`, how often CLM agrees with your corrections. `--read-only`
-instead (not both: `correct` writes the record) reports acting tools `skipped`, reason "read-only server", so the
-tracker is not needed.
+to the oncology registry for an audit, needed this week". The result shows the route (Data_Access) and its
+probabilities, each question's answer, the informing tools' facts, the rules, and the ticket really opened in the
+mock tracker. `--review` adds `correct`, which saves the right route, and `agreement`, which reports how often CLM
+agrees with your corrections. With `--read-only` instead (not both, since `correct` writes the record), acting tools
+are reported `skipped` with the reason "read-only server", so the tracker is not needed.
 
 ## Build your own
 
@@ -123,8 +124,8 @@ npx -y @modelcontextprotocol/inspector@2.13.0 uv run clm-server examples/tariff/
 1. **Start it** from the repository: it opens `http://127.0.0.1:6274/?MCP_INSPECTOR_API_TOKEN=...`, whose token
    lets only you use the page.
 2. **Connect** with the server card's switch; on **Failed**, the **Console** has the one-line reason.
-3. **Tools** lists every tool (18 for tariff): run `query_components_of` with `PX` for the JSON an agent gets, rows
-   and the steps behind them.
+3. **Tools** lists every tool (18 for tariff): run `query_components_of` with `PX` to see the JSON an agent gets,
+   the rows and the steps behind them.
 4. **Resources** are read without a tool: `describe`, and each rule and document when there are any; **Templates**
    read one, such as a passage.
 5. **Prompts** has `answer_question`, the reference agent's instructions with your environment's description.
@@ -139,8 +140,9 @@ npx -y @modelcontextprotocol/inspector@2.13.0 sh -c \
     'set -a; . ./.postgres-local.env; exec uv run clm-server examples/handbook/environment.toml'
 ```
 
-**One call from the command line** is `--cli` with a method, printed as JSON; `--method tools/list`,
-`resources/list` and `prompts/list` list them. A server already on HTTP is reached by address and key:
+**One call from the command line** is `--cli` with a method, and the result is printed as JSON; `--method
+tools/list`, `resources/list` and `prompts/list` list the tools, resources and prompts. A server already on HTTP is
+reached by address and key:
 [serving](serving.md#inspecting-a-server).
 
 ```bash
@@ -151,7 +153,8 @@ npx -y @modelcontextprotocol/inspector@2.13.0 --cli uv run clm-server examples/t
 ## Trying it in a chat
 
 With no MCP client of your own, the [portal](../portal/README.md)'s chat talks to a running server from the command
-line through any OpenAI-style model or Claude, printing every call and result. Its commands are there.
+line through any OpenAI-style model or Claude, printing every call and result. Its commands are in the portal's
+README.
 
 ## Connecting agents
 
@@ -162,6 +165,8 @@ uv run clm-server examples/tariff/environment.toml --http --auth oauth \
     --issuer https://login.example.org/realms/corp --audience decisions   # tokens from your identity provider
 ```
 
+The rest, in detail:
+
 | | |
 |---|---|
 | HTTP, shared key or OAuth from any OIDC issuer | [serving](serving.md) |
@@ -170,6 +175,6 @@ uv run clm-server examples/tariff/environment.toml --http --auth oauth \
 | `clm-agent` | Takes a server's URL as well as a file; the key in `DECISION_SERVER_KEY` goes only over https or to this computer |
 | Databricks | Not tried yet; [what it needs](serving.md#databricks) |
 
-**A scenario's server acts without asking:** an acting tool runs at once unless the route is uncertain, and `decide`
-twice acts twice, so point acting tools at real systems with care; an environment's tools only read. Read
+**A scenario's server acts without asking:** an acting tool runs at once unless the route is uncertain, and calling
+`decide` twice acts twice, so point acting tools at real systems with care. An environment's tools only read. Read
 [data handling](data-handling.md) before any real text goes in.

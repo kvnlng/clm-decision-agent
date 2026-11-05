@@ -74,7 +74,7 @@ uv run clm-train my_scenario/scenario.toml
 uv run clm-evaluate my_scenario/scenario.toml --cases my_scenario/scenario.cases.jsonl
 ```
 
-`clm-evaluate --cases` decides every case through the server's own steps, with your tools but no acting tool, and
+`clm-evaluate --cases` decides every case through the server's own steps, with your tools but no acting tool. It
 reports each route, option and answer per class, accuracy by confidence, and the lowest `confidence_threshold` at
 which the routes kept are 90% right. A score's answer counts as its likeliest level, as in training. On the example,
 trained heads took the route from 17% to 75% on unseen cases; the suggested threshold was 0.63, against the 0.6 it

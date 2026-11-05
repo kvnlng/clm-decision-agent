@@ -1,12 +1,12 @@
 # Training CLM for your scenario
 
-As released, CLM is general and often wrong on a specific set of routes: 8 of 20 hand-written messages on the example
-scenario. Training fits it to your routes in about a minute.
+As released, CLM is general and often wrong on a specific set of routes: it got 8 of 20 hand-written messages right
+on the example scenario. Training fits it to your routes in about a minute.
 
 ## What is trained
 
-Only CLM's two small heads (about 75 MB together); the encoder is untouched. Each example is encoded once, and training
-adjusts how the vectors are projected so each message lands nearest the right answer.
+Only CLM's two small heads (about 75 MB together) are trained; the encoder is untouched. Each example is encoded
+once, and training adjusts how the vectors are projected so each message lands nearest the right answer.
 
 The route is always trained, in the same heads as every question your examples label and, where examples say which
 option was right, the choice among a route's options. Unlabelled questions and the tool check stay as released;
@@ -46,7 +46,7 @@ A yes/no answer is `true` or `false`, a score the level's number counting from 0
 | `facts` | Value | Who hears it |
 |---|---|---|
 | As a list | what CLM read with the request, as your tools would find them | every question |
-| By tool, as corrections save them: `{"situation": ["..."], "lookup": ["..."]}` | the same | each question only what its `[tools.inform]` settings give it; `[routing] inform` tools' facts join the text the route trains on, as when deciding |
+| By tool, as corrections save them: `{"situation": ["..."], "lookup": ["..."]}` | the same | each question hears only what its `[tools.inform]` settings give it; the facts of `[routing] inform` tools join the text the route trains on, as when deciding |
 
 A line naming a question the scenario lacks, or an answer it cannot take, stops `clm-train` with the line's number.
 Lines of a route the scenario no longer has are left out, and `clm-train` says how many for each route.
@@ -73,8 +73,8 @@ Then loop: generate, train, try and correct messages in the Inspector, evaluate,
 
 ## What it did on the example
 
-On the 55 held-back generated examples, with the route, urgency and identifiable trained together (each count is right
-of all with that answer):
+On the 55 held-back generated examples, with the route, urgency and identifiable trained together (each count is the
+number right of all examples with that answer):
 
 | | Released | Trained |
 |---|---|---|
@@ -90,9 +90,10 @@ of all with that answer):
 - "Within weeks" has two examples in all, one held back, so it cannot be learned. Label more of a rare answer before
   trusting it.
 
-Two earlier measurements on a similar problem (issue reports, 450 generated examples): most of the gain arrived by 100
-to 200 examples, and a plain classifier on the encoder's vectors did about as well as trained heads, which were chosen
-so CLM does every job through one model. `clm-train` prints the classifier's accuracy beside its own.
+Two earlier measurements on a similar problem (issue reports, 450 generated examples) showed that most of the gain
+arrived by 100 to 200 examples, and that a plain classifier on the encoder's vectors did about as well as trained
+heads; the heads were chosen so that CLM does every job through one model. `clm-train` prints the classifier's
+accuracy beside its own.
 
 ## Reading the numbers
 
@@ -104,11 +105,11 @@ so CLM does every job through one model. `clm-train` prints the classifier's acc
 
 ## Limits and when to train again
 
-- Train again when a route's description or name, or the routing question, changes; when a trained question's wording
-  changes, or a route's options instructions if its ranking was trained (untrained questions can change freely); when
-  you change the CLM build; and when you have corrected more real messages. Trained heads fit the exact wording: in a
-  test, rewording the options after training dropped accuracy below the untrained model. The server detects a change,
-  says so, and uses the released heads until you retrain.
+- Train again when a route's description or name or the routing question changes, when a trained question's wording
+  changes (untrained questions can change freely), when a route's options instructions change and its ranking was
+  trained, when you change the CLM build, and when you have corrected more real messages. Trained heads fit the exact
+  wording: in a test, rewording the options after training dropped accuracy below the untrained model. The server
+  detects a change, says so, and uses the released heads until you retrain.
 - Training runs with either backend, on the machine you serve from. Heads trained with one backend are not used by the
   other ([models.md](models.md#heads-belong-to-one-backend)). Trained with the torch backend on a Mac, the example also
   reached 98% held-back and 15 of 17.

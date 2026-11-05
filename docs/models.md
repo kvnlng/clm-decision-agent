@@ -28,8 +28,8 @@ model_id = "mlx-community/CLM-v0.1-8B-MLX-8bit"
 heads = "scenario.heads"
 ```
 
-Community MLX builds of CLM, converted from the authors' release and checked against it. "8-bit" and "4-bit" say how
-far the encoder's numbers were compressed; the agreement figures are the build publishers' own.
+These are community MLX builds of CLM, converted from the authors' release and checked against it. "8-bit" and
+"4-bit" say how far the encoder's numbers were compressed; the agreement figures are the build publishers' own.
 
 | Build | Download | Agreement with the original | Use it when |
 |---|---|---|---|
@@ -51,19 +51,19 @@ device = "cuda"
 heads = "scenario.heads"
 ```
 
-The CLM authors' own release with PyTorch: their heads (`Contrastive-LM/CLM-v0.1-8B`) and the encoder they were made
-for (`Qwen/Qwen3-8B`, at the authors' revision), at full precision. The first start downloads about 16 GB into
-Hugging Face's cache (`HF_HOME`, by default `~/.cache/huggingface`).
+This is the CLM authors' own release, run with PyTorch: their heads (`Contrastive-LM/CLM-v0.1-8B`) and the encoder
+they were made for (`Qwen/Qwen3-8B`, at the authors' revision), at full precision. The first start downloads about
+16 GB into Hugging Face's cache (`HF_HOME`, by default `~/.cache/huggingface`).
 
 - **A GPU with 24 GB of memory or more:** on an A100, CLM used at most 14.4 GB while deciding and 15.2 GB while
   training. On a cloud VM, take a whole GPU; some sizes give a share of one (Azure's NV6ads_A10_v5 has 4 GB of GPU
-  memory, however much ordinary memory the VM lists). It also runs on a Mac (`device = "mps"`) and on a plain CPU,
+  memory, however much ordinary memory the VM lists). CLM also runs on a Mac (`device = "mps"`) and on a plain CPU,
   slowly, with about 24 GB of memory; that is how it was checked, below.
 - `uv sync` installs PyTorch on every machine. On Linux the PyPI build includes CUDA 13, which needs NVIDIA driver 580
   or later (`nvidia-smi` shows the version) and no separate toolkit; without a GPU, CLM runs on the CPU. Linux also
   needs a C compiler and Python's headers (`sudo apt install build-essential python3.12-dev` on Ubuntu): on a GPU,
   PyTorch compiles a helper with Triton on CLM's first run, and stops with "Failed to find C compiler" or "Python.h:
-  No such file" without them. Installing without a checkout: [serving.md](serving.md#on-linux).
+  No such file" without them. To install without a checkout, see [serving.md](serving.md#on-linux).
 
 ### What has been checked
 
@@ -89,8 +89,8 @@ conversion; training takes under a minute. The heads file has the same layout fo
 
 It writes example messages for training and is not used while the server runs. Any model that follows instructions
 will do. The `mlx` backend runs in this process and needs a Mac; on Linux, use `ollama` or `openai`. All three have
-written the example's training messages; a larger model writes more varied examples but takes longer. The small one
-is the default because it runs in this process.
+written the example's training messages; a larger model writes more varied examples but takes longer. The small MLX
+model below is the default because it runs in this process.
 
 ```toml
 [generator]

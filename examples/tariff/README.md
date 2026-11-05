@@ -28,7 +28,7 @@ and freight; the owner's functions are in `tariff_functions.py`. What the findin
 | `sla_threshold` | Deliveries may slip at most 5 days for a strategic client, 10 for a standard one |
 | `quality_threshold` | Defect rate at most 1.5% |
 | `supply_concentration` | No raw-material provider may carry more than 60% of supply |
-| `news_risk` | No supplier in use may have news CLM judges a delivery risk with probability above 0.82 |
+| `news_risk` | No supplier in use may have news that CLM judges a delivery risk with probability above 0.82 |
 
 The `sourcing` scenario's limits are the SLA, quality and concentration rules, checked by every branch, the SLA rule
 once per key client. A product with no key clients fails every branch, since the SLA limit is never checked; that
@@ -107,9 +107,10 @@ uv run clm-load-graph examples/tariff/environment.toml
 
 ## What happened when the models were asked
 
-On 29 October 2026 the question above went to Claude Opus 5.5 (API) and `gemma4:26b` (Ollama, M5 Max). Runs 1–5:
-built-in graph, server unable to judge news. Run 6: Neo4j, shorter question. Runs 7–8: server able to judge news,
-models not told. Calls: D `describe`, S `scenario_sourcing`, N `scenario_sourcing_with_news`.
+On 29 October 2026 the question above went to Claude Opus 5.5 (API) and `gemma4:26b` (Ollama, M5 Max). Runs 1–5
+used the built-in graph and a server unable to judge news; run 6 Neo4j and a shorter question; runs 7–8 a server
+able to judge news, without the models being told. In the Calls column, D is `describe`, S `scenario_sourcing`
+and N `scenario_sourcing_with_news`.
 
 | Run | Calls | Time | Recommendation | What went wrong |
 |---|---|---|---|---|
@@ -127,7 +128,7 @@ models not told. Calls: D `describe`, S `scenario_sourcing`, N `scenario_sourcin
   tariff cost, the Kestrel dependency) and named what the analysis leaves out: shares between 50% and 60%,
   transition time, switching costs, supplier capacity. gemma4's were shorter (margin, extension, the defect rate once
   in three, the rejection naming Kestrel), did no arithmetic of their own, printed figures as given ("704,900.0")
-  and never said what was not modelled. gemma4 was free and local; Claude about as fast, for an API call.
+  and never said what was not modelled. gemma4 was free and local; Claude was about as fast, for an API call.
 - With the news, Claude explained both rejections (the strike at 0.92; Kestrel and the strike), ran `sourcing` to
   show half would win without the news, warned unprompted that the award scored 0.79 and the line 0.77 so a person
   should check the strike, and said it cannot test a mix such as motors staying in Region A. gemma4 never looked:
@@ -135,5 +136,5 @@ models not told. Calls: D `describe`, S `scenario_sourcing`, N `scenario_sourcin
   scenario with the news limit, not two.
 
 Eight runs on a small, made-up graph show the pattern works with both models, not how often an agent gets it right.
-A fair next measure: many varied questions, each scored for the right branch, the rejected branch and its dependency
-named, and figures flagged.
+A fair next measure would be many varied questions, each scored for the right branch, for naming the rejected
+branch and its dependency, and for flagged figures.

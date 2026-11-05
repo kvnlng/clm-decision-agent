@@ -11,9 +11,9 @@ The company, sites and neighbourhoods are in `graph/nodes.csv`; the five rules a
 | What | How |
 |---|---|
 | Rules an agent can explore | `rules` with topic `open_site` lists the five rules, dependencies first: statement, reason, owner, version, the information each needs, and what the asker must supply (`to_ask`: the neighbourhood). `rule` shows one rule's rows |
-| Facts and estimates told apart | Finances, rents and site costs are facts. Household income is an estimate (the American Community Survey's median with its 90% margin of error): low, central, high, source, date |
+| Facts and estimates told apart | Finances, rents and site costs are facts. Household income is an estimate (the American Community Survey's median with its 90% margin of error), given as low, central and high with its source and date |
 | Risk reported, not judged | Only the owner's rules reject. A site that fails a rule only at the low estimate is kept with a warning; the **headroom** says how far income can fall before a rule fails |
-| Approvals | An investment above 400,000 dollars needs the board: listed, not a rejection |
+| Approvals | An investment above 400,000 dollars needs the board; the approval is listed, not treated as a rejection |
 | A decision record | `clm-agent` writes it beside the answer: question, what was supplied, every rule with its reason, every fact and estimate with values, range and source, each branch's verdicts, warnings, headroom and approvals, and the agent's explanation, marked as not checked |
 
 ## Try it

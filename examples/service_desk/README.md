@@ -2,7 +2,7 @@
 
 A data and analytics service desk: someone in a clinical environment describes what they need; the server works
 out the kind of request, its urgency and whether it involves identifiable data, looks up the team and opens a
-ticket. The small scenario to run first, then copy. Not a clinical tool; all data invented.
+ticket. It is the small scenario to run first, then copy. It is not a clinical tool; all the data is invented.
 
 ## Run it
 
@@ -23,9 +23,9 @@ In the Inspector ([getting started](../../docs/getting-started.md#looking-inside
 - `I need access to the oncology registry for an audit, needed this week`: a ticket, `priority-high`,
   `governance-review`.
 - `Should this patient be started on a beta blocker?`: out of scope, no ticket.
-- `can you help with the audit data`: vaguer, CLM less sure. If wrong, `correct` with the same text and `route`
-  Data_Access; `decide` again uses it.
-- `agreement`, then `describe` for the routes and questions.
+- `can you help with the audit data`: vaguer, so CLM is less sure. If wrong, call `correct` with the same text
+  and `route` Data_Access; `decide` again then uses it.
+- Call `agreement`, then `describe` for the routes and questions.
 
 **Every handled request opens a ticket, at once**; the same request twice opens two.
 
@@ -73,8 +73,8 @@ The tools speak [Forgejo](https://forgejo.org)'s REST API (also Gitea's). Tested
 1. `brew install forgejo`, then `brew services start forgejo`.
 2. Open http://localhost:3000, press "Install Forgejo", create an administrator account.
 3. Create a repository `requests`: its issues are the tickets.
-4. User settings, Applications: an access token with read and write on issues.
-5. `[tools.settings]`: `tracker_url = "http://localhost:3000"`, `repository = "<your user>/requests"`.
+4. Under User settings, Applications, create an access token with read and write on issues.
+5. In `[tools.settings]`, set `tracker_url = "http://localhost:3000"` and `repository = "<your user>/requests"`.
 6. Then `export TRACKER_TOKEN=<the token>` before starting the chat or server.
 
 Priority and the governance flag become labels (`priority-high`, `governance-review`), created if missing. For

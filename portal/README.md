@@ -1,19 +1,19 @@
 # The portal
 
-A local page for the person who administers a decision server, and a command-line chat with any running MCP
-server. Not part of the `clm-decision-agent` package: it depends on it by path, and runs from a checkout with
-[uv](https://docs.astral.sh/uv/) as `uv run --project portal clm-portal ...`:
+The portal is a local page for the person who administers a decision server, and a command-line chat with any
+running MCP server. It is not part of the `clm-decision-agent` package but depends on it by path, and runs from a
+checkout with [uv](https://docs.astral.sh/uv/) as `uv run --project portal clm-portal ...`:
 
 | Command | Option | Default | |
 |---|---|---|---|
-| `serve ENVIRONMENT` | `--host` | `127.0.0.1` | Other addresses warn: plain HTTP; the address typed in the browser, not `0.0.0.0`, others refused |
+| `serve ENVIRONMENT` | `--host` | `127.0.0.1` | Another address warns that it is plain HTTP; open the page at that address, not `0.0.0.0`, since any other `Host` is refused |
 | | `--port` | `8400` | |
-| | `--public-origin URL` | none | Browser's address behind a TLS-ending proxy, such as `https://portal.example.org`; forms and `Host` accepted from it; `https://` makes the cookie `Secure` |
-| | `--backend`, `--model`, `--model-url` | as the chat | Ask's starting model, changeable on the page; `LLM_API_KEY` only to this `--model-url`, not one typed on the page |
+| | `--public-origin URL` | none | The browser's address behind a TLS-ending proxy, such as `https://portal.example.org`; forms and `Host` are accepted from it, and `https://` makes the cookie `Secure` |
+| | `--backend`, `--model`, `--model-url` | as the chat | Ask's starting model, changeable on the page; `LLM_API_KEY` goes only to this `--model-url`, never to one typed on the page |
 | `chat URL` | `--backend` | `openai` | Any OpenAI chat API (Ollama, LM Studio, vLLM, most hosted models); `claude` is the Anthropic API, usual credentials |
 | | `--model NAME` | `granite4:micro` with openai, `claude-opus-5-5` with claude | Must support tool calls |
 | | `--model-url URL` | Ollama, `http://127.0.0.1:11434/v1` | OpenAI-style address |
-| | `--dry-run [TOOL]` | off | Print calls, send none: every tool's, or the named tool's (repeatable); an unknown name stops the chat at start-up |
+| | `--dry-run [TOOL]` | off | Print calls and send none: every tool's, or the named tool's (repeatable). An unknown name stops the chat at start-up |
 | | `--full` | off | Print results whole; otherwise shortened on screen past 1,500 characters (the model gets them whole) |
 
 | Variable | |
@@ -24,8 +24,8 @@ server. Not part of the `clm-decision-agent` package: it depends on it by path, 
 
 ## The page
 
-Never for end users (they use their own MCP client), and unreachable by agents: not an MCP server, and the decision
-server has no tool that changes a status. One role: anyone signed in may change the server.
+The page is never for end users, who use their own MCP client, and agents cannot reach it: it is not an MCP server,
+and the decision server has no tool that changes a status. There is one role: anyone signed in may change the server.
 
 ```bash
 export CLM_PORTAL_KEY=<a long random key>                              # not the key agents use
@@ -33,32 +33,33 @@ set -a; . ./.postgres-local.env; set +a                                # if the 
 uv run --project portal clm-portal serve examples/handbook/environment.toml
 ```
 
-Open <http://127.0.0.1:8400> and sign in with the key and your name, recorded with every change and not checked.
+Open <http://127.0.0.1:8400> and sign in with the key and your name, which is recorded with every change and not
+checked.
 A wrong key waits half a second. Sessions last 12 hours in memory, so a restart signs everyone out.
 
 **Its own server.** The portal starts `clm-server ENVIRONMENT --http` on 127.0.0.1 at a free port with a key made at
 each start for that process alone, never port 8000 or `DECISION_SERVER_KEY`. It needs the environment's folder, so
 it runs on the server's machine. It passes no tool selection, but `clm-server` reads the file's `[serve]` table
-([environment.md](../docs/environment.md#serving-settings)), so Ask sees the agents' tools only; without a
-collection's `document_` tool a cited passage on Review errors, and without all its tools Configuration and
-Documents say it is not offered, not when it was built. **The agents' server is yours to restart** after approving
-changes: it reads the files at start.
+([environment.md](../docs/environment.md#serving-settings)), so Ask sees the agents' tools only. Without a
+collection's `document_` tool, a cited passage on Review gives an error; without all of a collection's tools,
+Configuration and Documents say it is not offered rather than when it was built. **The agents' server is yours to
+restart** after approving changes: it reads the files at start.
 
 ### What it shows and what it changes
 
 | Page | Shows | Changes |
 |---|---|---|
 | Configuration | Name, description, Inspector command ([getting started](../docs/getting-started.md#looking-inside-the-server)), every rule (supplied or derived: origin, status, owner, version, DMN rows, cited passages), information items, graph nodes and edges (Neo4j: named only), collections with build time, load errors; read from files, not the server | Nothing |
-| Ask | The chat in a page: same models, every call and result; dry run, all or named tools (unknown name: nothing sent); **Full results** past 1,500 characters; conversation per session | **Testing**: own server on `--admit-derived proposed,checked,approved`, flagged on every page; off at start, only with `[derived]`, dropped if it fails to start |
-| Review | Derived decisions, facts, conflicts, each with cited passage (or quote), check, supplied value, graph row | Approve (after `clm-derive check` passes), reject, resolve; name and note recorded. **Correct** a value or DMN table (inside `derived/`, must load): back to proposed, check reruns |
+| Ask | The chat in a page: the same models, every call and result; a dry run of all or named tools (an unknown name sends nothing); **Full results** past 1,500 characters; one conversation per session | **Testing** switches its own server to `--admit-derived proposed,checked,approved`, flagged on every page; off at start, offered only with `[derived]`, dropped if that server fails to start |
+| Review | Derived decisions, facts and conflicts, each with its cited passage (or quote), check, supplied value and graph row | Approve (after `clm-derive check` passes), reject or resolve, with name and note recorded. **Correct** a value or DMN table (inside `derived/`; it must load): the entry goes back to proposed and the check reruns |
 | Documents | Collections | Load or upload a `.jsonl` into the folder (safe name; overwrite only if ticked) via `clm-load-documents`; **Derive** runs `clm-derive run`, unavailable without `clm-derive` |
 
 It changes only documents and the derived layer (`derived/derived.json`, through `clm_decision.derived`, and the
-tables in `derived/`), in the files, so git stays the record; no supplied file changes. One job or change at a time;
-job output shows keys and passwords as `***`, and success restarts the portal's server.
+tables in `derived/`), and only in the files, so git stays the record; no supplied file changes. It runs one job or
+change at a time; job output shows keys and passwords as `***`, and a success restarts the portal's server.
 
-**Security:** cookie `HttpOnly` and `SameSite=Strict`; a per-session token in every form; a POST from another origin,
-or a request whose `Host` is not the portal's address, refused. Off 127.0.0.1, put it behind TLS.
+**Security:** the cookie is `HttpOnly` and `SameSite=Strict`; every form carries a per-session token; a POST from
+another origin, or a request whose `Host` is not the portal's address, is refused. Off 127.0.0.1, put it behind TLS.
 
 ## The chat
 
@@ -103,4 +104,5 @@ real actions.
 
 ## Tests
 
-`uv run --project portal pytest portal/tests`: a stand-in server and model; no network, key or PostgreSQL.
+`uv run --project portal pytest portal/tests` runs against a stand-in server and model, with no network, key or
+PostgreSQL.

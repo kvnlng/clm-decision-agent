@@ -1,9 +1,10 @@
 # Writing a scenario
 
-`scenario.toml` says which routing decisions the server makes and which tools they use. Weighing options against
-rules instead is [environment.md](environment.md). [examples/service_desk/scenario.toml](../examples/service_desk/scenario.toml) uses
-everything here; [walkthrough.md](walkthrough.md) builds one from nothing. A mistake in the file stops start-up with
-one line naming the setting.
+`scenario.toml` says which routing decisions the server makes and which tools they use. Weighing options against rules
+instead is [environment.md](environment.md).
+[examples/service_desk/scenario.toml](../examples/service_desk/scenario.toml) uses everything here;
+[walkthrough.md](walkthrough.md) builds one from nothing. A mistake in the file stops start-up with one line naming the
+setting.
 
 ## One decision
 
@@ -114,7 +115,7 @@ questions = []                     # given to no question; without this table, a
 
 | Key | Default | Meaning |
 |---|---|---|
-| `[tools] module` | none | Defines `TOOLS`, a list of functions, and optionally `configure(settings, scenario_dir)`, called once at start-up. Loaded from the file beside the scenario, so no other module of that name can stand in for it; a name with no file there is imported as an installed package |
+| `[tools] module` | none | The module that defines `TOOLS`, a list of functions, and optionally `configure(settings, scenario_dir)`, called once at start-up. It is loaded from the file beside the scenario, so no other module of that name can stand in for it. A name with no file there is imported as an installed package |
 | `[tools.settings]` | `{}` | Passed to `configure()` |
 | `[tools.inform.<tool>] questions` | all questions | Which questions hear the tool's facts: facts can sway unrelated questions |
 
@@ -157,7 +158,7 @@ When the right route depends on facts, such as whether a requested table holds p
   the route from the message alone, and is absent without `[routing] inform`.
 - Their facts also go to the questions, as `[tools.inform]` says. A route that lists the same tool does not run it
   again.
-- Corrections are saved, reused and trained on with the facts, the text the route saw.
+- Corrections are saved, reused and trained on with the facts included, since that is the text the route saw.
 - `describe` lists these tools as `route_facts_from`.
 
 ### Options fetched at decision time
@@ -225,18 +226,18 @@ call fits and whether it is approved.
 | `[tool_check] instructions` | `"Is this tool call appropriate for what the user asked?"` | The question CLM is asked |
 | `[tool_check] threshold` | `0.5` | At or above this (0 to 1) the call is approved |
 
-CLM's opinion is advice. Training covers the routes and questions, not this question. On the CrowdStrike example
-(an M5 Max, trained heads, approved at 0.5, the 200 check cases whose answer is Rebook or Refund, a rebooking and a
-refund proposed for each) it approved the right call and refused the wrong one for 114 of 200
-([examples/crowdstrike](../examples/crowdstrike/README.md), [findings.md](findings.md)).
+CLM's opinion is advice. Training covers the routes and questions, not this question. On the CrowdStrike example it
+approved the right call and refused the wrong one for 114 of 200. That run was on an M5 Max with trained heads,
+approving at 0.5, over the 200 check cases whose answer is Rebook or Refund, with a rebooking and a refund proposed
+for each ([examples/crowdstrike](../examples/crowdstrike/README.md), [findings.md](findings.md)).
 
 ## Corrections and reuse
 
 With `clm-server --review`, the server also offers `correct` and `agreement`. `correct` saves the owner's route for
 a request to the record, optionally with the right answers (`"answers": {"urgency": 2, "identifiable": true}`) and,
-on a route with options, the right option's id; the route's informing tools run again, so send the same `context` as
-with `decide`, and the tools find the same facts. `agreement` reports how often CLM's own route agrees with the saved corrections. A route reused from a
-correction is never uncertain.
+on a route with options, the right option's id. The route's informing tools run again, so send the same `context` as
+with `decide` and the tools will find the same facts. `agreement` reports how often CLM's own route agrees with the
+saved corrections. A route reused from a correction is never uncertain.
 
 | Key | Default | Meaning |
 |---|---|---|
