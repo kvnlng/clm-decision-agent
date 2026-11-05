@@ -115,3 +115,18 @@ def test_github_and_gitlab_repositories_are_named(repository, source):
 def test_other_repositories_are_refused(repository):
     with pytest.raises(ValueError, match="^--repository: the registry takes a GitHub or GitLab project URL"):
         entry(repository=repository)
+
+
+def test_an_environment_without_a_name_is_one_line(tmp_path, capsys):
+    path = tmp_path / "environment.toml"
+    path.write_text('[environment]\nfunctions = "f.py"\n', encoding="utf-8")
+    assert registry.main([str(path), "--name", "io.github.you/x", "--url", URL, "--version", "0.1.0",
+                          "--out", str(tmp_path / "server.json")]) == 2
+    assert capsys.readouterr().err.startswith("error: environment.name: missing; give --description")
+
+
+@pytest.mark.parametrize("broken", [None, 'name = "x"\n[routes\n', "[clm]\n"])
+def test_a_file_that_is_missing_or_broken_is_refused_with_a_description(tmp_path, broken, write_scenario):
+    path = tmp_path / "scenario.toml" if broken is None else write_scenario(broken)
+    with pytest.raises(ValueError):
+        registry.server_json(str(path), "io.github.you/x", URL, "0.1.0", "key", description="hi")

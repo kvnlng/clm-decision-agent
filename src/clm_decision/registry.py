@@ -20,6 +20,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .environment import is_environment
+from .scenario import load_scenario
 
 SCHEMA = "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
 # The registry refuses longer descriptions
@@ -29,11 +30,18 @@ _VERSION = re.compile(r"\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?")
 
 
 def _description(path: str, given: str | None) -> str:
+    # The file is read even with --description, so a mistyped path is refused; both raise ScenarioError, a ValueError
+    if is_environment(path):
+        # Only its name: loading it all would run the owner's code and reach its stores
+        description = tomllib.loads(Path(path).read_text(encoding="utf-8"))["environment"].get("name")
+        if given is None and not isinstance(description, str):
+            raise ValueError("environment.name: missing; give --description")
+    else:
+        load_scenario(path)
+        description = None
     if given is not None:
         description = given
-    elif is_environment(path):
-        description = str(tomllib.loads(Path(path).read_text(encoding="utf-8"))["environment"]["name"])
-    else:
+    elif description is None:
         raise ValueError("--description: a CLM scenario has none of its own; give one of at most "
                          f"{DESCRIPTION_LIMIT} characters")
     if len(description) > DESCRIPTION_LIMIT:

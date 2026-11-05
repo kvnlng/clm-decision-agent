@@ -20,7 +20,7 @@ uv run clm-registry examples/tariff/environment.toml --name io.github.you/tariff
 - **With OAuth** (`--auth oauth`), the entry names no header. The client learns which issuer to ask from the server's
   protected resource metadata ([serving.md](serving.md#with-tokens-from-your-identity-provider-oauth)).
 - **The description** is at most 100 characters, the registry's limit. An environment's defaults to its name. A CLM
-  scenario has none of its own, so give one.
+  scenario has none of its own, so give one. The file is read and checked either way, so a mistyped path is refused.
 - **The address must be HTTPS and name a host.** The registry refuses `localhost` and `127.0.0.1`; `clm-registry` also
   refuses every other bare IP address, so an entry names a host other computers can find. An internal name such as
   `decisions.corp.internal` is accepted, and so is a path before `/mcp`, as behind a gateway
