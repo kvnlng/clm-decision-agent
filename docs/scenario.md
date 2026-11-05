@@ -94,7 +94,8 @@ tracker_url = "http://127.0.0.1:8765"
 ```
 
 The module defines `TOOLS`, a list of functions, and optionally `configure(settings, scenario_dir)`, called once at
-start-up.
+start-up. It is loaded from the file beside the scenario, so no other module of that name can stand in for it. A name
+with no file beside the scenario is imported by name, as an installed package is.
 
 Every tool takes one argument, the **request**, filled in as far as the decision has got:
 

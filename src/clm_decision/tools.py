@@ -2,11 +2,31 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import inspect
 import sys
+from pathlib import Path
+from types import ModuleType
 from typing import Callable
 
 from .scenario import Scenario, ScenarioError
+
+
+def _module(scenario_dir: Path, name: str) -> ModuleType:
+    """The file beside the scenario, so no other module of that name can stand in for it; without one, the module
+    imported by name. A copy already imported from that same file is reused, so its state is the one tests and
+    helpers see; any other copy is loaded afresh, as an environment's functions are."""
+    path = scenario_dir / f"{name}.py"
+    if not path.is_file():
+        return importlib.import_module(name)
+    imported = sys.modules.get(name)
+    found = getattr(imported, "__file__", None)
+    if found is not None and Path(found).resolve() == path.resolve():
+        return imported
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def load_tools(scenario: Scenario) -> dict[str, Callable]:
@@ -20,7 +40,7 @@ def load_tools(scenario: Scenario) -> dict[str, Callable]:
         sys.path.append(str(scenario_dir))
     # An adopter's module can fail in any way; each failure should be one line, not a traceback
     try:
-        module = importlib.import_module(name)
+        module = _module(scenario_dir, name)
     except Exception as error:  # pylint: disable=broad-exception-caught
         raise ScenarioError(f"tools.module: cannot import '{name}': {type(error).__name__}: {error}") from error
     tools = getattr(module, "TOOLS", None)

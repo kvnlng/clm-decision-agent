@@ -1,7 +1,9 @@
 """Tests for tools.py."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import inspect
 import re
+from pathlib import Path
 
 import fake_tools
 import pytest
@@ -68,3 +70,23 @@ def test_a_broken_tools_module_is_a_scenario_error(write_scenario, tmp_path, nam
     scenario = load_scenario(write_scenario(BASE_TOML.replace('"fake_tools"', f'"{name}"')))
     with pytest.raises(ScenarioError, match=re.escape(message)):
         load_tools(scenario)
+
+
+TOOLS_SOURCE = 'def lookup(request):\n    return {"facts": []}\n\ndef act(request):\n    return {}\n\nTOOLS = [lookup, act]\n'
+
+
+def test_the_file_beside_the_scenario_wins_over_a_module_of_the_same_name(write_scenario, tmp_path):
+    (tmp_path / "calendar.py").write_text(TOOLS_SOURCE)
+    tools = load_tools(load_scenario(write_scenario(BASE_TOML.replace('"fake_tools"', '"calendar"'))))
+    assert list(tools) == ["lookup", "act"]
+    assert Path(inspect.getsourcefile(tools["lookup"])) == tmp_path / "calendar.py"
+
+
+def test_two_scenarios_with_the_same_module_name_each_get_their_own(tmp_path):
+    for folder in ("a", "b"):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "same_name_tools.py").write_text(TOOLS_SOURCE)
+        (tmp_path / folder / "scenario.toml").write_text(BASE_TOML.replace('"fake_tools"', '"same_name_tools"'))
+    for folder in ("a", "b", "a"):
+        tools = load_tools(load_scenario(tmp_path / folder / "scenario.toml"))
+        assert Path(inspect.getsourcefile(tools["act"])) == tmp_path / folder / "same_name_tools.py"
