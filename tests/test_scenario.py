@@ -4,6 +4,7 @@
 # pylint: disable=missing-function-docstring,missing-class-docstring,redefined-outer-name
 # pylint: disable=unused-argument,attribute-defined-outside-init,use-implicit-booleaness-not-comparison
 import re
+from pathlib import Path
 
 import pytest
 
@@ -213,6 +214,11 @@ def test_heads_folder_is_resolved_beside_the_scenario(write_scenario):
     path = write_scenario(BASE_TOML.replace('model_id = "test/clm"', 'model_id = "test/clm"\nheads = "my.heads"'))
     assert load_scenario(path).clm_heads == path.parent / "my.heads"
     assert load_scenario(write_scenario()).clm_heads is None
+
+
+def test_heads_folder_may_start_at_the_home_folder(write_scenario):
+    path = write_scenario(BASE_TOML.replace('model_id = "test/clm"', 'model_id = "test/clm"\nheads = "~/my.heads"'))
+    assert load_scenario(path).clm_heads == Path.home() / "my.heads"
 
 
 def test_routing_fingerprint_changes_with_the_routing_wording_only(write_scenario):
