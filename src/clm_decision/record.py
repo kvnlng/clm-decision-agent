@@ -162,7 +162,7 @@ def check_record(scenario: Scenario) -> bytes | None:
 def skipped_note(skipped: int, path: Path) -> str:
     """The line saying that load_records skipped lines of the record at `path`."""
     lines = "1 unreadable line" if skipped == 1 else f"{skipped} unreadable lines"
-    return f"{lines} skipped in {Path(path).name}; a missing or different record key would cause this"
+    return f"{lines} skipped in {Path(path).name}: damaged, of an old kind, or encrypted under another key"
 
 
 def load_records(path: Path, key: bytes | None = None) -> tuple[list[dict], int]:
@@ -187,14 +187,15 @@ def route_verdicts(records: list[dict], scenario: Scenario) -> list[dict]:
     """The reviewer's route for each reviewed state, for routes the scenario still has.
 
     Confirmations count as well as corrections: CLM can pick the right route with too little
-    confidence to act on it. Only the latest verdict on a given state is kept.
+    confidence to act on it. Only the latest verdict on a given state is kept, and a state whose latest verdict
+    names a route the scenario no longer has is left out.
     """
     latest = {}
     for r in records:
-        if r["kind"] == "route" and r["human"] in scenario.routes:
+        if r["kind"] == "route":
             latest.pop(r["state_text"], None)
             latest[r["state_text"]] = r
-    return list(latest.values())
+    return [r for r in latest.values() if r["human"] in scenario.routes]
 
 
 def _newkey(target: Path) -> int:
