@@ -5,6 +5,7 @@ import argparse
 import contextlib
 import dataclasses
 import hmac
+import json
 import os
 import sys
 import threading
@@ -28,14 +29,11 @@ from .record import load_records, record_key, save_correction
 from .environment import Environment, is_environment, load_environment
 from .environment_server import build_environment_server
 from .scenario import Scenario, ScenarioError, load_scenario
-from .serving import Serve
+from .serving import MAX_TEXT, Serve
 from .tools import check_tools, load_tools
 
 KEY_ENV = "DECISION_SERVER_KEY"
 MAX_BATCH = 1000
-# CLM reads only a request's last 2048 tokens, about 8,000 characters; a longer text only costs time under CLM's lock
-# and memory in its cache
-MAX_TEXT = 32_000
 READ_ONLY = ToolAnnotations(read_only_hint=True)
 CHANGES = ToolAnnotations(read_only_hint=False)
 TOOLS = ("decide", "decide_many", "check_call", "describe")
@@ -178,6 +176,7 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
     def check_call(text: str, call: dict[str, Any]) -> dict[str, Any]:
         """CLM's opinion of a tool call you propose for a request: a probability and whether it is approved."""
         _short(text)
+        _short(json.dumps(call, sort_keys=True), "call")
         with traced("check_call", text) as record:
             result = clm(lambda: decision.check_call(text, call, scenario, router))
             record["outcome"] = result

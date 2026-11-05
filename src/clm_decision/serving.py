@@ -14,6 +14,9 @@ from .environment import _read  # one way to read either file, with the same one
 from .scenario import ScenarioError
 
 ALWAYS = "describe"
+# CLM reads only a request's last 2048 tokens, about 8,000 characters; a longer text only costs time under CLM's lock
+# and memory in its cache
+MAX_TEXT = 32_000
 _KEYS = ("tools", "exclude_tools", "read_only")
 
 

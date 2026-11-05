@@ -15,6 +15,7 @@ from . import tracing
 from .dmn import DmnError, evaluate
 from .environment import Environment
 from .scenario import StepError
+from .serving import MAX_TEXT
 
 _CHECKS = {"string": lambda v: isinstance(v, str), "boolean": lambda v: isinstance(v, bool),
            "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
@@ -329,6 +330,8 @@ def run_decision(env: Environment, name: str, inputs: dict) -> dict:
 def run_judgement(env: Environment, name: str, inputs: dict) -> dict:
     """-> {"result", "steps"}."""
     _check(f"judge {name}", {"text": "string"}, inputs)
+    if len(inputs["text"]) > MAX_TEXT:
+        raise StepError(f"text: at most {MAX_TEXT} characters, not {len(inputs['text'])}")
     steps = Steps(env)
     return {"result": steps.judge(name, inputs["text"]), "steps": steps.steps}
 

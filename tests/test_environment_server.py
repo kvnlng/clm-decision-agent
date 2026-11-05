@@ -130,6 +130,15 @@ async def test_judge_tool_over_mcp(write_environment, fake_clm):  # pylint: disa
 
 
 @pytest.mark.anyio
+async def test_a_judged_text_over_the_limit_is_refused_before_clm(write_environment, fake_clm):
+    env = load_environment(write_environment(ENV_TOML + JUDGE_TOML))
+    async with Client(build_environment_server(env)) as client:
+        judged = await client.call_tool("judge_risk", {"text": "strike " * 5000})
+    assert judged.is_error and "text: at most 32000 characters" in judged.content[0].text
+    assert fake_clm.loads == 0
+
+
+@pytest.mark.anyio
 async def test_a_traced_scenario_counts_its_steps_and_branches(tmp_path):
     writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
     async with Client(build_environment_server(load_environment(EXAMPLE), trace=writer)) as client:

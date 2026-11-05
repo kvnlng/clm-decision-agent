@@ -272,9 +272,11 @@ async def test_a_text_over_the_limit_is_refused_before_clm(parts):
     async with Client(server.build_server(scenario, router, tools, review=True)) as client:
         results = {tool: await client.call_tool(tool, arguments) for tool, arguments in calls.items()}
         at_limit = await client.call_tool("decide", {"text": "x" * server.MAX_TEXT})
+        long_call = await client.call_tool("check_call", {"text": TEXT, "call": {"tool": "refund", "note": long}})
     for tool, result in results.items():
         assert result.is_error and f"at most {server.MAX_TEXT} characters" in result.content[0].text, tool
     assert "requests[1].text" in results["decide_many"].content[0].text
+    assert long_call.is_error and "call: at most" in long_call.content[0].text
     assert not at_limit.is_error and not scenario.record_path.exists()
 
 
