@@ -120,6 +120,16 @@ def test_a_nul_character_is_refused_before_embedding(tmp_path):
             load_documents.read_jsonl(write(tmp_path, line), CASES)
 
 
+
+def test_a_nul_in_a_metadata_key_is_named_without_the_nul(tmp_path):
+    """The error goes to a terminal, where a raw NUL would not show."""
+    for metadata, message in (({"a\u0000b": "x"}, r"metadata\.a\\0b is not a filter"),
+                              ({"sources": {"a\u0000b": "x"}}, r"metadata\.sources\.a\\0b contains a NUL character")):
+        line = GOOD | {"metadata": GOOD["metadata"] | metadata}
+        with pytest.raises(ValueError, match=message) as error:
+            load_documents.read_jsonl(write(tmp_path, line), CASES)
+        assert "\x00" not in str(error.value)
+
 def test_a_citing_passage_must_be_text(tmp_path):
     with pytest.raises(ValueError, match=r"^cases\.jsonl:1: each of cites is an id"):
         load_documents.read_jsonl(write(tmp_path, GOOD | {"cites": [{"id": "tx-15.50", "passage": 3}]}), CASES)

@@ -67,7 +67,7 @@ def _metadata(metadata, collection: Collection, where: str) -> dict:
                 raise ValueError(f"{where}: metadata.sources must be an object")
             continue
         if field not in collection.filters:
-            raise ValueError(f"{where}: metadata.{field} is not a filter of {collection.name} "
+            raise ValueError(f"{where}: metadata.{_shown(field)} is not a filter of {collection.name} "
                              f"({', '.join(sorted(collection.filters))})")
         kind = collection.filters[field]
         if value is not None and not _value_ok(kind, value):
@@ -104,6 +104,11 @@ def _cites(cites, where: str) -> list[dict]:
     return found
 
 
+def _shown(name: str) -> str:
+    """A name for an error line, with a NUL written as \\0, since a terminal does not show it."""
+    return name.replace("\x00", "\\0")
+
+
 def _nul(value, name: str) -> str | None:
     """The name of the first text holding a NUL character, which PostgreSQL text cannot store; None when none does."""
     if isinstance(value, str):
@@ -111,7 +116,7 @@ def _nul(value, name: str) -> str | None:
     items = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
     for key, item in items:
         if "\x00" in str(key):
-            return f"{name}.{key}"
+            return f"{name}.{_shown(str(key))}"
         found = _nul(item, f"{name}.{key}" if isinstance(key, str) else f"{name}[{key}]")
         if found:
             return found
