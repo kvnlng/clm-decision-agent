@@ -27,6 +27,7 @@ import shutil
 import sys
 import tempfile
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
 from xml.sax.saxutils import escape
@@ -185,10 +186,16 @@ def _prompt(slot: Slot, documents: list[dict], on: date) -> str:
 
 
 def _literal(value) -> str:
+    """A table cell for an output's value: a number whole, never with an exponent or rounded, and a list as its
+    items joined with "; "."""
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return f"{value:g}" if isinstance(value, float) else str(value)
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else format(Decimal(repr(value)), "f")
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, list):
+        value = "; ".join(str(item) for item in value)
     return '"' + str(value).replace('"', "'") + '"'
 
 
