@@ -306,7 +306,7 @@ async def test_the_portal_and_the_chat_reach_a_real_server_through_the_sdks_own_
             assert (await client.list_tools()).tools
         refused: list[int] = []
         monkeypatch.setenv(chat.KEY_ENV, "not-the-key")
-        with pytest.raises(BaseException):
+        with pytest.raises(Exception):
             async with Client(chat._connect(server.url, refused)) as client:  # pylint: disable=protected-access
                 await client.list_tools()
         assert refused and refused[0] == 401
