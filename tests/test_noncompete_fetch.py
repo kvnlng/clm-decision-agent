@@ -4,6 +4,9 @@ read by a model are checked against the opinion's own words. The opinions here a
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import json
 
+import httpx
+import pytest
+
 import fetch_cases
 from clm_decision.documents import Collection
 from clm_decision.load_documents import read_jsonl
@@ -112,10 +115,25 @@ def test_facts_are_read_with_a_small_context_and_no_thinking():
 
         def post(self, _url, json):  # pylint: disable=redefined-outer-name
             Http.sent.update(json)
-            return type("Response", (), {"json": lambda self: {"response": "{}"}})()
+            return type("Response", (), {"json": lambda self: {"response": "{}"},
+                                         "raise_for_status": lambda self: self})()
 
     assert fetch_cases.read_facts(Http(), NON_COMPETE, "a-model") == {}
     assert Http.sent["think"] is False and Http.sent["options"]["num_ctx"] == 8192
+
+
+def test_an_ollama_error_stops_the_run_and_is_not_read_as_no_facts():
+    # A model that is not pulled answers 404; {} would be logged and never read again
+    reply = httpx.Response(404, json={"error": "model 'a-model' not found"})
+    with httpx.Client(transport=httpx.MockTransport(lambda request: reply)) as http:
+        with pytest.raises(httpx.HTTPStatusError):
+            fetch_cases.read_facts(http, NON_COMPETE, "a-model")
+
+
+def test_an_answer_that_is_not_json_is_no_facts():
+    reply = httpx.Response(200, json={"response": "not json"})
+    with httpx.Client(transport=httpx.MockTransport(lambda request: reply)) as http:
+        assert fetch_cases.read_facts(http, NON_COMPETE, "a-model") == {}
 
 
 def test_the_output_loads(tmp_path):
