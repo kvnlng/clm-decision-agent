@@ -487,3 +487,47 @@ def test_the_second_reader_is_the_backend_and_model_the_environment_names(path):
     reader = derive.reader_for(dataclasses.replace(env, second_reader={"backend": "ollama",
                                                                        "model": "granite4:micro"}))
     assert isinstance(reader, derive.OllamaExtractor) and reader.model == "granite4:micro"
+
+
+def test_run_on_a_collection_no_slot_names_is_refused_and_writes_nothing(path):
+    run(path, good())
+    approve_all(path.parent)
+    before = derived.path(path.parent).read_bytes()
+    for fresh in (False, True):
+        with pytest.raises(derive.DeriveError, match="no slot .* collection 'handbok'.*'handbook'"):
+            derive.run(path, "handbok", good(), ON, fresh=fresh)
+        assert derived.path(path.parent).read_bytes() == before
+
+
+def in_contracts(path):
+    """The match cap slot moved to a collection of its own, contracts."""
+    path.write_text(path.read_text(encoding="utf-8").replace(
+        'description = "The plan\'s cap on the company match, in dollars a plan year."',
+        'description = "The plan\'s cap on the company match, in dollars a plan year."\ncollection = "contracts"'),
+        encoding="utf-8")
+
+
+def test_a_fresh_run_keeps_the_entries_of_slots_in_other_collections(path):
+    run(path, good())
+    approve_all(path.parent)
+    in_contracts(path)
+    kept = derived.read(path.parent)["facts"]["k401_2026.match_cap"]
+    extractor = good()
+    run(path, extractor, fresh=True)
+    assert [name for name, _ in extractor.prompts] == ["carryover_limit"]
+    layer = derived.read(path.parent)
+    assert layer["facts"]["k401_2026.match_cap"] == kept and kept["status"] == "approved"
+    assert layer["decisions"]["carryover_limit"]["status"] == "checked"
+
+
+def test_the_command_lists_only_the_collections_slots_and_says_nothing_derived_only_of_them(path, monkeypatch,
+                                                                                          capsys):
+    run(path, good())
+    derived.set_status(path.parent, "decisions", "carryover_limit", "approved", by="kevin")
+    in_contracts(path)
+    monkeypatch.setattr(derive, "_extractor", lambda args: good())
+    assert derive.main(["run", str(path), "handbook", "--as-of", "2026-12-01"]) == 0
+    out = capsys.readouterr().out
+    # The match cap, proposed or checked in contracts, is neither listed nor counted as approved
+    assert "carryover_limit: approved, kept" in out and "match_cap" not in out
+    assert "Nothing derived" in out

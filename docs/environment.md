@@ -455,7 +455,9 @@ code renders a decision table into `derived/rules/NAME.dmn` and writes the entry
 source (document, passages, quote, edition). Each entry is checked; one that fails is asked for once more with the
 failures. An answer that is not JSON, from Claude or Ollama, fails that entry, and the run goes on. The tables are
 written aside and replace the old ones only when every slot is done, so a run that stops part way leaves the tables
-and `derived.json` as they were. Approved and rejected entries on an unchanged edition are kept, unless `--fresh`. An entry **passes the
+and `derived.json` as they were. Approved and rejected entries on an unchanged edition are kept, unless `--fresh`,
+which derives every slot in the collection again. Entries of slots in other collections are always kept, and a
+collection no slot is in is refused, with nothing written. An entry **passes the
 check** only when all of these hold:
 
 1. **Edition**: the cited document is in force on the date and its `effective_from` is the entry's edition.

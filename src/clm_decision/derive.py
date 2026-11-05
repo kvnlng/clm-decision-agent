@@ -394,9 +394,14 @@ def _replace(folder: Path, layer: dict) -> None:
 
 def run(path: str | Path, collection: str, extractor: Extractor, on: date, *, fresh: bool = False) -> dict:
     """Derive every slot in the collection that is not approved or rejected on an unchanged edition, or every slot
-    with `fresh`, and write the layer with its conflicts. The tables are written aside and replace the old ones only
-    once every slot is derived, so a run that stops leaves the tables and the layer as they were. -> {slot: status}."""
+    in it with `fresh`, and write the layer with its conflicts; other collections' entries are kept. The tables are
+    written aside and replace the old ones only once every slot is derived, so a run that stops leaves the tables
+    and the layer as they were. Raises DeriveError, writing nothing, when no slot is in the collection.
+    -> {slot: status}, for the collection's slots."""
     env = load_environment(path, today=on)
+    if not any(slot.collection == collection for slot in env.slots.values()):
+        raise DeriveError(f"no slot in [derived] is in collection {collection!r}; the slots are in "
+                          f"{', '.join(repr(name) for name in sorted({s.collection for s in env.slots.values()}))}")
     reader = reader_for(env)
     refuse_same_model(reader, extractor.model)
     folder = env.path.resolve().parent
@@ -407,7 +412,7 @@ def run(path: str | Path, collection: str, extractor: Extractor, on: date, *, fr
         shutil.rmtree(folder / "derived" / ASIDE, ignore_errors=True)
         derived.path(folder).with_suffix(".json.partial").unlink(missing_ok=True)
     return {name: layer[slot.kind][name]["status"] for name, slot in env.slots.items()
-            if name in layer[slot.kind]}
+            if slot.collection == collection and name in layer[slot.kind]}
 
 
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments,too-many-locals
@@ -415,7 +420,11 @@ def _derive_all(env: Environment, collection: str, extractor: Extractor, reader:
                 fresh: bool) -> dict:
     """The layer run writes: each slot derived (and read again with `reader`) unless kept, with its conflicts."""
     folder = env.path.resolve().parent
-    old = derived.empty(collection) if fresh else derived.read(folder)
+    old = derived.read(folder)
+    if fresh:   # only the collection's entries are dropped, so other collections' decisions are kept
+        old = {**old, **{kind: {name: entry for name, entry in old[kind].items()
+                                if name not in env.slots or env.slots[name].collection != collection}
+                         for kind in ("decisions", "facts")}}
     layer = {**old, "collection": collection, "model": extractor.model,
              "derived_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     for name, slot in env.slots.items():
@@ -501,7 +510,8 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-loca
     ran.add_argument("--model", help=f"default: {MODEL} with claude, {LOCAL_MODEL} with ollama")
     ran.add_argument("--ollama-url", default=OLLAMA_URL)
     ran.add_argument("--as-of", help="the date documents must be in force on (default: today)")
-    ran.add_argument("--fresh", action="store_true", help="start from an empty layer, deriving every slot")
+    ran.add_argument("--fresh", action="store_true", help="derive every slot in the collection again, approved and rejected ones too; other collections' "
+                     "entries are kept")
     checked = commands.add_parser("check", help="check every proposed or checked entry again")
     checked.add_argument("environment")
     checked.add_argument("--as-of", help="the date documents must be in force on (default: today)")
