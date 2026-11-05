@@ -213,13 +213,17 @@ def configuration_body(found: dict, environment: Path) -> str:
     if found["collections"]:
         parts.append("<h2>Collections</h2>" + table(
             ["collection", "description", "built"],
-            [[esc(item["name"]), esc(item["description"]), built_text(item["built"], item["left_out"])]
+            [[esc(item["name"]), esc(item["description"]),
+              built_text(item["built"], item["left_out"], item["tools_off"])]
              for item in found["collections"]]))
     return "".join(parts)
 
 
-def built_text(built: dict | None, left_out: bool = False) -> str:
-    """When and from what a collection was built, or that the server's [serve] setting leaves out its tools."""
+def built_text(built: dict | None, left_out: bool = False, tools_off: bool = False) -> str:
+    """When and from what a collection was built, or that the server's [serve] setting or the environment's
+    [documents] tools leaves out its tools."""
+    if tools_off and not built:
+        return '<span class="muted">not offered: the environment\'s [documents] tools is false</span>'
     if left_out:
         return '<span class="muted">not offered: the server\'s [serve] setting leaves out its tools</span>'
     if not built:
@@ -494,11 +498,24 @@ def ask_body(portal: Portal, session: Session, message: str = "", draft: str = "
             '<button>Ask</button></form>'
             f'<form method="post" action="/ask/clear" class="inline">{csrf_field(session)}'
             '<button>New conversation</button></form>'
-            f'<form method="post" action="/ask/testing" class="inline">{csrf_field(session)}'
+            f'{testing_form(session, testing) if testing or has_derived(portal) else ""}')
+
+
+def testing_form(session: Session, testing: bool) -> str:
+    """The switch that restarts the portal's server with every derived status admitted, or without."""
+    return (f'<form method="post" action="/ask/testing" class="inline">{csrf_field(session)}'
             f'<input type="hidden" name="on" value="{"0" if testing else "1"}">'
             f'<button data-confirm="Restart the portal\'s server{" without" if testing else " with"} unapproved '
             f'derived rules?">{"Turn testing off" if testing else "Testing: let unapproved derived rules decide"}'
             '</button></form>')
+
+
+def has_derived(portal: Portal) -> bool:
+    """Whether the environment file has a [derived] table, so there are derived rules to admit."""
+    try:
+        return "derived" in layer.read_toml(portal.environment)
+    except ValueError:
+        return False
 
 
 async def ask_page(request: Request) -> Response:  # pylint: disable=too-many-locals
@@ -565,6 +582,9 @@ async def ask_testing(request: Request) -> Response:
     """POST /ask/testing: restart the portal's server admitting every derived status, or not."""
     portal, session = request.app.state.portal, request.state.session
     form = await request.form()
+    if form.get("on") == "1" and not has_derived(portal):
+        return page(portal, session, "Ask", ask_body(portal, session, f"{portal.environment.name} has no [derived] "
+                                                     "table, so there are no derived rules to admit"), status=400)
     try:
         async with changing(portal):
             await portal.server.restart(testing=form.get("on") == "1")
@@ -589,9 +609,13 @@ def documents_body(portal: Portal, session: Session, described: dict | None, mes
                    failed: bool = False) -> str:
     """Each collection with when it was built, and the forms that load and derive."""
     found = collections(portal)
+    try:
+        off = layer.tools_off(layer.read_toml(portal.environment))
+    except ValueError:
+        off = False
     built = (described or {}).get("collections", {})
     rows = [[esc(name), esc(table_.get("description", "")),
-             built_text((built.get(name) or {}).get("built"), layer.left_out(described, name))]
+             built_text((built.get(name) or {}).get("built"), layer.left_out(described, name), off)]
             for name, table_ in found.items()]
     choose = "".join(f'<option value="{esc(name)}">{esc(name)}</option>' for name in found)
     files = "".join(f'<option value="{esc(name)}">{esc(name)}</option>' for name in jsonl_files(portal))

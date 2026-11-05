@@ -117,12 +117,25 @@ async def test_the_servers_instructions_name_only_tools_that_are_offered():
 
 
 @pytest.mark.anyio
-async def test_without_a_selection_the_instructions_are_as_before_even_with_no_scenarios():
+async def test_without_a_selection_an_environment_with_no_scenarios_names_none():
     async with Client(build_environment_server(load("environment_documents_only.toml"))) as client:
         said = client.instructions
+        text = (await client.get_prompt("answer_question", {"question": "How many days carry over?"})
+                ).messages[0].content.text
     assert said == ("Decisions for 'Employee handbook (documents only)'. Call describe first. Every figure and verdict "
-                    "comes from these tools: run a scenario to compare alternatives rather than combining queries and "
-                    "decisions yourself.")
+                    "comes from these tools.")
+    assert "run the scenario tool" not in text and "Start with describe" in text
+
+
+@pytest.mark.anyio
+async def test_with_every_tool_the_instructions_and_prompt_are_whole():
+    env = load()
+    async with Client(build_environment_server(env)) as client:
+        said = client.instructions
+        text = (await client.get_prompt("answer_question", {"question": "q"})).messages[0].content.text
+    assert said.endswith(": run a scenario to compare alternatives rather than combining queries and decisions "
+                         "yourself.")
+    assert text == instructions.answer_question(env.name, env.description, "q")
 
 
 @pytest.mark.anyio

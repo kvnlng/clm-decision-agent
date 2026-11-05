@@ -169,6 +169,12 @@ def left_out(described: dict | None, collection: str) -> bool:
     return any(f"{kind}_{collection}" in (described.get("left_out") or []) for kind in COLLECTION_TOOLS)
 
 
+def tools_off(data: dict) -> bool:
+    """Whether the environment file's [documents] tools is false: the server then offers no document tools, and
+    describe lists no collection."""
+    return (data.get("documents") or {}).get("tools", True) is False
+
+
 def configuration(environment: Path, described: dict | None, error: str | None) -> dict:
     """Everything the Configuration page shows: the environment's name and description, every rule (supplied and
     derived, with origin and status), the information items, the graph, the collections with when each was built,
@@ -194,7 +200,8 @@ def configuration(environment: Path, described: dict | None, error: str | None) 
         "graph": _graph(environment, errors) if "graph" in data else {"note": "no graph", "nodes": None,
                                                                       "edges": None},
         "collections": [{"name": name, "description": table.get("description", ""),
-                         "built": (built.get(name) or {}).get("built"), "left_out": left_out(described, name)}
+                         "built": (built.get(name) or {}).get("built"), "left_out": left_out(described, name),
+                         "tools_off": tools_off(data)}
                         for name, table in data.get("collections", {}).items()],
         "errors": errors,
     }

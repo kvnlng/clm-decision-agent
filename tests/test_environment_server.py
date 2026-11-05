@@ -92,6 +92,12 @@ def test_a_scenario_file_still_loads_clm(write_scenario, monkeypatch):
     assert scenario.path.name == "scenario.toml" and loaded is router and "lookup" in tools
 
 
+def test_admit_derived_is_refused_for_a_scenario_file(write_scenario, monkeypatch):
+    monkeypatch.setattr(clm_router, "make_router", lambda scenario: (FakeRouter(decision("Tech")), "test heads"))
+    with pytest.raises(server.ScenarioError, match=r"^--admit-derived: .* is not an environment"):
+        server.load_any(str(write_scenario()), ["proposed"])
+
+
 def test_review_is_refused_for_an_environment(capsys):
     assert server.main([str(EXAMPLE), "--review"]) == 2
     assert "review mode is for CLM scenarios" in capsys.readouterr().err
@@ -109,6 +115,23 @@ async def test_a_traced_call_writes_its_tool_and_outcome(write_environment, tmp_
     assert failed.is_error
     assert (done["tool"], done["outcome"]) == ("query_suppliers", {"ok": True}) and done["ms"] >= 0
     assert (undone["tool"], undone["outcome"]) == ("scenario_sourcing", {"error": "ToolError"})
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("text", [False, True])
+async def test_trace_text_adds_each_calls_arguments(write_environment, tmp_path, text):
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl", text=text)
+    traced = build_environment_server(load_environment(write_environment()), trace=writer)
+    async with Client(traced) as client:
+        await client.call_tool("query_suppliers", {"product": "P1"})
+        await client.call_tool("scenario_sourcing", {"product": "P1", "branches": [{"share": 0.7}]})
+    writer.close()
+    query, scenario = [json.loads(line) for line in (tmp_path / "trace.jsonl").read_text().splitlines()]
+    if not text:
+        assert "text" not in query and "text" not in scenario
+    else:
+        assert json.loads(query["text"]) == {"product": "P1"}
+        assert json.loads(scenario["text"]) == {"product": "P1", "branches": [{"share": 0.7}]}
 
 
 @pytest.mark.anyio

@@ -440,8 +440,9 @@ type = "number"
 ```
 
 A slot's description must not hold a figure, or it gives away its own answer. A scenario calls a slot as it calls a
-supplied decision, and a limit may name one. A slot's name must not be a supplied decision's. Fact slots need the
-built-in graph.
+supplied decision, and a limit or approval may name a decision slot, never a fact. A slot's name must not be a
+supplied decision's. A decision slot's inputs and outputs are string, number, integer or boolean: a decision table
+cannot test or give a list. Fact slots need the built-in graph.
 
 ```
 uv run clm-derive run ENVIRONMENT COLLECTION [--backend claude|ollama] [--model NAME] [--as-of DATE] [--fresh]
@@ -528,7 +529,8 @@ flagged 3 of 11. Claude reading gemma4's layer caught both wrong tiers and flagg
 Claude. A person still approves every entry ([examples/handbook](../examples/handbook/README.md#a-second-reading)).
 
 `clm-server --admit-derived proposed,checked,approved` admits unapproved entries too, for testing only; `describe`
-says so. A rejected entry never decides: neither the file nor the flag can admit one. No tool of the decision server changes a status.
+says so. A scenario, or an environment without a `[derived]` table, refuses the flag. A rejected entry never decides:
+neither the file nor the flag can admit one. No tool of the decision server changes a status.
 
 ## The MCP tools
 
@@ -589,7 +591,8 @@ so a client or a person can see everything it offers ([serving.md](serving.md#in
 **The prompt**, `answer_question(question)`, is the reference agent's instructions with the environment's name and
 description and the question, in one user message, so any MCP client asks the way the agent does. The question is
 required: a missing or blank one is refused with one error line. Both take the text
-from `instructions.py`.
+from `instructions.py`. A line naming a tool the server does not offer (a scenario, or rules) is left out, so an
+environment with no scenarios is never told to run one.
 
 **Context:**
 

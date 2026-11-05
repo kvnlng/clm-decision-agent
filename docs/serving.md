@@ -202,10 +202,10 @@ The report gives each kind of call (`decide`, `check_call`, ...) a table of stag
 in milliseconds, and share of the time. Then the cache hit rate, texts and tokens per call, padding's share of what was
 encoded and, for an environment, steps per call. A stage no call had is left out.
 
-- The trace leaves out the requests' text. `--trace-text` adds it; the trace then needs the same care as the corrections
-  record ([data-handling.md](data-handling.md)). It covers `decide`, `decide_many`, `check_call` and `correct`; an
-  environment's tools' arguments, such as a search's query, are never written to the trace. The trace file is made readable by its
-  owner only, like the record.
+- The trace leaves out the requests' text. `--trace-text` adds it: for a scenario, the text of `decide`, `decide_many`,
+  `check_call` and `correct`; for an environment, each tool call's arguments, as JSON (a resource read is traced by its
+  URI only). The trace then needs the same care as the corrections record ([data-handling.md](data-handling.md)). The
+  trace file is made readable by its owner only, like the record.
 - Tracing is off by default and adds little: a few clock readings and counts per call. A background thread writes the
   file; if it cannot, the server says so once and stops tracing, and decisions carry on.
 - On a Mac, the MLX build encodes and applies the heads inside its own code, so its trace counts the heads' time as
