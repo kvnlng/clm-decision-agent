@@ -84,6 +84,24 @@ def test_a_value_in_the_question_is_supplied(calls):
     assert decision_record.build("Should we, for product P1?", calls)["supplied"] == {"product": ["P1"]}
 
 
+def _scenario_call(supplied: dict) -> dict:
+    return call("scenario_x", {}, {"scenario": "x", "objective": "o", "maximise": True, "best": None, "ranking": [],
+                                   "branches": [], "supplied": supplied})
+
+
+def test_a_value_inside_a_word_or_an_exempt_number_is_not_supplied():
+    supplied = {"state": "NY", "home": "CA", "plans": 3, "year": 2026, "note": "", "job_related": True}
+    record = decision_record.build("Is there any issue, because of my agreement?", [_scenario_call(supplied)])
+    assert not record["supplied"] and set(record["chosen_by_agent"]) == set(supplied)
+
+
+def test_a_value_the_question_gives_as_a_word_or_a_figure_is_supplied():
+    supplied = {"state": "NY", "plans": 3, "year": 2026, "rate": 0.2, "budget": 1200000}
+    record = decision_record.build("In NY, which of 3 plans in 2026 at 20% fits $1.2 million?",
+                                   [_scenario_call(supplied)])
+    assert set(record["supplied"]) == set(supplied) and not record["chosen_by_agent"]
+
+
 def test_a_missing_item_the_agent_filled_in_stays_to_ask(write_rules_env):
     env, rules_result = write_rules_env
     calls = [call("rules", {"topic": "open_site"}, rules_result),
@@ -102,6 +120,17 @@ def test_each_scenario_run_shows_its_own_parameters(write_environment):
     assert [scenario["supplied"] for scenario in record["scenarios"]] == [{"product": "P1"}, {"product": "P2"}]
     assert record["supplied"] == {"product": ["P1", "P2"]}
     assert "**risky** (product = P2)" in decision_record.markdown(record, "", [])
+
+
+def test_a_failed_query_in_a_branch_is_no_information(write_environment, monkeypatch):
+    env = load_environment(write_environment(RISK_TOML, RISK_FUNCTIONS))
+    def broken(query, params):
+        raise ConnectionError("the graph is down")
+    monkeypatch.setattr(env.connector, "run", broken)
+    result = engine.run_scenario(env, "risky", {"product": "P1"})
+    record = decision_record.build("Q", [call("scenario_risky", {"product": "P1"}, result)])
+    assert not record["information"]
+    assert "ConnectionError: the graph is down" in decision_record.markdown(record, "", [])
 
 
 def test_rules_only_looked_at_are_consulted_not_applied(write_rules_env):

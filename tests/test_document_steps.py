@@ -7,7 +7,7 @@ from conftest import ENV_TOML
 from fake_documents import FakeEmbedder, FakeStore
 from mcp import Client
 
-from clm_decision import engine
+from clm_decision import citation_check, engine
 from clm_decision.engine import StepError, Steps
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server, describe
@@ -159,3 +159,12 @@ def test_a_citation_walk_returns_at_most_the_cap_and_says_how_many_more(env):
     env.store.replace("cases", CASES + many, [], BUILT)
     result = engine.run_citations(env, "cases", {"id": "case-a"}, "cited_by")
     assert len(result["rows"]) == engine.MAX_ROWS and result["omitted"] == 5
+
+
+def test_a_cites_row_names_the_passage_of_the_citing_document(env):
+    env.store.replace("cases", [{**CASES[0], "cites": [{"id": "tx-15.50", "passage": "(b)"}]}, CASES[1]], [], BUILT)
+    result = engine.run_citations(env, "cases", {"id": "case-a"}, "cites")
+    assert result["rows"] == [{"document": "tx-15.50", "citation": "Tex. Bus. & Com. Code § 15.50", "depth": 1,
+                               "citing_passage": "(b)"}]
+    # (b) is case-a's passage, not a subsection of § 15.50
+    assert citation_check.check("Under § 15.50(b) it is void.", [result])["not_found"] == ["§ 15.50(b)"]

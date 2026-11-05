@@ -231,7 +231,8 @@ function = "credit_check"                 # credit_check(amount) -> a dict of ou
 Each evaluation records its inputs, its outputs and, for a table, the rules that fired. The supported DMN subset
 (`dmn.py`), read from DMN XML of any version:
 
-- **Hit policies:** `UNIQUE` (the default), `FIRST`, `COLLECT`.
+- **Hit policies:** `UNIQUE` (the default), `FIRST`, `COLLECT` (every matching row; an `aggregation` such as `SUM`
+  is refused).
 - **Input entries:** `-`; a literal (`1.5`, `"Region B"`, `true`); `<`, `<=`, `>`, `>=`, `=` and `!=` with a number;
   the ranges `[a..b]`, `(a..b)`, `[a..b)` and `(a..b]`; comma-separated lists of these; `not(...)`, which wraps a whole
   entry, not one item of a list.
@@ -290,11 +291,11 @@ def sourcing_branch(steps, params, levers):
 
 - **A limit** is a decision whose outputs include `allowed` (true or false) and `reason` (text). A branch is
   **rejected** when any evaluation of a limit says not allowed; the result names the decision, reason and inputs.
-- **A branch fails** when a listed limit was never evaluated or failed (even if your code caught the error), a step
-  fails, or the figures have no finite number for the objective. So no branch skips a limit: in the example, the
-  dependency check runs on every branch because its rule is a limit. A branch with nothing to check a limit against (a
-  product with no key clients, for the SLA rule) fails too: check the limit once with a neutral input, or leave it out
-  of that scenario.
+- **A branch fails** when a listed limit was never evaluated, when a limit or any other step failed (even if your
+  code caught the error: the failed step is kept in the branch's steps), or when the figures have no finite number
+  for the objective. So no branch skips a limit: in the example, the dependency check runs on every branch because
+  its rule is a limit. A branch with nothing to check a limit against (a product with no key clients, for the SLA
+  rule) fails too: check the limit once with a neutral input, or leave it out of that scenario.
 - **Kept branches are ranked** by the objective. An unlisted lever value is refused before anything runs.
 
 **What the question fixes is a parameter; only real alternatives are levers.** In the offsite example the team and the
@@ -406,7 +407,9 @@ from the tools' results, so it works for a server at a URL, and the same calls g
 question; what was supplied; the rules applied, with statement, reason, owner and version; every fact with its values
 and every estimate with its range, source and date; each scenario's branches with figures, rejecting limits, warnings,
 headroom and approvals; what is still to ask; and any failed call. Then comes "The agent's explanation (not checked)",
-with any figure the number check could not find. Figures in the question count as given.
+with any figure the number check could not find. Figures in the question count as given. A scenario's parameter is
+supplied when the question holds it, as a word ("NY", not inside "any") or as a figure; otherwise, and always for
+true or false, it is listed as chosen by the agent.
 
 When the rules need something the question does not give, the agent is told to stop and list it, with the rule that
 needs it, not run a scenario or fill it in.
@@ -539,7 +542,7 @@ neither the file nor the flag can admit one. No tool of the decision server chan
 | `query_<name>`, `decision_<name>`, `calculation_<name>` | One named part, its declared parameters as typed arguments |
 | `judge_<name>` | CLM's probability that the judge's question is answered yes for a `text` |
 | `search_<name>`, `document_<name>` | A collection's closest passages to a `text`, with `filters` and `limit`; one document or passage as stored |
-| `cites_<name>`, `cited_by_<name>` | The documents one cites, or that cite it with the citing passage, to a `depth` |
+| `cites_<name>`, `cited_by_<name>` | The documents one cites, each with its `citing_passage`, or that cite it with the citing passage, to a `depth` |
 | `scenario_<name>` | Every branch, or the `branches` given: figures, status, rejecting limits and every step |
 | `describe` | Name, description, and every part with its parameters, levers, objective and limits; with slots, each derived entry's status and why it is unfilled |
 | `rules`, `rule` | With rule metadata: the rules governing a topic, and one rule with its rows (above) |
@@ -663,8 +666,9 @@ The question, answer, every call, the model and the time taken go as JSON to the
 
 The number check then lists any figure in the answer that no tool returned. A figure matches a tool's number when that
 number, in the answer's unit and rounded to its decimals, is the figure: "$1.2 million" matches 1234567, and "18.4%"
-matches 0.1843 or 18.43. Halves round up and signs are ignored, so "fell by 12%" matches -0.12. It skips digits inside
-a word (Q3), dates and times, years, and whole numbers from 0 to 10. A flagged figure is reported, not blocked.
+matches 0.1843 or 18.43. Halves round up and signs are ignored, so "fell by 12%" matches -0.12. A lowercase "m" is
+millions or metres, in the answer or in a tool's text. It skips digits inside a word (Q3, 12.5kg), dates and times,
+years written without a comma, and whole numbers from 0 to 10. A flagged figure is reported, not blocked.
 
 The citation check does the same for citations, so an answer cannot cite a case or section no tool returned:
 
@@ -675,8 +679,9 @@ The citation check does the same for citations, so an answer cannot cite a case 
 - **A reporter citation**, "100 S.W.3d 1", matches by volume, reporter and page.
 - **A case name with no citation after it**, "Smith v. Jones", cannot be checked: it is listed, never passed.
 
-The decision record lists each citation found with the stored passage it matches, then those no tool returned and
-those not checked. A decision table's `citation` ids are given with each document's citation and title in its step.
+A citation in the question counts as given, as its figures do. The decision record lists each citation found with
+the stored passage it matches, then those no tool returned and those not checked. A decision table's `citation` ids
+are given with each document's citation and title in its step.
 
 ## What comes later
 

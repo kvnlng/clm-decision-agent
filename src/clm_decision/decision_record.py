@@ -10,6 +10,8 @@ any call that failed. The agent's own explanation is added beside it, marked as 
 from __future__ import annotations
 
 import json
+import math
+import re
 
 from . import citation_check, number_check
 
@@ -20,7 +22,8 @@ def _information(record: dict, steps: list[dict], descriptions: dict) -> None:
     """Add each query a run used, once per query and inputs, with its rows; an estimate's with their ranges and
     sources."""
     for step in steps:
-        if step["kind"] != "query" or step.get("case", "central") != "central":
+        # A failed query returned nothing; the branch's error says why
+        if step["kind"] != "query" or step.get("case", "central") != "central" or step.get("error"):
             continue
         item = {"query": step["name"], "kind": step.get("information", "fact"), "inputs": step["inputs"],
                 "description": descriptions.get(step["name"], "")}
@@ -37,6 +40,8 @@ def _documents(record: dict, steps: list[dict]) -> None:
     """Every passage a search or document step returned, and every passage of a document a rule cited, once, with
     its collection and when it was built."""
     for step in steps:
+        if step.get("error"):
+            continue
         if step["kind"] == "search":
             passages = [(step["name"], step["built_at"], row["document"], row["citation"], row["passage"], row["text"])
                         for row in step["result"]]
@@ -57,11 +62,15 @@ def _documents(record: dict, steps: list[dict]) -> None:
 
 
 def _in_question(value, question: str) -> bool:
-    """Whether the person asking gave this value: text found in the question, or a figure the question holds."""
+    """Whether the person asking gave this value: text the question holds as a word ("NY" is not in "any"), or a
+    figure it holds in any of the figure's scales ("20%" gives 20 and 0.2), small numbers and years too. True or
+    false is never found, so it counts as chosen by the agent."""
     if isinstance(value, str):
-        return value.strip().lower() in question.lower()
+        text = value.strip()
+        return bool(text) and re.search(rf"(?<!\w){re.escape(text)}(?!\w)", question, re.IGNORECASE) is not None
     if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return not number_check.unsupported(str(value), [question])
+        return any(math.isclose(figure.value * scale, value, rel_tol=1e-9, abs_tol=1e-9)
+                   for figure in number_check.figures(question) for scale in figure.scales)
     return False
 
 
@@ -156,7 +165,7 @@ def _citations(record: dict, citations: dict) -> list[str]:
                       if citation_check.matches(written, item["citation"], item["passage"])]
             out += [f"- {written}: {item['citation']} {item['passage']}, {item['collection']} built "
                     f"{item['built_at']}: \"{item['text']}\"" for item in stored] or [
-                f"- {written}: returned by a rule or decision; no passage was read"]
+                f"- {written}: returned by a rule or decision, or given in the question; no passage was read"]
         out.append("")
     if citations["not_found"]:
         out += ["## Citations no tool returned", "", ", ".join(citations["not_found"]), ""]

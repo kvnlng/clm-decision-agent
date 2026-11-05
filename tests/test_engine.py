@@ -7,7 +7,7 @@ import pytest
 from conftest import ENV_FUNCTIONS, ENV_TOML, JUDGE_TOML, limit_dmn
 
 from clm_decision.clm_common import ClmError
-from clm_decision.engine import StepError, run_calculation, run_decision, run_judgement, run_query, run_scenario
+from clm_decision.engine import StepError, Steps, run_calculation, run_decision, run_judgement, run_query, run_scenario
 from clm_decision.environment import load_environment
 from clm_decision.scenario import ScenarioError
 
@@ -135,6 +135,41 @@ def test_a_swallowed_limit_failure_fails_the_branch(write_environment):
     assert any(step.get("error") for step in half["steps"])
 
 
+def test_a_failed_query_is_recorded_even_when_caught(env, monkeypatch):
+    def broken(query, params):
+        raise ConnectionError("the graph is down")
+    monkeypatch.setattr(env.connector, "run", broken)
+    steps = Steps(env)
+    with pytest.raises(ConnectionError):
+        steps.query("suppliers", product="P1")
+    assert steps.steps == [{"kind": "query", "name": "suppliers", "inputs": {"product": "P1"}, "result": None,
+                            "information": "fact", "error": "ConnectionError: the graph is down"}]
+
+
+def test_a_swallowed_step_failure_fails_the_branch(write_environment):
+    functions = ENV_FUNCTIONS + '''
+
+def broken():
+    return 1 / 0
+
+
+def branch_catching(steps, params, levers):
+    try:
+        steps.calculate("broken")
+    except ZeroDivisionError:
+        pass
+    return branch(steps, params, levers)
+'''
+    toml = ENV_TOML.replace('branch = "branch"', 'branch = "branch_catching"') + \
+        '\n[calculations.broken]\ndescription = "Divides by zero"\nparams = {}\nfunction = "broken"\n'
+    env = load_environment(write_environment(toml, functions))
+    half = run_scenario(env, "sourcing", {"product": "P1"}, branches=[{"share": 0.5}])["branches"][0]
+    assert half["status"] == "failed"
+    assert half["error"] == "calculation broken failed: ZeroDivisionError: division by zero"
+    assert half["steps"][0] == {"kind": "calculation", "name": "broken", "inputs": {}, "result": None,
+                                "error": "ZeroDivisionError: division by zero"}
+
+
 def test_a_judge_needs_clm(write_environment):
     toml = ENV_TOML + JUDGE_TOML.replace('[clm]\nbackend = "mlx"\n', "")
     with pytest.raises(ScenarioError, match="^judges.risk: a judge needs CLM: add a \\[clm\\] table"):
@@ -167,6 +202,15 @@ def test_empty_text_is_refused(write_environment, fake_clm):
     env = load_environment(write_environment(ENV_TOML + JUDGE_TOML))
     with pytest.raises(StepError, match="judge risk: there is no text to judge"):
         run_judgement(env, "risk", {"text": "  "})
+    assert fake_clm.asked == []
+
+
+def test_a_judgement_refused_for_its_text_is_recorded(write_environment, fake_clm):
+    steps = Steps(load_environment(write_environment(ENV_TOML + JUDGE_TOML)))
+    with pytest.raises(StepError):
+        steps.judge("risk", text="  ")
+    assert steps.steps == [{"kind": "judgement", "name": "risk", "inputs": {"text": "  "}, "result": None,
+                            "error": "judge risk: there is no text to judge"}]
     assert fake_clm.asked == []
 
 

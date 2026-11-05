@@ -103,6 +103,14 @@ def test_cited_text_false_keeps_the_citation_and_drops_the_passages(write_enviro
     assert all("passages" not in c for c in cited)
 
 
+def test_a_collect_table_cites_each_row_that_fired(write_environment):
+    dmn = cited_dmn().replace('<decisionTable id="t">', '<decisionTable id="t" hitPolicy="COLLECT">') \
+        .replace("&gt; 0.9", "&gt;= 0")
+    env = load(write_environment, with_collection(ENV_TOML) + DOCUMENTS, dmn=dmn)
+    step = run_decision(env, "share_limit", {"share": 0.5})["steps"][0]
+    assert step["fired"] == ["too_much", "fine"] and [c["id"] for c in step["citations"]] == ["sec-1", "sec-2"]
+
+
 def test_cited_text_must_be_true_or_false(write_environment):
     toml = with_collection(ENV_TOML) + DOCUMENTS.replace("[documents]", '[documents]\ncited_text = "no"')
     with pytest.raises(ScenarioError, match="documents.cited_text"):

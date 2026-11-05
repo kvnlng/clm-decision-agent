@@ -159,8 +159,9 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
 
     @server.tool(annotations=deciding)
     def decide_many(requests: list[dict[str, Any]]) -> dict[str, Any]:
-        """Decide on many requests at once, each {"text": ..., "context": ...} with context optional: the same
-        decisions as decide, in the same order, faster per request. At most 1000 requests a call."""
+        """Decide on many requests at once, each {"text": ..., "context": ...} with context optional: decisions as
+        decide makes them, in the same order, faster per request, except that every request's facts and options are
+        read before any request's actions run. At most 1000 requests a call."""
         if len(requests) > MAX_BATCH:
             raise ToolError(f"decide_many takes at most {MAX_BATCH} requests a call, not {len(requests)}")
         for i, request in enumerate(requests):
