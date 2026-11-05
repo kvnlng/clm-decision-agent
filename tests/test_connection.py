@@ -9,7 +9,7 @@ from conftest import free_port, serving
 from mcp import Client
 
 from clm_decision import server
-from clm_decision.connection import connect, is_url, refusal
+from clm_decision.connection import connect, is_url, key_for, refusal
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
 
@@ -43,5 +43,18 @@ def test_a_wrong_key_is_noted_as_a_refusal(url, monkeypatch):
     refused: list[int] = []
     with pytest.raises(BaseException):
         anyio.run(_tools, url, refused)
-    assert refusal(refused) == "the server refused the call (401), with the key in DECISION_SERVER_KEY"
+    assert refusal(refused) == "the server refused the call (401), with the key or token in DECISION_SERVER_KEY"
     assert refusal([]) is None
+
+
+@pytest.mark.parametrize("target, sent", [("https://decisions.example.org/mcp", True),
+                                          ("http://127.0.0.1:8000/mcp", True), ("http://127.0.0.2:8000/mcp", True),
+                                          ("http://localhost:8000/mcp", True), ("http://[::1]:8000/mcp", True),
+                                          ("http://10.0.0.5:8000/mcp", False),
+                                          ("http://decisions.example.org/mcp", False)])
+def test_the_key_goes_only_over_https_or_to_this_computer(target, sent, monkeypatch, capsys):
+    monkeypatch.setenv("DECISION_SERVER_KEY", "k1")
+    assert (key_for(target) == "k1") is sent
+    warned = capsys.readouterr().err
+    assert ("not sending the key in DECISION_SERVER_KEY over plain http" in warned) is not sent
+    assert "k1" not in warned

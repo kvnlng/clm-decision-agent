@@ -221,7 +221,8 @@ uv run clm-server examples/tariff/environment.toml --http --auth oauth \
 - **HTTP** with a shared key or OAuth from any OIDC issuer: [serving](serving.md).
 - **An MCP registry**, so agents can find a deployment: `clm-registry` ([registry](registry.md)).
 - **Tracing:** `--trace FILE` records each call's time and caller; `clm-trace-report` summarises it.
-- **`clm-agent`** takes a server's URL as well as a file, with the key in `DECISION_SERVER_KEY`.
+- **`clm-agent`** takes a server's URL as well as a file, with the key in `DECISION_SERVER_KEY`,
+  sent only over https or to this computer.
 - **Databricks:** not tried yet; [what it needs](serving.md#databricks).
 
 **A scenario's server acts without asking.** An acting tool runs at once unless the route is uncertain, and calling

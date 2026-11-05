@@ -267,7 +267,8 @@ def test_a_refused_key_is_one_line(monkeypatch, capsys):
     with serving(server.http_app(build_environment_server(load_environment(EXAMPLE)), "k1"), port):
         assert main([f"http://127.0.0.1:{port}/mcp", "Q", "--backend", "ollama"]) == 2
     err = capsys.readouterr().err
-    assert "the server refused the call (401), with the key in DECISION_SERVER_KEY" in err and "Traceback" not in err
+    assert "the server refused the call (401), with the key or token in DECISION_SERVER_KEY" in err
+    assert "Traceback" not in err
 
 
 @pytest.mark.anyio

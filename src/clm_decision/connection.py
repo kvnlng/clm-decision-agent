@@ -1,12 +1,14 @@
 """How a client reaches a decision server: a file is started over stdio, as an agent would start it; a URL is reached
-over HTTP, sending the key in DECISION_SERVER_KEY when it is set. clm-agent uses it; to call tools by hand, use the
-MCP Inspector (docs/getting-started.md, "Looking inside the server").
+over HTTP, sending the key in DECISION_SERVER_KEY when it is set, over https or to this computer only. clm-agent uses
+it; to call tools by hand, use the MCP Inspector (docs/getting-started.md, "Looking inside the server").
 """
 from __future__ import annotations
 
 import contextlib
+import ipaddress
 import os
 import sys
+from urllib.parse import urlsplit
 
 from mcp import StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
@@ -27,9 +29,28 @@ def server_params(path: str) -> StdioServerParameters:
                                  env=dict(os.environ))
 
 
+def _is_local(host: str) -> bool:
+    try:
+        return host == "localhost" or ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def key_for(url: str) -> str | None:
+    """The key to send to `url`: the one in DECISION_SERVER_KEY, but never in the clear to another computer, where
+    anyone on the way could read it. Withholding it says so on stderr."""
+    key = os.environ.get(KEY_ENV)
+    parts = urlsplit(url)
+    if not key or parts.scheme == "https" or _is_local(parts.hostname or ""):
+        return key
+    print(f"warning: not sending the key in {KEY_ENV} over plain http to {parts.hostname}; use https",
+          file=sys.stderr)
+    return None
+
+
 @contextlib.asynccontextmanager
 async def _http(url: str, refused: list[int]):
-    key = os.environ.get(KEY_ENV)
+    key = key_for(url)
     headers = {"Authorization": f"Bearer {key}"} if key else None
     async with create_mcp_http_client(headers=headers) as http, \
             streamable_http_client(url, http_client=http) as streams:
@@ -51,6 +72,7 @@ def refusal(refused: list[int]) -> str | None:
     """Why the server refused the caller, if it did."""
     if not refused:
         return None
-    sent = "with no key" if not os.environ.get(KEY_ENV) else f"with the key in {KEY_ENV}"
+    # The variable may hold an OAuth token as well as a shared key: either is sent as a bearer token
+    sent = "with no key" if not os.environ.get(KEY_ENV) else f"with the key or token in {KEY_ENV}"
     return f"the server refused the call ({refused[0]}), {sent}"
 
