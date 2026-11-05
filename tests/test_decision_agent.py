@@ -14,7 +14,8 @@ from mcp import Client
 
 from clm_decision import server
 from clm_decision.connection import connect
-from clm_decision.decision_agent import NO_TOOLS_SYSTEM, AgentError, ClaudeChat, OllamaChat, answer, main, server_params
+from clm_decision.decision_agent import (MAX_TURNS, NO_TOOLS_SYSTEM, AgentError, ClaudeChat, OllamaChat, answer, main,
+                                         server_params)
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
 from clm_decision.serving import Serve
@@ -384,3 +385,21 @@ async def test_system_names_only_tools_the_server_offers():
     for system in (claude.requests[0]["system"], ollama.requests[0]["messages"][0]["content"]):
         assert "never calculate" in system.lower()
         assert "run the scenario tool" not in system and "call rules" not in system
+
+
+@pytest.mark.anyio
+async def test_the_last_turn_runs_no_tools_the_model_would_never_see(mcp_server):
+    claude = FakeClaude(*[message(text("Let me look."), tool_use("describe", {}, f"call_{index}"))
+                          for index in range(MAX_TURNS)])
+    result = await ask(mcp_server, claude)
+    assert len(claude.requests) == MAX_TURNS and len(result["calls"]) == MAX_TURNS - 1
+    assert result["stopped"] == "turn limit" and result["answer"] == "Let me look."
+
+
+@pytest.mark.anyio
+async def test_a_tool_call_with_no_tools_goes_back_as_an_error():
+    ollama = FakeOllama(said(calls=[call("describe", {})]), said("I don't know."))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(ollama)) as http:
+        result = await answer(None, QUESTION, OllamaChat(http, "gemma4:26b", system=NO_TOOLS_SYSTEM))
+    assert result["calls"] == [{"tool": "describe", "arguments": {}, "result": None, "error": "no tools are offered"}]
+    assert result["answer"] == "I don't know."

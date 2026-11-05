@@ -179,8 +179,10 @@ def _ollama_use(index: int, function: dict) -> Use:
     return Use(f"call_{index}", name, arguments)
 
 
-async def _run(session: Client, use: Use) -> dict:
-    """One MCP call -> {"tool", "arguments", "result", "error"}."""
+async def _run(session: Client | None, use: Use) -> dict:
+    """One MCP call -> {"tool", "arguments", "result", "error"}; with no session, an error the model is sent."""
+    if session is None:
+        return {"tool": use.name, "arguments": use.input, "result": None, "error": "no tools are offered"}
     if use.invalid is not None:
         return {"tool": use.name, "arguments": use.invalid, "result": None,
                 "error": "the arguments were not valid JSON for a tool call; send an object"}
@@ -194,7 +196,7 @@ async def _run(session: Client, use: Use) -> dict:
 async def answer(session: Client | None, question: str, chat: Chat) -> dict:
     """Ask the model the question with the session's tools, or none without a session -> {"question", "answer",
     "calls", "unsupported", "stopped", "model"}. A reply cut off (max_tokens, or the context window full) or refused
-    stops the loop without running the tools it asked for."""
+    stops the loop without running the tools it asked for, as does the last turn the limit allows."""
     listed = (await session.list_tools()).tools if session else []
     if session and chat.system == SYSTEM:
         # As the server's answer_question prompt does: no line names a tool the server does not offer
@@ -203,7 +205,7 @@ async def answer(session: Client | None, question: str, chat: Chat) -> dict:
     messages = chat.start(question)
     calls: list[dict] = []
     stopped, text = None, ""
-    for _ in range(MAX_TURNS):
+    for index in range(MAX_TURNS):
         turn = await chat.turn(messages, tools)
         messages.append(turn.message)
         text = turn.text
@@ -213,6 +215,10 @@ async def answer(session: Client | None, question: str, chat: Chat) -> dict:
         if turn.again:
             continue
         if not turn.uses:
+            break
+        if index == MAX_TURNS - 1:
+            # The model would never see these tools' results, so they are not run
+            stopped = "turn limit"
             break
         pairs = [(use, await _run(session, use)) for use in turn.uses]
         calls += [call for _, call in pairs]
