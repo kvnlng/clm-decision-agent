@@ -43,6 +43,9 @@ def load(graph: Graph, driver, database: str) -> dict:
     """Replace the database's contents with the graph -> {"nodes": n, "edges": n}."""
     nodes = sorted(graph.nodes(), key=lambda node: node["kind"])
     edges = sorted(graph.edges(), key=lambda edge: edge["relation"])
+    for kind in {node["kind"] for node in nodes}:
+        if kind[:1].upper() + kind[1:] == "Node":
+            raise ValueError(f"kind '{kind}' becomes the label :Node, which every node carries")
     _apart({node["kind"] for node in nodes}, lambda kind: kind[:1].upper() + kind[1:], ("kind", "label"))
     _apart({edge["relation"] for edge in edges}, str.upper, ("relation", "type"))
     statements = [("MATCH (n) DETACH DELETE n", {})]

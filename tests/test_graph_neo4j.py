@@ -198,3 +198,12 @@ def test_a_malformed_uri_is_one_line(uri, recwarn):
         connect(uri, "neo4j", "not-a-real-password")
     assert "\n" not in str(caught.value)
     assert not [warning for warning in recwarn if "Preview" in type(warning.message).__name__]
+
+
+def test_a_kind_that_becomes_the_base_label_is_refused(tmp_path):
+    """Every node carries :Node, so a kind named node would match every node in Neo4j."""
+    from clm_decision.graph import Graph  # pylint: disable=import-outside-toplevel
+    (tmp_path / "nodes.csv").write_text("id,kind,name\nA,node,A\n", encoding="utf-8")
+    (tmp_path / "edges.csv").write_text("source,relation,target\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="^kind 'node' becomes the label :Node, which every node carries$"):
+        load_graph.load(Graph.from_csv(tmp_path / "nodes.csv", tmp_path / "edges.csv"), FakeDriver(), "neo4j")
