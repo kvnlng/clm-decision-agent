@@ -529,7 +529,8 @@ flagged 3 of 11. Claude reading gemma4's layer caught both wrong tiers and flagg
 Claude. A person still approves every entry ([examples/handbook](../examples/handbook/README.md#a-second-reading)).
 
 `clm-server --admit-derived proposed,checked,approved` admits unapproved entries too, for testing only; `describe`
-says so. An environment without a `[derived]` table refuses the flag. A rejected entry never decides: neither the file nor the flag can admit one. No tool of the decision server changes a status.
+says so. A scenario, or an environment without a `[derived]` table, refuses the flag. A rejected entry never decides:
+neither the file nor the flag can admit one. No tool of the decision server changes a status.
 
 ## The MCP tools
 

@@ -92,6 +92,12 @@ def test_a_scenario_file_still_loads_clm(write_scenario, monkeypatch):
     assert scenario.path.name == "scenario.toml" and loaded is router and "lookup" in tools
 
 
+def test_admit_derived_is_refused_for_a_scenario_file(write_scenario, monkeypatch):
+    monkeypatch.setattr(clm_router, "make_router", lambda scenario: (FakeRouter(decision("Tech")), "test heads"))
+    with pytest.raises(server.ScenarioError, match=r"^--admit-derived: .* is not an environment"):
+        server.load_any(str(write_scenario()), ["proposed"])
+
+
 def test_review_is_refused_for_an_environment(capsys):
     assert server.main([str(EXAMPLE), "--review"]) == 2
     assert "review mode is for CLM scenarios" in capsys.readouterr().err

@@ -9,6 +9,7 @@ import os
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from mcp.server import MCPServer
@@ -257,7 +258,11 @@ def load(path: str):
 def load_any(path: str, admit: list[str] | None = None):
     """An environment, loaded without CLM, or a CLM scenario's (scenario, router, tools) as `load` gives them.
     `admit` overrides the derived statuses an environment admits, for testing only."""
-    return load_environment(path, admit=admit) if is_environment(path) else load(path)
+    if is_environment(path):
+        return load_environment(path, admit=admit)
+    if admit is not None:
+        raise ScenarioError(f"--admit-derived: {Path(path).name} is not an environment, so nothing derived to admit")
+    return load(path)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -283,7 +288,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--allowed-host", action="append", dest="allowed_hosts",
                         help="a Host header to accept, such as decisions.example.org:443 (repeatable)")
     parser.add_argument("--trace", metavar="FILE", help="write one line per call to FILE, saying where the time went")
-    parser.add_argument("--trace-text", action="store_true", help="include each request's text in the trace")
+    parser.add_argument("--trace-text", action="store_true",
+                        help="include each request's text in the trace; for an environment, each call's arguments")
     parser.add_argument("--tools", metavar="NAMES",
                         help="offer only these tools, comma-separated, and describe; NAME* matches a prefix "
                              "(replaces [serve] tools)")
