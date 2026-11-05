@@ -243,14 +243,15 @@ def _entry(env: Environment, slot: Slot, answer: dict) -> dict:
     document = env.store.document(slot.collection, str(given["document"]), None) or {}
     source = {"document": given["document"], "passages": list(given["passages"]), "quote": given["quote"],
               "edition": edition(document) if document else None}
-    entry = {**_blank(slot), "source": source, "missing": list(answer.get("missing") or [])}
+    entry = {**_blank(slot), "source": source, "missing": list(answer.get("missing") or []),
+             "collection": slot.collection}
     if slot.kind == "facts":
         return {**entry, "value": answer["value"]}
     aside = env.path.resolve().parent / "derived" / ASIDE
     aside.mkdir(parents=True, exist_ok=True)
     (aside / f"{slot.name}.dmn").write_text(render_dmn(slot, answer["rows"], str(given["document"])),
                                             encoding="utf-8")
-    return {**entry, "dmn": f"{ASIDE}/{slot.name}.dmn", "collection": slot.collection,
+    return {**entry, "dmn": f"{ASIDE}/{slot.name}.dmn",
             "rule": {"statement": answer["statement"], "reason": answer["reason"], "owner": slot.owner,
                      "version": source["edition"] or "", "governs": list(slot.governs),
                      "cites": [given["document"]]}}

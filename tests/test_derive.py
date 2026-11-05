@@ -499,6 +499,14 @@ def test_an_ollama_second_reader_uses_the_ollama_the_documents_table_names(path)
     assert derive.reader_for(env).url == "http://gpu:11434"
 
 
+def test_every_entry_records_the_collection_it_was_derived_from(path):
+    # The facts too, so Review finds a fact's passage after a later run from another collection
+    run(path, good())
+    layer = derived.read(path.parent)
+    assert layer["decisions"]["carryover_limit"]["collection"] == "handbook"
+    assert layer["facts"]["k401_2026.match_cap"]["collection"] == "handbook"
+
+
 def test_run_on_a_collection_no_slot_names_is_refused_and_writes_nothing(path):
     run(path, good())
     approve_all(path.parent)

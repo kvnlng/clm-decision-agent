@@ -50,6 +50,17 @@ def test_every_problem_is_a_load_error_and_the_rest_is_still_shown(environment):
     assert "carryover_limit" in by_name(found["rules"]) and found["graph"]["nodes"]["rows"]
 
 
+def test_review_takes_an_entrys_collection_from_its_slot_when_the_entry_names_none(environment):
+    environment.write_text(environment.read_text() + '\n[derived]\ncollection = "handbook"\n\n'
+                           '[derived.facts.k401_2026.match_cap]\ndescription = "The cap."\ntype = "number"\n'
+                           'collection = "contracts"\n')
+    items = {(item["kind"], item["name"]): item["entry"] for _, group in layer.review(environment)["groups"]
+             for item in group}
+    assert items[("facts", "k401_2026.match_cap")]["collection"] == "contracts"
+    assert items[("conflicts", "k401_2026.match_cap")]["collection"] == "contracts"
+    assert items[("decisions", "carryover_limit")]["collection"] == "handbook"
+
+
 def test_a_derived_dmn_outside_derived_is_not_read(environment):
     text = (environment.parent / "derived" / "derived.json").read_text()
     (environment.parent / "derived" / "derived.json").write_text(
