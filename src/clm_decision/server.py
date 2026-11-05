@@ -349,6 +349,9 @@ def main(argv: list[str] | None = None) -> int:
             print("error: review mode is for CLM scenarios; an environment has no corrections to review",
                   file=sys.stderr)
             return 2
+        if args.admit_derived and not is_environment(args.scenario):
+            print("error: --admit-derived is for environments; a CLM scenario has no derived rules", file=sys.stderr)
+            return 2
         serve = serving.merged(serving.read(args.scenario), args.tools, args.exclude_tools, args.read_only)
         if serve.read_only and args.review:
             raise ScenarioError(NO_REVIEW)

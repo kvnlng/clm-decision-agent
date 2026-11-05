@@ -386,6 +386,13 @@ async def test_the_instructions_name_only_the_deciding_tools_offered(parts):
     assert "decide" not in neither and neither.endswith("Call describe to see the routes and questions.")
 
 
+def test_admit_derived_with_a_scenario_stops_with_one_line(write_scenario, capsys, monkeypatch):
+    monkeypatch.setattr(server, "load", lambda path: pytest.fail("CLM was loaded"))
+    assert server.main([str(write_scenario()), "--admit-derived", "proposed"]) == 2
+    assert capsys.readouterr().err.strip() == \
+        "error: --admit-derived is for environments; a CLM scenario has no derived rules"
+
+
 def test_a_review_tool_may_be_excluded_without_review(write_scenario, monkeypatch):
     monkeypatch.setattr(server, "load", lambda path: ("scenario", "router", "tools"))
     monkeypatch.setattr(server, "build_server", lambda *args, **kwargs: type("Ran", (), {"run": lambda *a: None})())
