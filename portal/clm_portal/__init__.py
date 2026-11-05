@@ -35,7 +35,8 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
                               help="the address a TLS-terminating proxy serves the page at, such as "
                                    "https://portal.example.org; a form may also come from it")
     serve_parser.add_argument("--backend", choices=("openai", "claude"), default="openai",
-                              help="Ask's model, and Derive's: openai-style (default) or claude")
+                              help="Ask's starting model, changeable on the page: openai-style (default) or "
+                                   "claude; Derive uses clm-derive's own")
     serve_parser.add_argument("--model", help=f"default: {chat.STARTER_MODEL} with openai, {chat.CLAUDE_MODEL} with "
                                               "claude")
     serve_parser.add_argument("--model-url", help=f"the model's OpenAI-style address (default {chat.OLLAMA_V1})")
