@@ -192,8 +192,27 @@ def _earlier(record: dict | None) -> list[str]:
     return ["an earlier " + disagreement(model, record.get("differences") or []).removeprefix("a ")]
 
 
-def _reading(record: dict) -> str:
-    return "not_made" if record.get("error") else "agreed" if record.get("agreed") else "disagreed"
+def _reading(record: dict | None) -> str:
+    return "not_made" if not record or record.get("error") else "agreed" if record.get("agreed") else "disagreed"
+
+
+def _read_again(env: Environment, kind: str, name: str, entry: dict,
+                second: SecondReading | None) -> tuple[dict | None, list[str]]:
+    """The second reading's record and failures for a check: made now with `second`, but not for an entry whose
+    slot is gone, which the check already fails; without `second`, only an earlier reading that did not agree, which
+    still stands. An agreement compared the entry as it was then, so it is never carried into a later check."""
+    if second is None:
+        earlier = (entry.get("check") or {}).get("second_reading")
+        return (None, []) if not earlier or earlier.get("agreed") else (earlier, _earlier(earlier))
+    slot = env.slots.get(name)
+    if slot is None or slot.kind != kind:
+        return None, []
+    return second(kind, name, entry)
+
+
+def _still_stale(entry: dict, why: str) -> bool:
+    """Whether the entry was already sent back to proposed for this reason, and not checked since."""
+    return entry.get("status") == "proposed" and (entry.get("check") or {}).get("failures") == [why]
 
 
 def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondReading | None = None) -> dict:
@@ -204,7 +223,7 @@ def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondRea
     (counted as undigested), so its digest comes from a check. Otherwise approved and rejected entries are a
     person's decision and are left alone. With `second` (kind, name, entry -> record, failures), each entry checked
     is also read again by a second model, whether or not the mechanical check passed it, and its failures join the
-    check's. -> counts."""
+    check's (_read_again). An entry still stale for the same reason is counted, not sent back again. -> counts."""
     counts = {"checked": 0, "proposed": 0, "stale": 0, "untouched": 0, "undigested": 0}
     if second is not None:
         counts.update(agreed=0, disagreed=0, not_made=0)
@@ -212,8 +231,9 @@ def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondRea
     for kind in ("decisions", "facts"):
         for name, entry in layer[kind].items():
             why = _stale(env, name, entry, on) if entry.get("status") != "rejected" else None
-            if why:
-                derived.set_stale(folder, kind, name, why)
+            if why:     # once only: while it is still stale for this reason, it is left as it is
+                if not _still_stale(entry, why):
+                    derived.set_stale(folder, kind, name, why)
                 counts["stale"] += 1
                 continue
             if entry.get("status") == "approved" and derived.changed_since_check(folder, entry):
@@ -227,13 +247,9 @@ def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondRea
             if entry.get("status") not in ("proposed", "checked"):
                 counts["untouched"] += 1
                 continue
-            failures, record = check(env, kind, name, entry, on=on), None
-            if second is None:
-                record = (entry.get("check") or {}).get("second_reading")
-                failures += _earlier(record)
-            else:
-                record, disagreed = second(kind, name, entry)
-                failures += disagreed
+            record, read = _read_again(env, kind, name, entry, second)
+            failures = check(env, kind, name, entry, on=on) + read
+            if second is not None:
                 counts[_reading(record)] += 1
             done = derived.set_check(folder, kind, name, {"passed": not failures, "failures": failures,
                                                           "second_reading": record})

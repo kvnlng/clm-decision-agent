@@ -376,12 +376,40 @@ def test_a_later_agreeing_reading_or_a_correction_clears_an_earlier_disagreement
     assert entry["status"] == "checked" and "second_reading" not in entry["check"]
 
 
-def test_an_earlier_agreeing_reading_is_kept_and_passes_without_a_reader(env):
+def test_an_earlier_agreeing_reading_is_not_carried_into_a_check_without_a_reader(env):
+    # It compared the entry as it was then, so a later check must not vouch for it with that check's time
     folder = layer_with(env, k401_2026__match_cap=("facts", fact()))
     derive_check.recheck(folder, env, on=ON, second=reading(True))
     derive_check.recheck(folder, env, on=ON)
     entry = derived.read(folder)["facts"]["k401_2026.match_cap"]
-    assert entry["status"] == "checked" and entry["check"]["second_reading"]["agreed"] is True
+    assert entry["status"] == "checked" and "second_reading" not in entry["check"]
+    with pytest.raises(derived.DerivedError, match="no second reading by m"):
+        derived.set_status(folder, "facts", "k401_2026.match_cap", "approved", by="kevin", second_reader="m")
+
+
+def test_an_entry_whose_slot_is_gone_fails_without_a_second_reading(env):
+    made = []
+
+    def second(kind, name, entry):
+        made.append(name)
+        return reading(True)(kind, name, entry)
+    gone = fact(prop="gone")
+    folder = layer_with(env, k401_2026__gone=("facts", gone), k401_2026__match_cap=("facts", fact()))
+    counts = derive_check.recheck(folder, env, on=ON, second=second)
+    entry = derived.read(folder)["facts"]["k401_2026.gone"]
+    assert entry["status"] == "proposed" and entry["check"]["failures"] == [
+        "ontology: the environment has no facts slot k401_2026.gone"]
+    assert made == ["k401_2026.match_cap"] and counts["not_made"] == 1 and counts["agreed"] == 1
+
+
+def test_a_stale_entry_is_not_sent_back_again_while_it_is_still_stale(env):
+    folder = layer_with(env, carryover_limit=("decisions", {**decision(env, status="approved", edition="2025-01-01"),
+                                                            "decided_by": "kevin", "note": "matches"}))
+    assert derive_check.recheck(folder, env, on=ON)["stale"] == 1
+    once = derived.read(folder)["decisions"]["carryover_limit"]
+    assert once["note"].count("back to proposed") == 1
+    assert derive_check.recheck(folder, env, on=ON)["stale"] == 1
+    assert derived.read(folder)["decisions"]["carryover_limit"] == once
 
 
 def test_a_second_reading_is_made_on_an_entry_the_mechanical_check_fails_too(env):

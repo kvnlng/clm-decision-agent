@@ -477,7 +477,8 @@ refuses to approve an entry that is not checked. Only `check` sets checked: `sta
 (to send an entry back to be checked again) or, for a conflict, resolved or open. A correction (a changed value or table) is written with status
 proposed and check null together, then `check` runs the check again. `check` also sends any entry but a rejected
 one whose cited document has a newer edition (or has left the collection, or is no longer in force) back to
-proposed, approved ones included, keeping who decided and adding the reason to the note. Each check records the
+proposed, approved ones included, keeping who decided and adding the reason to the note, once: while it stays
+stale for that reason, a later `check` counts it as stale and leaves it as it is. Each check records the
 sha256 of the table it checked (`check.dmn_sha256`). If the table is edited after that, `status` refuses to approve
 the entry and loading refuses to admit it, saying its DMN has changed since its check and to run `clm-derive check`
 again; `check` sends an approved one back to proposed and checks it at once. An approved table whose check was
@@ -519,7 +520,9 @@ changes. It is never sent back to the first model as a retry. The second reader 
 the layer, nor another tag of it (any `gemma4:…` for gemma4) or a dated id of the same Claude model: `run` and
 `check` refuse it, since it would repeat its own reading. Removing `second_reader` does not clear a recorded
 disagreement: `check` keeps failing the entry, as "an earlier second reading by MODEL …", until a later second
-reading agrees or a person corrects the entry. With `second_reader`, `status` approves an entry only when its check
+reading agrees or a person corrects the entry. An agreement is not kept that way: it compared the entry as it
+was then, so a `check` without `second_reader` records no second reading. An entry whose slot is no longer in
+`environment.toml` fails the check and is not read again. With `second_reader`, `status` approves an entry only when its check
 holds a second reading by that model that agreed, made since the entry's last change; so a rejected entry with an
 old passing check is set to proposed and checked again first (with `status`, or Correct, unchanged, in the portal). Without `second_reader`, `describe` and `check` say
 there is no second reading and the check is as before.

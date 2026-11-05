@@ -545,3 +545,26 @@ def test_the_status_command_offers_only_a_persons_statuses(path, capsys):
     with pytest.raises(SystemExit):
         derive.main(["status", str(path), "decisions", "carryover_limit", "checked", "--by", "kevin"])
     assert "invalid choice: 'checked'" in capsys.readouterr().err
+
+
+def test_check_command_with_a_second_reader_fails_an_entry_whose_slot_was_removed_in_one_line(path, read_again,
+                                                                                              capsys):
+    run(path, good())
+    layer = derived.read(path.parent)
+    layer["facts"]["k401_2026.gone"] = {**layer["facts"]["k401_2026.match_cap"], "property": "gone"}
+    derived.write(path.parent, layer)
+    assert derive.main(["check", str(path), "--as-of", "2026-12-01"]) == 0
+    assert capsys.readouterr().out.splitlines()[-1] == "second reading by second: 2 agreed, 0 disagreed, 1 not made"
+    entry = derived.read(path.parent)["facts"]["k401_2026.gone"]
+    assert entry["status"] == "proposed" and "no facts slot k401_2026.gone" in entry["check"]["failures"][0]
+
+
+def test_the_check_commands_second_reading_of_a_slot_that_is_gone_is_not_made(path, read_again, monkeypatch):
+    calls = []
+    monkeypatch.setattr(derive.derive_check, "recheck",
+                        lambda folder, env, on, second: calls.append(second("facts", "k401_2026.gone", {})) or
+                        {"checked": 0, "proposed": 0, "stale": 0, "untouched": 0, "undigested": 0, "agreed": 0,
+                         "disagreed": 0, "not_made": 1})
+    assert derive.main(["check", str(path), "--as-of", "2026-12-01"]) == 0
+    [(record, failures)] = calls
+    assert record["error"] == "the environment has no facts slot k401_2026.gone" and "could not be made" in failures[0]

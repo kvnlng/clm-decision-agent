@@ -459,8 +459,13 @@ def _check(environment: str, folder: Path, on: date) -> int:
     reader = reader_for(env)
     refuse_same_model(reader, derived.read(folder).get("model"))
 
-    def second(_kind: str, name: str, entry: dict) -> tuple[dict, list[str]]:
-        return second_reading(env, env.slots[name], entry, reader, on)
+    def second(kind: str, name: str, entry: dict) -> tuple[dict, list[str]]:
+        slot = env.slots.get(name)
+        if slot is None or slot.kind != kind:
+            error = f"the environment has no {kind} slot {name}"
+            return ({"model": reader.model, "agreed": False, "differences": [], "error": error},
+                    [f"a second reading by {reader.model} could not be made: {error}"])
+        return second_reading(env, slot, entry, reader, on)
     counts = derive_check.recheck(folder, env, on=on, second=second if reader else None)
     print(", ".join(f"{counts[status]} {status}" for status in ("checked", "proposed", "stale", "untouched")))
     if counts["undigested"]:
