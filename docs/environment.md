@@ -612,7 +612,8 @@ so a client or a person can see everything it offers ([serving.md](serving.md#in
 description and the question, in one user message, so any MCP client asks the way the agent does. The question is
 required: a missing or blank one is refused with one error line. Both take the text
 from `instructions.py`. A line naming a tool the server does not offer (a scenario, or rules) is left out, so an
-environment with no scenarios is never told to run one.
+environment with no scenarios is never told to run one. The reference agent keeps every line, whatever tools it
+is given.
 
 **Context:**
 

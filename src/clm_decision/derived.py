@@ -48,7 +48,8 @@ def read(folder: str | Path) -> dict:
     except json.JSONDecodeError as error:
         raise DerivedError(f"{file}: not valid JSON: {error}") from error
     if not isinstance(layer, dict) or layer.get("version") != VERSION \
-            or any(not isinstance(layer.get(kind), dict) for kind in KINDS):
+            or any(not isinstance(layer.get(kind), dict) for kind in KINDS) \
+            or any(not isinstance(entry, dict) for kind in KINDS for entry in layer[kind].values()):
         raise DerivedError(f"{file}: not a derived layer of version {VERSION}")
     return layer
 

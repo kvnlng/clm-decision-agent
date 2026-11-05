@@ -3,6 +3,7 @@
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import inspect
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -105,3 +106,16 @@ def test_a_tools_module_may_hold_a_dataclass_with_future_annotations(write_scena
     tools = load_tools(load_scenario(write_scenario(BASE_TOML.replace('"fake_tools"', f'"{name}"'))))
     assert list(tools) == ["lookup", "act"]
     assert sys.modules["calendar"] is calendar
+
+
+def test_a_tools_module_named_after_a_standard_module_not_yet_imported_leaves_that_name_to_it(tmp_path):
+    (tmp_path / "statistics.py").write_text(DATACLASS_SOURCE)
+    (tmp_path / "scenario.toml").write_text(BASE_TOML.replace('"fake_tools"', '"statistics"'))
+    # A fresh process, so the standard statistics is not yet imported when the scenario's module loads
+    program = ("import sys\nassert 'statistics' not in sys.modules\n"
+               "from clm_decision.scenario import load_scenario\nfrom clm_decision.tools import load_tools\n"
+               f"tools = load_tools(load_scenario({str(tmp_path / 'scenario.toml')!r}))\n"
+               "import statistics\nprint(list(tools), statistics.mean([1, 3]))\n")
+    done = subprocess.run([sys.executable, "-c", program], capture_output=True, text=True, check=False)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split() == ["['lookup',", "'act']", "2"]

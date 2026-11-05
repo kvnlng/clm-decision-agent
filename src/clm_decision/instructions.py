@@ -1,5 +1,6 @@
 """The reference agent's instructions, in one place: decision_agent gives them to its model, and the environment
-server's answer_question prompt gives them to any MCP client, so both ask the same way.
+server's answer_question prompt gives them to any MCP client, so both ask the same way. The prompt leaves out the
+lines for a tool the server does not offer; the agent keeps every line, whatever tools it is given.
 """
 from __future__ import annotations
 
