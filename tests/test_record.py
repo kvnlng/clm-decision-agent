@@ -11,7 +11,7 @@ from cryptography.fernet import Fernet
 from conftest import BASE_TOML
 
 from clm_decision.record import (append_record, check_record, load_records, locked_lines, new_key, record_key,
-                                 route_verdicts, save_correction)
+                                 route_verdicts, save_correction, skipped_note)
 from clm_decision.record import main as record_main
 from clm_decision.scenario import ScenarioError, load_scenario
 
@@ -82,6 +82,17 @@ def test_a_later_confirmation_replaces_an_earlier_correction(scenario):
 def test_a_later_correction_replaces_an_earlier_verdict(scenario):
     records = [route_record("User: a", "Billing", "Billing"), route_record("User: a", "Billing", "Tech")]
     assert [r["human"] for r in route_verdicts(records, scenario)] == ["Tech"]
+
+
+def test_a_latest_verdict_on_a_removed_route_drops_the_state(scenario):
+    records = [route_record("User: a", "Billing", "Tech"), route_record("User: a", "Billing", "Shipping")]
+    assert route_verdicts(records, scenario) == []
+
+
+def test_the_skipped_note_names_every_cause_not_only_the_key(tmp_path):
+    note = skipped_note(2, tmp_path / "r.jsonl")
+    assert note.startswith("2 unreadable lines skipped in r.jsonl")
+    assert "old kind" in note and "damaged" in note and "another key" in note
 
 
 def test_the_record_is_created_readable_by_its_owner_only(tmp_path):

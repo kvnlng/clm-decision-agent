@@ -78,10 +78,19 @@ class MlxEngine:
         if tracing.active():
             tracing.add("texts_encoded", len({text for text in texts if ("state", text) not in self.engine.cache}))
         before = self.engine.tokens_spent
+        # The build's _vectors fails when one call evicts a text of that call from its cache, so it is called on
+        # at most cache_size texts, and on the cached ones first, which makes them the newest
+        size = self.engine.cache_size
+        found = []
         with tracing.timed("encode_ms"):
-            found = np.array(self.engine._vectors(texts, "state"))  # pylint: disable=protected-access
+            for start in range(0, len(texts), size):
+                chunk = texts[start:start + size]
+                cached = [text for text in chunk if ("state", text) in self.engine.cache]
+                if cached:
+                    self.engine._vectors(cached, "state")  # pylint: disable=protected-access
+                found.append(np.array(self.engine._vectors(chunk, "state")))  # pylint: disable=protected-access
         tracing.add("tokens", self.engine.tokens_spent - before)
-        return found
+        return np.concatenate(found)
 
     def embed(self, texts: list[str]) -> np.ndarray:
         """[n, hidden] encoder vectors, unit length."""
