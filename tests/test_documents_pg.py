@@ -9,6 +9,8 @@ can be wiped, with the password in CLM_TEST_POSTGRES_PASSWORD: `uv run pytest -m
 import contextlib
 import json
 import os
+import threading
+import time
 
 import httpx
 import pgvector.psycopg
@@ -99,6 +101,30 @@ def test_the_embedder_keeps_one_client_with_a_timeout_for_searches(monkeypatch):
     OllamaEmbedder("http://ollama", timeout=600).embed("toy-embed", ["three"])
     assert made == [60, 600]
 
+
+
+def test_two_first_searches_at_once_make_one_client(monkeypatch):
+    """clm-server --http runs searches on worker threads; a second client would never be used or closed."""
+    made, real = [], httpx.Client
+    both = threading.Barrier(2)
+
+    def client(timeout):
+        made.append(timeout)
+        time.sleep(0.05)
+        return real(timeout=timeout, transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"embeddings": [[0.1, 0.2]]})))
+    monkeypatch.setattr(documents.httpx, "Client", client)
+    embedder = OllamaEmbedder("http://ollama")
+
+    def search():
+        both.wait()
+        embedder.embed("toy-embed", ["one"])
+    threads = [threading.Thread(target=search) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert made == [60]
 
 def test_an_unreachable_database_is_one_line():
     with pytest.raises(ScenarioError, match="^documents: cannot connect to 127.0.0.1:1/nowhere: ") as error:

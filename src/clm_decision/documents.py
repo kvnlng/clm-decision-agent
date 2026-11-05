@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -172,16 +173,18 @@ def connect(settings: DocumentSettings) -> DocumentStore:
 class OllamaEmbedder:  # pylint: disable=too-few-public-methods
     """Embeds through Ollama's /api/embed, so text never leaves the machine.
 
-    One client, made on the first call, serves every call. Its timeout of 60 seconds covers a search's query, and
+    One client, made on the first call under a lock, serves every call and every thread. Its timeout of 60 seconds covers a search's query, and
     Ollama loading the model on first use; clm-load-documents gives its batches longer."""
 
     def __init__(self, url: str, http=None, timeout: float = 60):
         self.url, self.http, self.timeout = url.rstrip("/"), http, timeout
+        self._making = threading.Lock()
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
         """One vector per text; raises StepError in one line when Ollama cannot embed them."""
-        if self.http is None:
-            self.http = httpx.Client(timeout=self.timeout)
+        with self._making:
+            if self.http is None:
+                self.http = httpx.Client(timeout=self.timeout)
         try:
             response = self.http.post(f"{self.url}/api/embed", json={"model": model, "input": texts})
             response.raise_for_status()
