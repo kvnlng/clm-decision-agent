@@ -231,7 +231,7 @@ function = "credit_check"                 # credit_check(amount) -> a dict of ou
 Each evaluation records its inputs, its outputs and, for a table, the rules that fired. The supported DMN subset
 (`dmn.py`), read from DMN XML of any version:
 
-- **Hit policies:** `UNIQUE` (the default), `FIRST`, `COLLECT`.
+- **Hit policies:** `UNIQUE` (the default), `FIRST`, `COLLECT` (every matching row; an `aggregation` such as `SUM` is refused).
 - **Input entries:** `-`; a literal (`1.5`, `"Region B"`, `true`); `<`, `<=`, `>`, `>=`, `=` and `!=` with a number;
   the ranges `[a..b]`, `(a..b)`, `[a..b)` and `(a..b]`; comma-separated lists of these; `not(...)`, which wraps a whole
   entry, not one item of a list.
