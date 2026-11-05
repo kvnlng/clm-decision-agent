@@ -213,8 +213,10 @@ async def answer(session: Client | None, question: str, chat: Chat) -> dict:
     returned = [call["error"] if call["error"] else call["result"] for call in calls]
     # What the person asking supplied, in the question's own words, counts as given
     returned.append(question)
+    # A tool's error often repeats the citation asked for, so only the question's citations count as given
     return {"question": question, "answer": text, "calls": calls, "unsupported": unsupported(text, returned),
-            "citations": citation_check.check(text, returned), "stopped": stopped, "model": chat.model}
+            "citations": citation_check.check(text, [call["result"] for call in calls], question),
+            "stopped": stopped, "model": chat.model}
 
 
 async def _main(args, refused: list[int]) -> int:

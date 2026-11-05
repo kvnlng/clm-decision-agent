@@ -54,8 +54,13 @@ def test_several_sections_after_one_sign():
 
 def test_a_citation_in_the_question_counts_as_given_but_not_one_in_a_passage():
     passage = {"rows": [{"document": "d", "citation": "Agreement", "passage": "4", "text": "See § 16.70."}]}
-    result = citation_check.check("Under § 15.50 and § 16.70 it is void.", [passage, "Does § 15.50 apply?"])
+    result = citation_check.check("Under § 15.50 and § 16.70 it is void.", [passage], "Does § 15.50 apply?")
     assert result["found"] == ["§ 15.50"] and result["not_found"] == ["§ 16.70"]
+
+
+def test_a_citation_in_a_tools_error_is_not_given():
+    result = citation_check.check("Under § 15.50(b) the covenant fails.", ["statutes: no document § 15.50(b)"])
+    assert result["found"] == [] and result["not_found"] == ["§ 15.50(b)"]
 
 
 def test_a_table_citation_is_resolved_in_its_step(write_environment):

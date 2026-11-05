@@ -89,16 +89,13 @@ def _found(item: tuple, returned: set[tuple]) -> bool:
     return item in returned
 
 
-def check(answer: str, results: list) -> dict:
-    """The citations in the answer: found in the results, not found, and case names that cannot be checked. A plain
-    string among the results (the question, a tool's error) counts as given, as number_check counts its figures; text
-    inside a tool's result, such as a passage, does not."""
-    returned: set[tuple] = set()
+def check(answer: str, results: list, question: str = "") -> dict:
+    """The citations in the answer: found in the results, not found, and case names that cannot be checked. A
+    citation in the question counts as given. Text inside a tool's result, such as a passage, does not, nor does a
+    tool's error, which often repeats the citation the agent asked for."""
+    returned = keys(question)
     for result in results:
-        if isinstance(result, str):
-            returned |= keys(result)
-        else:
-            _returned(result, returned)
+        _returned(result, returned)
     cited = sorted([(position, written, ("statute", section, label))
                     for written, section, label, position in _statutes(answer)]
                    + [(position, written, ("reporter", key)) for written, key, position in _reporters(answer)])
