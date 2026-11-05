@@ -102,29 +102,37 @@ class PostgresStore:
             raise StepError(f"documents at {self.where}: {_first_line(error)}") from error
 
     def replace(self, collection: str, documents: list[dict], vectors: list[list[list[float]]], built: dict) -> None:
-        """Replace the collection with these documents, one vector per passage, in one transaction."""
+        """Replace the collection with these documents, one vector per passage, in one transaction; raises StepError
+        in one line when the database refuses them, having rolled back."""
+        import psycopg  # pylint: disable=import-outside-toplevel
+        try:
+            with self.connection.transaction():
+                self._write(collection, documents, vectors, built)
+        except psycopg.Error as error:
+            raise StepError(f"documents at {self.where}: {_first_line(error)}") from error
+
+    def _write(self, collection: str, documents: list[dict], vectors: list[list[list[float]]], built: dict) -> None:
         import numpy  # pylint: disable=import-outside-toplevel
-        with self.connection.transaction():
-            for table, column in (("citations", "collection"), ("passages", "collection"),
-                                  ("documents", "collection"), ("collections", "name")):
-                self.connection.execute(f"DELETE FROM {table} WHERE {column} = %s", (collection,))
-            with self.connection.cursor() as cursor:
-                for document, document_vectors in zip(documents, vectors):
-                    cursor.execute("INSERT INTO documents VALUES (%s, %s, %s, %s, %s)",
-                                   (collection, document["id"], document["citation"], document["title"],
-                                    json.dumps(document["metadata"])))
-                    cursor.executemany(
-                        "INSERT INTO passages VALUES (%s, %s, %s, %s, %s, to_tsvector('english', %s), %s)",
-                        [(collection, document["id"], n, passage["label"], passage["text"], passage["text"],
-                          numpy.array(vector, dtype=numpy.float32))
-                         for n, (passage, vector) in enumerate(zip(document["passages"], document_vectors))])
-                    cursor.executemany("INSERT INTO citations VALUES (%s, %s, %s, %s)",
-                                       [(collection, document["id"], cite.get("passage"), cite["id"])
-                                        for cite in document.get("cites", [])])
-            self.connection.execute(
-                "INSERT INTO collections VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (collection, built["built_at"], built["source"], built["model"], built["dimensions"],
-                 len(documents), sum(len(document["passages"]) for document in documents)))
+        for table, column in (("citations", "collection"), ("passages", "collection"),
+                              ("documents", "collection"), ("collections", "name")):
+            self.connection.execute(f"DELETE FROM {table} WHERE {column} = %s", (collection,))
+        with self.connection.cursor() as cursor:
+            for document, document_vectors in zip(documents, vectors):
+                cursor.execute("INSERT INTO documents VALUES (%s, %s, %s, %s, %s)",
+                               (collection, document["id"], document["citation"], document["title"],
+                                json.dumps(document["metadata"])))
+                cursor.executemany(
+                    "INSERT INTO passages VALUES (%s, %s, %s, %s, %s, to_tsvector('english', %s), %s)",
+                    [(collection, document["id"], n, passage["label"], passage["text"], passage["text"],
+                      numpy.array(vector, dtype=numpy.float32))
+                     for n, (passage, vector) in enumerate(zip(document["passages"], document_vectors))])
+                cursor.executemany("INSERT INTO citations VALUES (%s, %s, %s, %s)",
+                                   [(collection, document["id"], cite.get("passage"), cite["id"])
+                                    for cite in document.get("cites", [])])
+        self.connection.execute(
+            "INSERT INTO collections VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (collection, built["built_at"], built["source"], built["model"], built["dimensions"],
+             len(documents), sum(len(document["passages"]) for document in documents)))
 
     def built(self, collection: str) -> dict | None:
         """When and from what the collection was built, with its counts; None when it holds nothing."""

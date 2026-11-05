@@ -150,6 +150,14 @@ def test_tables_that_cannot_be_made_are_one_line(opens):
     assert connection.closed
 
 
+def test_a_failed_load_is_one_line():
+    """PostgreSQL refuses the rows only once every passage has been embedded, so say why in one line."""
+    store = documents_pg.PostgresStore(FakeConnection(fail=("INSERT INTO passages", psycopg.DataError(
+        "PostgreSQL text fields cannot contain NUL (0x00) bytes"))), "127.0.0.1:1/nowhere")
+    with pytest.raises(StepError, match=r"^documents at 127.0.0.1:1/nowhere: PostgreSQL text fields cannot"):
+        store.replace("cases", DOCUMENTS, vectors(), built())
+
+
 def test_no_driver_names_the_documents_extra(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "psycopg", None)
     with pytest.raises(ScenarioError, match=r"install the documents extra"):
