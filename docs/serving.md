@@ -51,14 +51,15 @@ uv run clm-server my_scenario.toml --http --auth oauth \
   kept), naming the issuer and audience, unexpired, carrying every `--scope`. Scopes are read from `scope` (Keycloak,
   RFC 9068), `scp` (Entra, a user's token) or `roles` (Entra, an application's token). **Without `--scope`, any token the
   issuer made for the audience is accepted.**
-- **Issuer unreachable:** every token is refused and a warning logged. The server asks again at most once a minute, so a
-  mistyped `--issuer` shows in the log at the first call, not at start-up.
+- **Issuer unreachable, or no usable keys:** every token is refused and a warning logged. The server asks again at
+  most once a minute, so a mistyped `--issuer` shows in the log at the first call, not at start-up.
 - **401** for a missing or bad token, with a `WWW-Authenticate` header pointing to
   `/.well-known/oauth-protected-resource/mcp`, which names the issuer so an MCP client can find where to get a token.
   **403** for a token without the scope.
 - `--audience` defaults to the resource URL, and `--resource-url` to `http://HOST:PORT/mcp`; behind HTTPS, set it to the
   address callers use. Variables: `DECISION_OAUTH_ISSUER`, `DECISION_OAUTH_AUDIENCE`, `DECISION_OAUTH_SCOPES`
-  (space-separated). The issuer must be HTTPS, except on localhost.
+  (space-separated). The issuer, and the address its keys are fetched from, must be HTTPS, except on this computer
+  (`localhost`, `127.0.0.1`, `::1`).
 - **The trace names the caller:** the token's client (`client_id`, `azp` or `appid`) and subject, never the token. A
   user's subject identifies a person, so treat a shared trace as personal data.
 - Not supported yet: opaque tokens (introspection), a scope per tool (one scope opens every tool), and the server as its

@@ -13,6 +13,7 @@ import os
 import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable
+from urllib.parse import urlsplit
 
 import httpx
 import jwt
@@ -28,6 +29,21 @@ REFETCH_SECONDS = 60
 ISSUER_ENV, AUDIENCE_ENV, SCOPES_ENV = "DECISION_OAUTH_ISSUER", "DECISION_OAUTH_AUDIENCE", "DECISION_OAUTH_SCOPES"
 
 log = logging.getLogger("decision-server.oauth")
+
+# Plain http is safe only to this computer: elsewhere, anyone on the path could hand over their own keys
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+
+
+def is_secure(url: str) -> bool:
+    """Whether keys may be fetched from `url`: https, or http on this computer, with a host and no user or password."""
+    try:
+        parts = urlsplit(url)
+        hostname, username, password = parts.hostname, parts.username, parts.password
+    except ValueError:
+        return False
+    if not hostname or username is not None or password is not None:
+        return False
+    return parts.scheme == "https" or (parts.scheme == "http" and hostname in LOCAL_HOSTS)
 
 
 class OAuthError(Exception):
@@ -100,8 +116,15 @@ class OidcVerifier:
             if document.get("issuer") != self.issuer:
                 raise OAuthError(f"the discovery document names issuer {document.get('issuer')!r}, "
                                  f"not {self.issuer!r}")
+            if not is_secure(str(document["jwks_uri"])):
+                raise OAuthError(f"the discovery document's jwks_uri {document['jwks_uri']!r} is not https")
             self._jwks_uri = str(document["jwks_uri"])
-        self._keys = jwt.PyJWKSet.from_dict(await self._document(self._jwks_uri))
+        document = await self._document(self._jwks_uri)
+        try:
+            self._keys = jwt.PyJWKSet.from_dict(document)
+        except jwt.PyJWKSetError as error:
+            # A PyJWTError, which verify_token would take for a bad token and refuse without a word
+            raise OAuthError(f"{self._jwks_uri} gave no usable keys: {error}") from error
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """The token's access, or None to refuse it."""
@@ -150,7 +173,7 @@ def from_args(issuer: str | None, audience: str | None, scopes: list[str] | None
     issuer = issuer or os.environ.get(ISSUER_ENV, "").strip()
     if not issuer:
         raise ValueError(f"--auth oauth needs --issuer or {ISSUER_ENV}")
-    if not issuer.startswith(("https://", "http://localhost", "http://127.0.0.1")):
+    if not is_secure(issuer):
         raise ValueError(f"--issuer must be https (or http on localhost), not {issuer}")
     audience = audience or os.environ.get(AUDIENCE_ENV, "").strip() or resource_url
     scopes = scopes if scopes is not None else os.environ.get(SCOPES_ENV, "").split()

@@ -245,3 +245,40 @@ async def test_alg_none_and_kidless_tokens():
                          algorithm="RS256")
     assert await verifier().verify_token(kidless) is not None
     assert await verifier(Issuer(keys=((KEY, "k1"), (OTHER_KEY, "k2")))).verify_token(kidless) is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("jwks", [{"keys": []}, {"error": "unavailable"}])
+async def test_an_unusable_key_set_is_refused_with_a_warning(jwks, caplog):
+    issuer = Issuer()
+    issuer.jwks = jwks
+    with caplog.at_level("WARNING", logger="decision-server.oauth"):
+        assert await verifier(issuer).verify_token(token()) is None
+    assert "cannot check tokens" in caplog.text and f"{ISSUER}/certs" in caplog.text
+
+
+@pytest.mark.parametrize("issuer", ["http://localhost.attacker.example/realms/x", "http://127.0.0.1.nip.io/x",
+                                    "http://localhost@evil.example/", "https://user@login.example.org/x",
+                                    "http://login.example.org/x", "https:///x"])
+def test_an_issuer_must_be_https_or_on_this_computer(issuer):
+    with pytest.raises(ValueError, match="--issuer must be https"):
+        oauth.from_args(issuer, AUDIENCE, [], "http://127.0.0.1:8000/mcp")
+
+
+@pytest.mark.parametrize("issuer", ["https://login.example.org/realms/x", "http://localhost:8080/realms/x",
+                                    "http://127.0.0.1:8080/x", "http://[::1]:8080/x"])
+def test_an_https_or_local_issuer_is_taken(issuer):
+    assert oauth.from_args(issuer, AUDIENCE, [], "http://127.0.0.1:8000/mcp").verifier.issuer == issuer
+
+
+@pytest.mark.anyio
+async def test_keys_over_plain_http_are_refused_with_a_warning(caplog):
+    issuer = Issuer()
+
+    async def fetch(url):
+        if url.endswith("/openid-configuration"):
+            return {"issuer": ISSUER, "jwks_uri": "http://keys.example.test/certs"}
+        return await issuer.fetch(f"{ISSUER}/certs")
+    with caplog.at_level("WARNING", logger="decision-server.oauth"):
+        assert await oauth.OidcVerifier(ISSUER, AUDIENCE, fetch=fetch).verify_token(token()) is None
+    assert "http://keys.example.test/certs" in caplog.text
