@@ -530,8 +530,9 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-loca
     ran.add_argument("--model", help=f"default: {MODEL} with claude, {LOCAL_MODEL} with ollama")
     ran.add_argument("--ollama-url", default=OLLAMA_URL)
     ran.add_argument("--as-of", help="the date documents must be in force on (default: today)")
-    ran.add_argument("--fresh", action="store_true", help="derive every slot in the collection again, approved and rejected ones too; other collections' "
-                     "entries are kept")
+    ran.add_argument("--fresh", action="store_true",
+                     help="derive every slot in the collection again, approved and rejected ones too; other "
+                     "collections' entries are kept")
     checked = commands.add_parser("check", help="check every proposed or checked entry again")
     checked.add_argument("environment")
     checked.add_argument("--as-of", help="the date documents must be in force on (default: today)")
