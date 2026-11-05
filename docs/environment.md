@@ -539,7 +539,7 @@ says so. A rejected entry never decides: neither the file nor the flag can admit
 | `query_<name>`, `decision_<name>`, `calculation_<name>` | One named part, its declared parameters as typed arguments |
 | `judge_<name>` | CLM's probability that the judge's question is answered yes for a `text` |
 | `search_<name>`, `document_<name>` | A collection's closest passages to a `text`, with `filters` and `limit`; one document or passage as stored |
-| `cites_<name>`, `cited_by_<name>` | The documents one cites, or that cite it with the citing passage, to a `depth` |
+| `cites_<name>`, `cited_by_<name>` | The documents one cites, each with its `citing_passage`, or that cite it with the citing passage, to a `depth` |
 | `scenario_<name>` | Every branch, or the `branches` given: figures, status, rejecting limits and every step |
 | `describe` | Name, description, and every part with its parameters, levers, objective and limits; with slots, each derived entry's status and why it is unfilled |
 | `rules`, `rule` | With rule metadata: the rules governing a topic, and one rule with its rows (above) |

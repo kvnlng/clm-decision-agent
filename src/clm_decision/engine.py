@@ -296,13 +296,19 @@ class Steps:
             raise StepError(f"collection {collection}: no document {id}")
         tracing.add("citations")
         rows = getattr(self.env.store, direction)(collection, id, depth)
+        if direction == "cites":
+            # A cites row's passage is in the document citing it, so a citation check never reads it as a
+            # subsection of the row's own citation
+            rows = [{("citing_passage" if key == "passage" else key): value for key, value in row.items()}
+                    for row in rows]
         self.steps.append({"kind": "citations", "name": collection,
                            "inputs": {"id": id, "depth": depth, "direction": direction}, "result": rows[:MAX_ROWS],
                            "built_at": built["built_at"], "omitted": max(len(rows) - MAX_ROWS, 0)})
         return rows[:MAX_ROWS]
 
     def cites(self, collection: str, id: str, depth: int = 1) -> list[dict]:  # pylint: disable=redefined-builtin
-        """The documents this one cites, and those they cite, to the depth."""
+        """The documents this one cites, and those they cite, to the depth, each with the passage citing it as
+        citing_passage."""
         return self._citations(collection, id, depth, "cites")
 
     def cited_by(self, collection: str, id: str, depth: int = 1) -> list[dict]:  # pylint: disable=redefined-builtin
