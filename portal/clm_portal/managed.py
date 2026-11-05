@@ -110,8 +110,14 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
 
     @property
     def running(self) -> bool:
-        """Whether the server started and is still running."""
-        return self.process is not None and self.process.poll() is None and self.error is None
+        """Whether the server started and is still running. One that exited after starting gets its stderr, or its
+        exit code, as `error`."""
+        if self.process is None or self.error is not None:
+            return False
+        code = self.process.poll()
+        if code is not None:
+            self.error = f"clm-server stopped after starting: {self._tail() or f'it exited with code {code}'}"
+        return code is None
 
     def command(self, server: Path, port: int, testing: bool) -> list[str]:
         """The server's command line."""
@@ -120,9 +126,9 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
 
     async def start(self, testing: bool = False) -> None:
         """Start the server, and wait until it lists its tools or exits; `error` says why it did not start, and
-        `testing` is true only once a server in testing mode has started."""
-        self.wanted = testing
-        self.testing, self.error = False, None
+        `testing` is true only once a server in testing mode has started. A start that fails leaves later restarts
+        out of testing mode."""
+        self.testing, self.wanted, self.error = False, False, None
         server = self.find("clm-server")
         if server is None:
             self.process, self.error = None, "clm-server is not installed in the portal's environment"
@@ -146,22 +152,24 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
                 return
             try:
                 await self.tools()
-                self.testing = testing
+                self.testing = self.wanted = testing
                 return
             except Exception:  # pylint: disable=broad-exception-caught
                 if time.monotonic() > deadline:
                     self.error = self._tail() or f"clm-server did not answer within {self.wait:.0f} seconds"
-                    self.stop()
+                    await anyio.to_thread.run_sync(self.stop)
                     return
                 await asyncio.sleep(0.2)
 
     async def restart(self, testing: bool | None = None) -> None:
-        """Stop the server and start it again, in testing mode or not (unchanged when None)."""
-        self.stop()
-        await self.start(self.wanted if testing is None else testing)
+        """Stop the server and start it again, in testing mode or not (unchanged when None). The wait for the old
+        server to stop runs in a thread, so other pages are served meanwhile."""
+        wanted = self.wanted if testing is None else testing
+        await anyio.to_thread.run_sync(self.stop)
+        await self.start(wanted)
 
     def stop(self) -> None:
-        """Stop the server, if it is running."""
+        """Stop the server, if it is running; this waits up to 10 seconds for it to stop."""
         if self.process is not None and self.process.poll() is None:
             self.process.terminate()
             try:

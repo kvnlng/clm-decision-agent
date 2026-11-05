@@ -1,8 +1,10 @@
 """Tests for the portal's own server and its jobs: the command and environment it builds, never a real process."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import asyncio
 import os
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -114,6 +116,52 @@ async def test_a_server_that_exits_at_start_reports_its_error(tmp_path):
     server = managed_server(popen, tmp_path)
     await server.start()
     assert "cannot import 'x'" in server.error and not server.running
+
+
+@pytest.mark.anyio
+async def test_a_failed_testing_start_leaves_the_next_restart_out_of_testing(tmp_path):
+    popen = FakePopen(code=2, stderr="error: unrecognized arguments: --admit-derived\n")
+    server = managed_server(popen, tmp_path)
+    await server.start(testing=True)
+    popen.code = None
+    await server.restart()
+    assert "--admit-derived" not in popen.started[1].args and server.running and not server.testing
+
+
+@pytest.mark.anyio
+async def test_a_server_that_dies_after_starting_says_why(tmp_path):
+    popen = FakePopen()
+    server = managed_server(popen, tmp_path)
+    await server.start()
+    server._stderr.write(b"error: the database connection was lost\n")  # pylint: disable=protected-access
+    popen.started[0].code = 1
+    assert not server.running and "database connection was lost" in server.error
+    await server.restart()
+    assert server.running and server.error is None
+
+
+class SlowProcess(FakeProcess):
+    """A process that takes a while to stop once told to."""
+
+    def wait(self, timeout=None):
+        time.sleep(0.5)
+        return super().wait(timeout)
+
+
+@pytest.mark.anyio
+async def test_a_restart_waits_for_the_old_server_without_blocking_other_requests(tmp_path):
+    server = managed_server(lambda argv, *, env, stderr, **_: SlowProcess(argv, env, stderr), tmp_path)
+    await server.start()
+    ticks = []
+
+    async def tick():
+        while True:
+            ticks.append(time.monotonic())
+            await asyncio.sleep(0.05)
+    task = asyncio.create_task(tick())
+    await server.restart()
+    task.cancel()
+    assert len(ticks) >= 5 and server.running
 
 
 def recorder(release=None, code=0, output="done\n"):
