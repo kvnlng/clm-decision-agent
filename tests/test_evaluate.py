@@ -95,19 +95,6 @@ def test_scenario_path_is_required(capsys):
     assert "scenario" in capsys.readouterr().err
 
 
-def test_evaluate_works_without_vectors_and_says_reuse_is_by_exact_text(scenario):
-    class NoVectors(FakeRouter):
-        exact_match = True
-
-        def embed_state(self, state_text, scenario):
-            raise AssertionError("a server backend has no vectors")
-
-    records = [route_record("User: a", "Billing", "Billing"), route_record("User: b", "Billing", "Tech")]
-    result = evaluate(records, scenario, NoVectors(decision("Billing")))
-    assert result["matching"] is None
-    assert "exact text" in format_report(result, scenario)
-
-
 def test_agreement_counts(scenario):
     records = [route_record("refund", "Billing", "Billing"), route_record("crash", "Billing", "Tech"),
                route_record("parcel", "Tech", "Shipping")]          # route no longer in the scenario

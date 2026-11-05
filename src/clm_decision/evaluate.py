@@ -138,9 +138,7 @@ def evaluate(records: list[dict], scenario, router) -> dict:
         "routing": _replay_routing(route_records, scenario, router),
         "answers": answers,
         "options": options,
-        # A CLM server gives no vectors, so there is nothing to measure: reuse is then by exact text
-        "matching": None if getattr(router, "exact_match", False)
-        else match_report([r for r in route_records if r["human"] in scenario.routes], scenario, router),
+        "matching": match_report([r for r in route_records if r["human"] in scenario.routes], scenario, router),
     }
 
 
@@ -266,9 +264,6 @@ def format_report(result: dict, scenario) -> str:
         lines.append(f"Options of {route}: the reviewer's choice {right} of {of}")
 
     matching = result["matching"]
-    if matching is None:
-        lines.append("Reuse of reviewed routes: with a CLM server, only when the request is the same exact text.")
-        return "\n".join(lines)
     lines.append(f"Reuse of reviewed routes at match_threshold {scenario.match_threshold:.2f}: "
                  f"{matching['matched']} of {matching['n']} reviewed cases match another reviewed case; "
                  f"{matching['same_route']} of those carry the route the reviewer chose.")
