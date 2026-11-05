@@ -33,6 +33,9 @@ from .tools import check_tools, load_tools
 
 KEY_ENV = "DECISION_SERVER_KEY"
 MAX_BATCH = 1000
+# CLM reads only a request's last 2048 tokens, about 8,000 characters; a longer text only costs time under CLM's lock
+# and memory in its cache
+MAX_TEXT = 32_000
 READ_ONLY = ToolAnnotations(read_only_hint=True)
 CHANGES = ToolAnnotations(read_only_hint=False)
 TOOLS = ("decide", "decide_many", "check_call", "describe")
@@ -62,6 +65,12 @@ class _OneAtATime:
                 tracing.add("lock_wait_ms", (time.perf_counter() - start) * 1000)
                 return method(*args, **kwargs)
         return locked
+
+
+def _short(text: str, name: str = "text") -> None:
+    """ToolError if a request's text is longer than CLM needs."""
+    if len(text) > MAX_TEXT:
+        raise ToolError(f"{name}: at most {MAX_TEXT} characters, not {len(text)}")
 
 
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
@@ -140,7 +149,9 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
     def decide(text: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
         """Decide on a request: its route and confidence, the answers to the scenario's questions, the rules
         that apply, facts the informing tools found, and what the acting tools did. An uncertain route runs no
-        acting tool. `context` (such as a booking or user ID) is given to the scenario's tools, not to CLM."""
+        acting tool. `context` (such as a booking or user ID) is given to the scenario's tools, not to CLM. A text
+        may be at most 32,000 characters."""
+        _short(text)
         with traced("decide", text) as record:
             result = clm(lambda: decision.decide(text, scenario, router, tools, context, serve.read_only))
             if trace:
@@ -156,6 +167,7 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         for i, request in enumerate(requests):
             if not isinstance(request.get("text"), str) or not isinstance(request.get("context"), dict | None):
                 raise ToolError(f"requests[{i}] must be {{'text': ..., 'context': {{...}}}}, with context optional")
+            _short(request["text"], f"requests[{i}].text")
         with traced("decide_many", [request["text"] for request in requests]) as record:
             decisions = clm(lambda: decision.decide_many(requests, scenario, router, tools, serve.read_only))
             if trace:
@@ -165,6 +177,7 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
     @server.tool(annotations=READ_ONLY)
     def check_call(text: str, call: dict[str, Any]) -> dict[str, Any]:
         """CLM's opinion of a tool call you propose for a request: a probability and whether it is approved."""
+        _short(text)
         with traced("check_call", text) as record:
             result = clm(lambda: decision.check_call(text, call, scenario, router))
             record["outcome"] = result
@@ -198,6 +211,8 @@ def _add_review(server: MCPServer, scenario: Scenario, router, tools: dict[str, 
         Send the same `context` as with decide, so the route is saved with the facts it was decided on.
         Optionally also the right `answers` to the questions (true/false, a level's number, or a choice's key)
         and the right `option`'s id, on a route with options."""
+        _short(text)
+
         def work() -> dict:
             earlier = decision.route_facts(text, scenario, tools, context)
             # The route is saved and reused for the text it was decided on: the request and routing's facts

@@ -263,6 +263,22 @@ async def test_decide_many_refuses_a_context_that_is_not_an_object(parts, contex
 
 
 @pytest.mark.anyio
+async def test_a_text_over_the_limit_is_refused_before_clm(parts):
+    scenario, _, tools = parts
+    long = "x" * (server.MAX_TEXT + 1)
+    calls = {"decide": {"text": long}, "decide_many": {"requests": [{"text": TEXT}, {"text": long}]},
+             "check_call": {"text": long, "call": {"tool": "refund"}}, "correct": {"text": long, "route": "Billing"}}
+    router = FakeRouter(decision("Tech"))
+    async with Client(server.build_server(scenario, router, tools, review=True)) as client:
+        results = {tool: await client.call_tool(tool, arguments) for tool, arguments in calls.items()}
+        at_limit = await client.call_tool("decide", {"text": "x" * server.MAX_TEXT})
+    for tool, result in results.items():
+        assert result.is_error and f"at most {server.MAX_TEXT} characters" in result.content[0].text, tool
+    assert "requests[1].text" in results["decide_many"].content[0].text
+    assert not at_limit.is_error and not scenario.record_path.exists()
+
+
+@pytest.mark.anyio
 async def test_decide_many_accepts_a_null_context_as_decide_does(parts):
     async with Client(server.build_server(*parts, review=False)) as client:
         result = await client.call_tool("decide_many", {"requests": [{"text": TEXT, "context": None}]})

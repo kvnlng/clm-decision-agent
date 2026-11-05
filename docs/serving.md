@@ -33,6 +33,8 @@ uv run clm-server my_scenario.toml --http [--host 127.0.0.1] [--port 8000] [--re
   `--allowed-host` (for example `--allowed-host decisions.example.org`), and put HTTPS in front: the key travels in
   every request. An allowed host is taken on any port, and so is a page served over https from it; calls from the
   server's own computer (`127.0.0.1`, `localhost`) are still taken too.
+- A request's text may be at most 32,000 characters, in every tool: CLM reads only its last 2,048 tokens, and a longer
+  text would hold up other callers while it is read. A longer one is refused.
 - Leave out `--review` for real callers: any caller with the key could save corrections, which become training data.
 
 ### With tokens from your identity provider (OAuth)
