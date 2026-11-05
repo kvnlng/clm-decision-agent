@@ -292,28 +292,43 @@ def test_the_agent_writes_the_record_beside_the_answer(tmp_path, monkeypatch):
     assert "## The agent's explanation (not checked)" in (tmp_path / "run.record.md").read_text()
 
 
-class FailingClaude:
-    """The Anthropic client when the API cannot be reached: the request fails as the stream opens."""
+def unreachable():
+    import anthropic  # pylint: disable=import-outside-toplevel
+    return anthropic.APIConnectionError(request=httpx.Request("POST", "http://127.0.0.1:9/v1/messages"))
 
-    def __init__(self):
+
+def no_credentials():
+    # What SDK 2.1.0 raises as it builds the request with no key and no `ant auth login`
+    return TypeError('"Could not resolve authentication method. Expected one of api_key, auth_token, or credentials '
+                     'to be set. Or for the `Authorization` header to be explicitly omitted"')
+
+
+class FailingClaude:
+    """The Anthropic client when the request cannot be made: it fails as the stream opens."""
+
+    def __init__(self, failure):
+        self.failure = failure
         self.messages = self
 
     def stream(self, **_request):
-        return _FailingStream()
+        return _FailingStream(self.failure)
 
 
 class _FailingStream:
+    def __init__(self, failure):
+        self.failure = failure
+
     async def __aenter__(self):
-        import anthropic  # pylint: disable=import-outside-toplevel
-        raise anthropic.APIConnectionError(request=httpx.Request("POST", "http://127.0.0.1:9/v1/messages"))
+        raise self.failure()
 
     async def __aexit__(self, *exc):
         return False
 
 
+@pytest.mark.parametrize("failure", [unreachable, no_credentials])
 @pytest.mark.parametrize("no_tools", [False, True])
-def test_a_claude_failure_is_one_line_about_claude(tmp_path, monkeypatch, capsys, no_tools):
-    monkeypatch.setattr("anthropic.AsyncAnthropic", FailingClaude)
+def test_a_claude_failure_is_one_line_about_claude(tmp_path, monkeypatch, capsys, no_tools, failure):
+    monkeypatch.setattr("anthropic.AsyncAnthropic", lambda: FailingClaude(failure))
     target = str(tmp_path / "nowhere.toml") if no_tools else str(EXAMPLE)
     assert main([target, "Should we?", "--out", str(tmp_path / "run.answer.json"),
                  *(["--no-tools"] if no_tools else [])]) == 2
