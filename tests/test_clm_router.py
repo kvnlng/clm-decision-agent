@@ -71,8 +71,8 @@ class VectorRouter(LocalContrastiveRouter):
         super().__init__(engine=engine)
         self.vectors = vectors
 
-    def embed_state(self, state_text, scenario):
-        return self.vectors[state_text]
+    def embed_states(self, state_texts, scenario):
+        return [self.vectors[text] for text in state_texts]
 
 
 def correction(state_text, clm, human):
@@ -132,22 +132,46 @@ def test_live_corrections_can_be_switched_off(write_scenario):
     assert router.decide("User: bill me", off)["source"] == "clm"
 
 
-def test_embed_state_projects_context_plus_routing_question(scenario):
-    class Engine(FakeEngine):
-        def embed(self, texts):
-            self.texts = texts
-            return np.array([[3.0, 4.0]], dtype=np.float32)
+class StateVectorEngine(FakeEngine):
+    """An engine whose state vectors come from a table, noting each call for them."""
 
-        def project(self, vectors, which):
-            self.which = which
-            return np.array([[0.6, 0.8]], dtype=np.float32)
+    def __init__(self, vectors):
+        super().__init__({ROUTE_QID: ROUTE_ANSWER, "urgent": URGENT_ANSWER})
+        self.vectors, self.asked = vectors, []
 
-    engine = Engine({})
-    vector = LocalContrastiveRouter(engine=engine).embed_state("User: hi ", scenario)
+    def state_vectors(self, texts):
+        self.asked.append(list(texts))
+        return np.array([self.vectors[text] for text in texts], dtype=np.float32)
 
-    assert engine.texts == ["User: hi\n\nWhich workflow?"]
-    assert engine.which == "state"
-    assert vector == pytest.approx([0.6, 0.8])
+
+def test_embed_state_reads_the_engines_state_vector_for_context_plus_routing_question(scenario):
+    engine = StateVectorEngine({"User: hi\n\nWhich workflow?": [0.6, 0.8], "Which workflow?": [1.0, 0.0]})
+    router = LocalContrastiveRouter(engine=engine)
+    assert router.embed_state("User: hi ", scenario) == pytest.approx([0.6, 0.8])
+    # The text is the one answer() encodes, so an empty state gives the question alone
+    assert router.embed_state("", scenario) == pytest.approx([1.0, 0.0])
+    assert engine.asked == [["User: hi\n\nWhich workflow?"], ["Which workflow?"]]
+
+
+def test_load_verdicts_encodes_them_all_in_one_call(scenario):
+    engine = StateVectorEngine({f"{text}\n\nWhich workflow?": vector for text, vector in VECTORS.items()})
+    router = LocalContrastiveRouter(engine=engine)
+    texts = ["User: bill me", "User: app crashed"]
+    assert router.load_verdicts([correction(text, "Billing", "Tech") for text in texts], scenario) == 2
+    assert len(engine.asked) == 1 and len(engine.asked[0]) == 2
+    decision = router.decide("User: bill me please", scenario)
+    assert (decision["route"], decision["similarity"]) == ("Tech", pytest.approx(0.98, abs=1e-3))
+
+
+def test_matching_a_verdict_encodes_nothing_that_deciding_did_not(scenario):
+    from test_clm_torch import CONFIG, FakeEncoder, tiny_weights  # pylint: disable=import-outside-toplevel
+    from clm_decision.clm_torch import TorchEngine, TorchHeads  # pylint: disable=import-outside-toplevel
+    encoder = FakeEncoder()
+    router = LocalContrastiveRouter(engine=TorchEngine(encoder, TorchHeads(tiny_weights(), CONFIG, "cpu")))
+    router.load_verdicts([correction("User: bill me", "Billing", "Tech")], scenario)
+    encoder.asked.clear()
+    router.route("User: app crashed", scenario)
+    assert encoder.asked.count("User: app crashed\n\nWhich workflow?") == 1
 
 
 def test_a_confirmed_route_is_reused_too(scenario):

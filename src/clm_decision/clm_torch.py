@@ -299,6 +299,10 @@ class TorchEngine:
         with tracing.timed("head_ms"):
             return self.heads.project(vectors, which)
 
+    def state_vectors(self, texts: list[str]) -> np.ndarray:
+        """[n, projection] state-head vectors, unit length, from the cache where it has them."""
+        return self._vectors(texts, "state")
+
     def head_weights(self) -> dict[str, np.ndarray]:
         """The current heads' weights, in the layout of a heads file."""
         return self.heads.weights()

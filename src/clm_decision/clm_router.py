@@ -70,6 +70,16 @@ class MlxEngine:
                 self.engine._vectors(found, which)  # pylint: disable=protected-access
         tracing.add("tokens", self.engine.tokens_spent - before)
 
+    def state_vectors(self, texts: list[str]) -> np.ndarray:
+        """[n, projection] state-head vectors, unit length, from the build's cache where it has them."""
+        if tracing.active():
+            tracing.add("texts_encoded", len({text for text in texts if ("state", text) not in self.engine.cache}))
+        before = self.engine.tokens_spent
+        with tracing.timed("encode_ms"):
+            found = np.array(self.engine._vectors(texts, "state"))  # pylint: disable=protected-access
+        tracing.add("tokens", self.engine.tokens_spent - before)
+        return found
+
     def embed(self, texts: list[str]) -> np.ndarray:
         """[n, hidden] encoder vectors, unit length."""
         with tracing.timed("encode_ms"):
@@ -199,6 +209,7 @@ class LocalContrastiveRouter:
     def __init__(self, engine):
         self.engine = engine
         self.verdicts: list = []
+        self._matrix = (None, 0, np.zeros((0, 0)))     # the verdicts' vectors, for the list and length they had
 
     def decide(self, state_text: str, scenario: Scenario) -> dict:
         """One CLM call: the routing question plus the scenario's extra questions."""
@@ -259,14 +270,21 @@ class LocalContrastiveRouter:
 
     def embed_state(self, state_text: str, scenario: Scenario) -> list[float]:
         """CLM's state-head vector for this state under the routing question (unit length)."""
-        # Same layout as clm_mlx.schema.state_text: context, blank line, question
-        text = f"{state_text.strip()}\n\n{scenario.routing_instructions.strip()}"
-        return self.engine.project(self.engine.embed([text]), "state")[0].tolist()
+        return self.embed_states([state_text], scenario)[0]
+
+    def embed_states(self, state_texts: list[str], scenario: Scenario) -> list[list[float]]:
+        """embed_state() for each state, in one call. The texts are the ones answering the routing question
+        encodes, so a state just routed is found in the engine's cache."""
+        if not state_texts:
+            return []
+        texts = [clm_schema.state_text(text, scenario.routing_instructions) for text in state_texts]
+        return self.engine.state_vectors(texts).tolist()
 
     def load_verdicts(self, records: list[dict], scenario: Scenario) -> int:
         """Embed the reviewed routes in `records` for matching in decide(); returns how many."""
-        self.verdicts = [(self.embed_state(r["state_text"], scenario), r["human"])
-                         for r in route_verdicts(records, scenario)]
+        verdicts = route_verdicts(records, scenario)
+        vectors = self.embed_states([r["state_text"] for r in verdicts], scenario)
+        self.verdicts = [(vector, r["human"]) for vector, r in zip(vectors, verdicts)]
         return len(self.verdicts)
 
     def add_verdict(self, state_text: str, route: str, scenario: Scenario) -> None:
@@ -275,13 +293,18 @@ class LocalContrastiveRouter:
 
     def match_verdict(self, vector: list[float], threshold: float) -> tuple[str, float] | None:
         """The closest stored verdict at or above the threshold; on a tie the later one wins."""
-        best_route, best_similarity = None, threshold
+        if not self.verdicts:
+            return None
         with tracing.timed("match_ms"):
-            for stored, human_route in self.verdicts:
-                similarity = sum(a * b for a, b in zip(vector, stored))
-                if similarity >= best_similarity:
-                    best_route, best_similarity = human_route, similarity
-        return None if best_route is None else (best_route, best_similarity)
+            listed, count, matrix = self._matrix
+            if listed is not self.verdicts or count != len(self.verdicts):
+                matrix = np.array([stored for stored, _ in self.verdicts], dtype=np.float64)
+                self._matrix = (self.verdicts, len(self.verdicts), matrix)
+            similarities = matrix @ np.asarray(vector, dtype=np.float64)
+            best = len(similarities) - 1 - int(np.argmax(similarities[::-1]))
+        if similarities[best] < threshold:
+            return None
+        return self.verdicts[best][1], float(similarities[best])
 
     def check_tool(self, state_text: str, scenario: Scenario) -> float:
         """Probability that a proposed tool call is appropriate; the call is described in state_text."""
