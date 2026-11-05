@@ -405,6 +405,15 @@ def test_a_second_reading_that_cannot_be_made_fails_the_check(path, read_again):
     assert entry["check"]["second_reading"]["error"] == "cannot reach Ollama"
 
 
+def test_a_second_reading_over_too_many_points_is_not_made(path, read_again, monkeypatch):
+    monkeypatch.setattr(derive.derive_check, "MAX_POINTS", 1)
+    run(path, good())
+    entry = derived.read(path.parent)["decisions"]["carryover_limit"]
+    assert entry["status"] == "proposed" and entry["check"]["second_reading"]["agreed"] is False
+    assert "points to compare, more than 1" in entry["check"]["second_reading"]["error"]
+    assert entry["check"]["failures"][-1].startswith("a second reading by second could not be made: ")
+
+
 def test_a_first_reading_with_no_answer_is_not_read_again_as_a_disagreement(path, read_again):
     class Broken(Canned):  # pylint: disable=missing-class-docstring
         def extract(self, system, prompt, schema):
@@ -487,3 +496,109 @@ def test_the_second_reader_is_the_backend_and_model_the_environment_names(path):
     reader = derive.reader_for(dataclasses.replace(env, second_reader={"backend": "ollama",
                                                                        "model": "granite4:micro"}))
     assert isinstance(reader, derive.OllamaExtractor) and reader.model == "granite4:micro"
+    assert reader.url == derive.OLLAMA_URL
+
+
+def test_an_ollama_second_reader_uses_the_ollama_the_documents_table_names(path):
+    path.write_text(path.read_text(encoding="utf-8").replace("[documents]\n",
+                                                             '[documents]\nollama_url = "http://gpu:11434/"\n'),
+                    encoding="utf-8")
+    env = dataclasses.replace(derive.load_environment(path, today=ON),
+                              second_reader={"backend": "ollama", "model": "granite4:micro"})
+    assert derive.reader_for(env).url == "http://gpu:11434"
+
+
+def test_every_entry_records_the_collection_it_was_derived_from(path):
+    # The facts too, so Review finds a fact's passage after a later run from another collection
+    run(path, good())
+    layer = derived.read(path.parent)
+    assert layer["decisions"]["carryover_limit"]["collection"] == "handbook"
+    assert layer["facts"]["k401_2026.match_cap"]["collection"] == "handbook"
+
+
+def test_run_on_a_collection_no_slot_names_is_refused_and_writes_nothing(path):
+    run(path, good())
+    approve_all(path.parent)
+    before = derived.path(path.parent).read_bytes()
+    for fresh in (False, True):
+        with pytest.raises(derive.DeriveError, match="no slot .* collection 'handbok'.*'handbook'"):
+            derive.run(path, "handbok", good(), ON, fresh=fresh)
+        assert derived.path(path.parent).read_bytes() == before
+
+
+def test_run_in_an_environment_with_no_slots_says_it_declares_none(path):
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text[:text.index("[derived.")], encoding="utf-8")
+    with pytest.raises(derive.DeriveError, match=r"no slot .* 'handbook'; the environment declares no \[derived\] slots$"):
+        derive.run(path, "handbook", good(), ON)
+
+
+def in_contracts(path):
+    """The match cap slot moved to a collection of its own, contracts."""
+    path.write_text(path.read_text(encoding="utf-8").replace(
+        'description = "The plan\'s cap on the company match, in dollars a plan year."',
+        'description = "The plan\'s cap on the company match, in dollars a plan year."\ncollection = "contracts"'),
+        encoding="utf-8")
+
+
+def test_a_fresh_run_keeps_the_entries_of_slots_in_other_collections(path):
+    run(path, good())
+    approve_all(path.parent)
+    in_contracts(path)
+    kept = derived.read(path.parent)["facts"]["k401_2026.match_cap"]
+    extractor = good()
+    run(path, extractor, fresh=True)
+    assert [name for name, _ in extractor.prompts] == ["carryover_limit"]
+    layer = derived.read(path.parent)
+    assert layer["facts"]["k401_2026.match_cap"] == kept and kept["status"] == "approved"
+    assert layer["decisions"]["carryover_limit"]["status"] == "checked"
+
+
+def test_the_command_lists_only_the_collections_slots_and_says_nothing_derived_only_of_them(path, monkeypatch,
+                                                                                          capsys):
+    run(path, good())
+    derived.set_status(path.parent, "decisions", "carryover_limit", "approved", by="kevin")
+    in_contracts(path)
+    monkeypatch.setattr(derive, "_extractor", lambda args: good())
+    assert derive.main(["run", str(path), "handbook", "--as-of", "2026-12-01"]) == 0
+    out = capsys.readouterr().out
+    # The match cap, proposed or checked in contracts, is neither listed nor counted as approved
+    assert "carryover_limit: approved, kept" in out and "match_cap" not in out
+    assert "Nothing derived" in out
+
+
+def test_a_broken_layer_is_a_one_line_error(path, capsys):
+    (path.parent / "derived").mkdir()
+    derived.path(path.parent).write_text('{"version": 1,', encoding="utf-8")
+    assert derive.main(["status", str(path), "decisions", "carryover_limit", "approved", "--by", "kevin"]) == 2
+    error = capsys.readouterr().err
+    assert error.startswith("error: ") and "not valid JSON" in error and error.count("\n") == 1
+
+
+def test_the_status_command_offers_only_a_persons_statuses(path, capsys):
+    with pytest.raises(SystemExit):
+        derive.main(["status", str(path), "decisions", "carryover_limit", "checked", "--by", "kevin"])
+    assert "invalid choice: 'checked'" in capsys.readouterr().err
+
+
+def test_check_command_with_a_second_reader_fails_an_entry_whose_slot_was_removed_in_one_line(path, read_again,
+                                                                                              capsys):
+    run(path, good())
+    layer = derived.read(path.parent)
+    layer["facts"]["k401_2026.gone"] = {**layer["facts"]["k401_2026.match_cap"], "property": "gone"}
+    derived.write(path.parent, layer)
+    assert derive.main(["check", str(path), "--as-of", "2026-12-01"]) == 0
+    assert capsys.readouterr().out.splitlines()[-1] == "second reading by second: 2 agreed, 0 disagreed, 1 not made"
+    entry = derived.read(path.parent)["facts"]["k401_2026.gone"]
+    assert entry["status"] == "proposed" and "no facts slot k401_2026.gone" in entry["check"]["failures"][0]
+
+
+def test_the_check_commands_second_reading_of_a_slot_that_is_gone_is_not_made(path, read_again, monkeypatch):
+    calls = []
+    monkeypatch.setattr(derive.derive_check, "recheck",
+                        lambda folder, env, on, second: calls.append(second("facts", "k401_2026.gone", {})) or
+                        {"checked": 0, "proposed": 0, "stale": 0, "untouched": 0, "undigested": 0, "agreed": 0,
+                         "disagreed": 0, "not_made": 1})
+    assert derive.main(["check", str(path), "--as-of", "2026-12-01"]) == 0
+    [(record, failures)] = calls
+    assert record["error"] == "the environment has no facts slot k401_2026.gone" and "could not be made" in failures[0]

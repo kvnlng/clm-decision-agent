@@ -14,8 +14,9 @@ and the supplied value stands. check re-runs the check on every proposed or chec
 When [derived] names a second_reader, run and check also make a second reading of each entry they check: that
 model, which must not be the layer's, derives it again from its cited document without seeing the first answer,
 and an entry it disagrees with, or could not read, fails the check (second_reading).
-status is a person's decision: approved, rejected, or a conflict resolved. The model is Claude (the agent extra) or a
-local model through Ollama, as clm-agent reaches them; errors are one line and a non-zero exit.
+status is a person's decision: approved, rejected, proposed (to check it again), or a conflict resolved or open;
+only check sets checked. The model is Claude (the agent extra) or a local model through Ollama, as clm-agent
+reaches them; errors are one line and a non-zero exit.
 """
 from __future__ import annotations
 
@@ -26,7 +27,9 @@ import re
 import shutil
 import sys
 import tempfile
+import tomllib
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
 from xml.sax.saxutils import escape
@@ -36,6 +39,7 @@ import httpx
 from . import derive_check, derived
 from .decision_agent import LOCAL_MODEL, MODEL, OLLAMA_URL
 from .dmn import DmnError, load_table
+from .documents import document_settings
 from .engine import Steps
 from .environment import Environment, Slot, edition, in_force, load_environment, second_reader_of
 from .scenario import ScenarioError, StepError
@@ -185,10 +189,16 @@ def _prompt(slot: Slot, documents: list[dict], on: date) -> str:
 
 
 def _literal(value) -> str:
+    """A table cell for an output's value: a number whole, never with an exponent or rounded, and a list as its
+    items joined with "; "."""
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return f"{value:g}" if isinstance(value, float) else str(value)
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else format(Decimal(repr(value)), "f")
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, list):
+        value = "; ".join(str(item) for item in value)
     return '"' + str(value).replace('"', "'") + '"'
 
 
@@ -234,14 +244,15 @@ def _entry(env: Environment, slot: Slot, answer: dict) -> dict:
     document = env.store.document(slot.collection, str(given["document"]), None) or {}
     source = {"document": given["document"], "passages": list(given["passages"]), "quote": given["quote"],
               "edition": edition(document) if document else None}
-    entry = {**_blank(slot), "source": source, "missing": list(answer.get("missing") or [])}
+    entry = {**_blank(slot), "source": source, "missing": list(answer.get("missing") or []),
+             "collection": slot.collection}
     if slot.kind == "facts":
         return {**entry, "value": answer["value"]}
     aside = env.path.resolve().parent / "derived" / ASIDE
     aside.mkdir(parents=True, exist_ok=True)
     (aside / f"{slot.name}.dmn").write_text(render_dmn(slot, answer["rows"], str(given["document"])),
                                             encoding="utf-8")
-    return {**entry, "dmn": f"{ASIDE}/{slot.name}.dmn", "collection": slot.collection,
+    return {**entry, "dmn": f"{ASIDE}/{slot.name}.dmn",
             "rule": {"statement": answer["statement"], "reason": answer["reason"], "owner": slot.owner,
                      "version": source["edition"] or "", "governs": list(slot.governs),
                      "cites": [given["document"]]}}
@@ -337,9 +348,14 @@ def make_extractor(backend: str, model: str | None = None, ollama_url: str = OLL
 
 
 def reader_for(env: Environment) -> Extractor | None:
-    """The second reader the environment's [derived] second_reader names, or None."""
+    """The second reader the environment's [derived] second_reader names, or None; through Ollama, the one its
+    [documents] ollama_url names, which embeds its passages."""
     reader = env.second_reader
-    return make_extractor(reader["backend"], reader["model"]) if reader else None
+    if not reader:
+        return None
+    with open(env.path, "rb") as file:
+        settings = document_settings(tomllib.load(file))
+    return make_extractor(reader["backend"], reader["model"], settings.ollama_url if settings else OLLAMA_URL)
 
 
 def _family(model: str) -> str:
@@ -394,9 +410,15 @@ def _replace(folder: Path, layer: dict) -> None:
 
 def run(path: str | Path, collection: str, extractor: Extractor, on: date, *, fresh: bool = False) -> dict:
     """Derive every slot in the collection that is not approved or rejected on an unchanged edition, or every slot
-    with `fresh`, and write the layer with its conflicts. The tables are written aside and replace the old ones only
-    once every slot is derived, so a run that stops leaves the tables and the layer as they were. -> {slot: status}."""
+    in it with `fresh`, and write the layer with its conflicts; other collections' entries are kept. The tables are
+    written aside and replace the old ones only once every slot is derived, so a run that stops leaves the tables
+    and the layer as they were. Raises DeriveError, writing nothing, when no slot is in the collection.
+    -> {slot: status}, for the collection's slots."""
     env = load_environment(path, today=on)
+    if not any(slot.collection == collection for slot in env.slots.values()):
+        names = ", ".join(repr(name) for name in sorted({s.collection for s in env.slots.values()}))
+        raise DeriveError(f"no slot in [derived] is in collection {collection!r}; "
+                          + (f"the slots are in {names}" if names else "the environment declares no [derived] slots"))
     reader = reader_for(env)
     refuse_same_model(reader, extractor.model)
     folder = env.path.resolve().parent
@@ -407,7 +429,7 @@ def run(path: str | Path, collection: str, extractor: Extractor, on: date, *, fr
         shutil.rmtree(folder / "derived" / ASIDE, ignore_errors=True)
         derived.path(folder).with_suffix(".json.partial").unlink(missing_ok=True)
     return {name: layer[slot.kind][name]["status"] for name, slot in env.slots.items()
-            if name in layer[slot.kind]}
+            if slot.collection == collection and name in layer[slot.kind]}
 
 
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments,too-many-locals
@@ -415,7 +437,11 @@ def _derive_all(env: Environment, collection: str, extractor: Extractor, reader:
                 fresh: bool) -> dict:
     """The layer run writes: each slot derived (and read again with `reader`) unless kept, with its conflicts."""
     folder = env.path.resolve().parent
-    old = derived.empty(collection) if fresh else derived.read(folder)
+    old = derived.read(folder)
+    if fresh:   # only the collection's entries are dropped, so other collections' decisions are kept
+        old = {**old, **{kind: {name: entry for name, entry in old[kind].items()
+                                if name not in env.slots or env.slots[name].collection != collection}
+                         for kind in ("decisions", "facts")}}
     layer = {**old, "collection": collection, "model": extractor.model,
              "derived_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     for name, slot in env.slots.items():
@@ -450,8 +476,13 @@ def _check(environment: str, folder: Path, on: date) -> int:
     reader = reader_for(env)
     refuse_same_model(reader, derived.read(folder).get("model"))
 
-    def second(_kind: str, name: str, entry: dict) -> tuple[dict, list[str]]:
-        return second_reading(env, env.slots[name], entry, reader, on)
+    def second(kind: str, name: str, entry: dict) -> tuple[dict, list[str]]:
+        slot = env.slots.get(name)
+        if slot is None or slot.kind != kind:
+            error = f"the environment has no {kind} slot {name}"
+            return ({"model": reader.model, "agreed": False, "differences": [], "error": error},
+                    [f"a second reading by {reader.model} could not be made: {error}"])
+        return second_reading(env, slot, entry, reader, on)
     counts = derive_check.recheck(folder, env, on=on, second=second if reader else None)
     print(", ".join(f"{counts[status]} {status}" for status in ("checked", "proposed", "stale", "untouched")))
     if counts["undigested"]:
@@ -501,7 +532,9 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-loca
     ran.add_argument("--model", help=f"default: {MODEL} with claude, {LOCAL_MODEL} with ollama")
     ran.add_argument("--ollama-url", default=OLLAMA_URL)
     ran.add_argument("--as-of", help="the date documents must be in force on (default: today)")
-    ran.add_argument("--fresh", action="store_true", help="start from an empty layer, deriving every slot")
+    ran.add_argument("--fresh", action="store_true",
+                     help="derive every slot in the collection again, approved and rejected ones too; other "
+                     "collections' entries are kept")
     checked = commands.add_parser("check", help="check every proposed or checked entry again")
     checked.add_argument("environment")
     checked.add_argument("--as-of", help="the date documents must be in force on (default: today)")
@@ -509,7 +542,7 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-loca
     status.add_argument("environment")
     status.add_argument("kind", choices=derived.KINDS)
     status.add_argument("name")
-    status.add_argument("status")
+    status.add_argument("status", choices=derived.PERSON)
     status.add_argument("--by", required=True, help="who decided")
     status.add_argument("--note", help="why")
     args = parser.parse_args(argv)

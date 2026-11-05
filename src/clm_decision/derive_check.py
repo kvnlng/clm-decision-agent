@@ -110,8 +110,10 @@ def _fact(env: Environment, slot: Slot, entry: dict) -> tuple[list[str], list[tu
         failures.append(f"ontology: the slot is {slot.node}.{slot.property}, not {node}.{prop}")
     if not _CHECK_TYPE[slot.type](value):
         failures.append(f"ontology: the value {value!r} is not of type {slot.type}")
-    figures = [("value", value)] if _numeric(value) or isinstance(value, str) else []
-    return failures, figures
+    if isinstance(value, list):     # each item of a list states its own figures
+        return failures, [(f"value[{index}]", item) for index, item in enumerate(value)
+                          if _numeric(item) or isinstance(item, str)]
+    return failures, [("value", value)] if _numeric(value) or isinstance(value, str) else []
 
 
 # pylint: disable-next=too-many-locals
@@ -174,7 +176,7 @@ def _stale(env: Environment, name: str, entry: dict, on: date) -> str | None:
         return (f"the cited document has a newer edition: {ident} took effect on {edition(document)}, and the entry "
                 f"was derived from the {source.get('edition')} edition")
     if not in_force(document, on):
-        return f"the cited document {ident} is not in force on {on}"
+        return f"the cited document {ident} is no longer in force"   # no date, so a later check sees the same reason
     return None
 
 
@@ -192,8 +194,27 @@ def _earlier(record: dict | None) -> list[str]:
     return ["an earlier " + disagreement(model, record.get("differences") or []).removeprefix("a ")]
 
 
-def _reading(record: dict) -> str:
-    return "not_made" if record.get("error") else "agreed" if record.get("agreed") else "disagreed"
+def _reading(record: dict | None) -> str:
+    return "not_made" if not record or record.get("error") else "agreed" if record.get("agreed") else "disagreed"
+
+
+def _read_again(env: Environment, kind: str, name: str, entry: dict,
+                second: SecondReading | None) -> tuple[dict | None, list[str]]:
+    """The second reading's record and failures for a check: made now with `second`, but not for an entry whose
+    slot is gone, which the check already fails; without `second`, only an earlier reading that did not agree, which
+    still stands. An agreement compared the entry as it was then, so it is never carried into a later check."""
+    if second is None:
+        earlier = (entry.get("check") or {}).get("second_reading")
+        return (None, []) if not earlier or earlier.get("agreed") else (earlier, _earlier(earlier))
+    slot = env.slots.get(name)
+    if slot is None or slot.kind != kind:
+        return None, []
+    return second(kind, name, entry)
+
+
+def _still_stale(entry: dict, why: str) -> bool:
+    """Whether the entry was already sent back to proposed for this reason, and not checked since."""
+    return entry.get("status") == "proposed" and (entry.get("check") or {}).get("failures") == [why]
 
 
 def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondReading | None = None) -> dict:
@@ -204,7 +225,7 @@ def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondRea
     (counted as undigested), so its digest comes from a check. Otherwise approved and rejected entries are a
     person's decision and are left alone. With `second` (kind, name, entry -> record, failures), each entry checked
     is also read again by a second model, whether or not the mechanical check passed it, and its failures join the
-    check's. -> counts."""
+    check's (_read_again). An entry still stale for the same reason is counted, not sent back again. -> counts."""
     counts = {"checked": 0, "proposed": 0, "stale": 0, "untouched": 0, "undigested": 0}
     if second is not None:
         counts.update(agreed=0, disagreed=0, not_made=0)
@@ -212,8 +233,9 @@ def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondRea
     for kind in ("decisions", "facts"):
         for name, entry in layer[kind].items():
             why = _stale(env, name, entry, on) if entry.get("status") != "rejected" else None
-            if why:
-                derived.set_stale(folder, kind, name, why)
+            if why:     # once only: while it is still stale for this reason, it is left as it is
+                if not _still_stale(entry, why):
+                    derived.set_stale(folder, kind, name, why)
                 counts["stale"] += 1
                 continue
             if entry.get("status") == "approved" and derived.changed_since_check(folder, entry):
@@ -227,13 +249,9 @@ def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondRea
             if entry.get("status") not in ("proposed", "checked"):
                 counts["untouched"] += 1
                 continue
-            failures, record = check(env, kind, name, entry, on=on), None
-            if second is None:
-                record = (entry.get("check") or {}).get("second_reading")
-                failures += _earlier(record)
-            else:
-                record, disagreed = second(kind, name, entry)
-                failures += disagreed
+            record, read = _read_again(env, kind, name, entry, second)
+            failures = check(env, kind, name, entry, on=on) + read
+            if second is not None:
                 counts[_reading(record)] += 1
             done = derived.set_check(folder, kind, name, {"passed": not failures, "failures": failures,
                                                           "second_reading": record})
@@ -244,6 +262,7 @@ def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondRea
 CLOSE = 0.005           # two readings of a number agree within 0.5%, as the handbook's answer scoring does
 SHOWN = 3               # the points a disagreement's failure line lists
 KEPT = 20               # the points check.second_reading keeps
+MAX_POINTS = 100_000    # the most points two tables are compared on; more and the second reading is not made
 
 
 def _bounds(table: Table, name: str) -> set[float]:
@@ -289,7 +308,8 @@ def _whole_points(bounds: set[float]) -> list[int]:
 def grid(first: Table, second: Table, kinds: dict[str, str] | None = None) -> list[dict]:
     """The inputs two tables are compared on, every combination of: for a number, the points around each bound in
     either table (_points), or for an input `kinds` (the slot's inputs) names an integer, whole numbers only
-    (_whole_points); both booleans; for a string, each value either table names and one neither does."""
+    (_whole_points); both booleans; for a string, each value either table names and one neither does. Raises
+    DmnError, before building it, when it would have more than MAX_POINTS points."""
     axes = []
     for index, name in enumerate(first.inputs):
         kind = first.types[index].rsplit(":", 1)[-1]
@@ -300,6 +320,9 @@ def grid(first: Table, second: Table, kinds: dict[str, str] | None = None) -> li
         else:
             bounds = _bounds(first, name) | _bounds(second, name)
             axes.append(_whole_points(bounds) if (kinds or {}).get(name) == "integer" else _points(bounds))
+    size = math.prod(len(axis) for axis in axes)
+    if size > MAX_POINTS:
+        raise DmnError(f"the tables' inputs give {size} points to compare, more than {MAX_POINTS}")
     return [dict(zip(first.inputs, values)) for values in itertools.product(*axes)]
 
 
@@ -361,9 +384,11 @@ def disagreement(model: str, differences: list[dict]) -> str:
 
 def conflicts(env: Environment, layer: dict) -> dict:
     """Each derived fact whose node already has a supplied value that differs: an open conflict, where the
-    supplied value stands."""
+    supplied value stands. A reading that gave no value, or one a person rejected, derived nothing to differ."""
     found = {}
     for name, entry in layer["facts"].items():
+        if "value" not in entry or entry.get("status") == "rejected":
+            continue
         node, prop = entry.get("node"), entry.get("property")
         if env.graph is None or node not in {item["id"] for item in env.graph.nodes()} \
                 or prop in env.derived_facts.get(node, {}):

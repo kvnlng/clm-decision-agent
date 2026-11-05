@@ -231,10 +231,24 @@ def _target(kind: str, name: str, entry: dict) -> tuple[str, str]:
     return node, prop
 
 
+def _slot_collection(data: dict, kind: str, name: str, entry: dict) -> str | None:
+    """The collection environment.toml derives the entry's slot from: its own, or the [derived] table's."""
+    table = data.get("derived") if isinstance(data.get("derived"), dict) else {}
+    if kind == "decisions":
+        part = (table.get("decisions") or {}).get(name)
+    else:
+        node, prop = _target(kind, name, entry)
+        part = ((table.get("facts") or {}).get(node) or {}).get(prop)
+    found = part.get("collection") if isinstance(part, dict) else None
+    found = found or table.get("collection")
+    return found if isinstance(found, str) else None
+
+
 def review(environment: Path) -> dict:  # pylint: disable=too-many-locals
     """The derived entries in the order a person reviews them: checked, open conflicts, proposed, then those decided.
     A fact or conflict carries the supplied value and the graph row it touches; a decision, its table's rows, its
-    DMN text and the supplied rule of the same name, if any."""
+    DMN text and the supplied rule of the same name, if any. An entry that names no collection, as a fact derived
+    before facts recorded one, takes its slot's, so its passage is looked up where it was derived."""
     environment = Path(environment)
     errors: list[str] = []
     found, data = read_layer(environment, errors), _toml_or_empty(environment)
@@ -242,6 +256,8 @@ def review(environment: Path) -> dict:  # pylint: disable=too-many-locals
     items = []
     for kind in derived.KINDS:
         for name, entry in found[kind].items():
+            if not entry.get("collection") and _slot_collection(data, kind, name, entry):
+                entry = {**entry, "collection": _slot_collection(data, kind, name, entry)}
             item = {"kind": kind, "name": name, "entry": entry, "status": entry.get("status"),
                     "supplied": None, "graph_row": None, "table": None, "dmn_text": None}
             if kind == "decisions":

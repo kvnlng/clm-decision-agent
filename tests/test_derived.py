@@ -225,3 +225,27 @@ def test_set_check_refuses_conflicts(tmp_path):
     derived.write(tmp_path, _layer())
     with pytest.raises(derived.DerivedError, match="decisions or facts"):
         derived.set_check(tmp_path, "conflicts", "k401_2026.match_cap", {"passed": True, "failures": []})
+
+
+@pytest.mark.parametrize("kind, name", [("decisions", "carryover_limit"), ("facts", "k401_2026.match_cap")])
+def test_a_person_cannot_set_checked_only_clm_derive_check_does(tmp_path, kind, name):
+    derived.write(tmp_path, _layer())
+    derived.set_status(tmp_path, kind, name, "rejected", by="kevin")
+    with pytest.raises(derived.DerivedError, match="checked is set only by clm-derive check"):
+        derived.set_status(tmp_path, kind, name, "checked", by="kevin")
+    assert derived.read(tmp_path)[kind][name]["status"] == "rejected"
+    assert derived.set_status(tmp_path, kind, name, "proposed", by="kevin")["status"] == "proposed"
+
+
+def test_the_refusal_to_approve_a_rejected_entry_names_a_way_back_from_the_portal_too(tmp_path):
+    _read_again(tmp_path, status="rejected", decided_by="kevin", decided_at="2026-11-04T11:00:00+00:00")
+    with pytest.raises(derived.DerivedError, match="Correct in the portal"):
+        approve(tmp_path)
+
+
+@pytest.mark.parametrize("text", ['{"version": 1,', "[1, 2]", '"layer"'])
+def test_a_layer_that_is_not_json_or_not_an_object_is_a_derived_error(tmp_path, text):
+    (tmp_path / "derived").mkdir()
+    derived.path(tmp_path).write_text(text, encoding="utf-8")
+    with pytest.raises(derived.DerivedError, match="derived.json: not"):
+        derived.read(tmp_path)
