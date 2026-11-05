@@ -213,7 +213,8 @@ def configuration_body(found: dict, environment: Path) -> str:
     if found["collections"]:
         parts.append("<h2>Collections</h2>" + table(
             ["collection", "description", "built"],
-            [[esc(item["name"]), esc(item["description"]), built_text(item["built"], item["left_out"], item["tools_off"])]
+            [[esc(item["name"]), esc(item["description"]),
+              built_text(item["built"], item["left_out"], item["tools_off"])]
              for item in found["collections"]]))
     return "".join(parts)
 

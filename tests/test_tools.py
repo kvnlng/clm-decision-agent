@@ -73,7 +73,8 @@ def test_a_broken_tools_module_is_a_scenario_error(write_scenario, tmp_path, nam
         load_tools(scenario)
 
 
-TOOLS_SOURCE = 'def lookup(request):\n    return {"facts": []}\n\ndef act(request):\n    return {}\n\nTOOLS = [lookup, act]\n'
+TOOLS_SOURCE = ('def lookup(request):\n    return {"facts": []}\n\ndef act(request):\n    return {}\n\n'
+                'TOOLS = [lookup, act]\n')
 
 
 def test_the_file_beside_the_scenario_wins_over_a_module_of_the_same_name(write_scenario, tmp_path):

@@ -216,7 +216,8 @@ def test_a_collection_whose_tools_serve_leaves_out_says_so(client, server):
 
 
 def test_a_collection_of_an_environment_without_document_tools_says_so(client, server, environment):
-    environment.write_text(environment.read_text().replace('backend = "postgres"', 'backend = "postgres"\ntools = false'))
+    text = environment.read_text().replace('backend = "postgres"', 'backend = "postgres"\ntools = false')
+    environment.write_text(text)
     sign_in(client)
     server.server = serving_without_the_handbook([])
     for path in ("/", "/documents"):
