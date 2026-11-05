@@ -11,7 +11,6 @@ server's key or token is read from DECISION_SERVER_KEY, and the model's from LLM
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
 import os
 import sys
@@ -21,7 +20,10 @@ import anyio
 import anyio.to_thread
 import httpx
 from mcp import Client, MCPError
-from mcp.client.streamable_http import streamable_http_client
+
+from clm_decision.connection import http_streams
+
+from .managed import READ_TIMEOUT
 
 KEY_ENV = "DECISION_SERVER_KEY"
 LLM_KEY_ENV = "LLM_API_KEY"
@@ -256,18 +258,9 @@ def banner(url: str, model: str, dry_run: DryRun) -> str:
     return f"Server: {url}\nModel: {model}\n{tools}\nType a question; /tools lists the tools; /quit leaves."
 
 
-@contextlib.asynccontextmanager
-async def _connect(url: str, refused: list[int]):
+def _connect(url: str, refused: list[int]):
     key = os.environ.get(KEY_ENV)
-    headers = {"Authorization": f"Bearer {key}"} if key else None
-    async with httpx.AsyncClient(headers=headers, follow_redirects=True,
-                                 timeout=httpx.Timeout(30, read=600)) as http:
-        async def note(response) -> None:
-            if response.status_code in (401, 403):
-                refused.append(response.status_code)
-        http.event_hooks["response"].append(note)
-        async with streamable_http_client(url, http_client=http) as streams:
-            yield streams
+    return http_streams(url, {"Authorization": f"Bearer {key}"} if key else None, refused, read=READ_TIMEOUT)
 
 
 def _list(listed) -> str:

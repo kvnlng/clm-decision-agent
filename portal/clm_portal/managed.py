@@ -21,11 +21,12 @@ from pathlib import Path
 from typing import Awaitable, Callable
 
 import anyio.to_thread
-import httpx
 from mcp import Client
-from mcp.client.streamable_http import streamable_http_client
+
+from clm_decision.connection import http_streams
 
 SERVER_KEY_ENV = "CLM_PORTAL_SERVER_KEY"
+READ_TIMEOUT = 600      # seconds to wait for a tool's reply, which a local model can take a while to give
 PORTAL_KEY_ENV = "CLM_PORTAL_KEY"
 ADMIT_ALL = ["--admit-derived", "proposed,checked,approved"]
 ERROR_TAIL = 2000
@@ -59,13 +60,9 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
-@contextlib.asynccontextmanager
-async def connect(url: str, key: str):
-    """Streams to an MCP server over HTTP, sending the key."""
-    async with httpx.AsyncClient(headers={"Authorization": f"Bearer {key}"},
-                                 timeout=httpx.Timeout(30, read=600)) as http:
-        async with streamable_http_client(url, http_client=http) as streams:
-            yield streams
+def connect(url: str, key: str):
+    """Streams to an MCP server over HTTP, sending the key, through the SDK's own HTTP client as clm-agent does."""
+    return http_streams(url, {"Authorization": f"Bearer {key}"}, read=READ_TIMEOUT)
 
 
 class ToolFailed(RuntimeError):
