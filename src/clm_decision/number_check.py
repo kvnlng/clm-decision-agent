@@ -7,9 +7,10 @@ and times, years from 1900 to 2100, and bare whole numbers from 0 to 10 ("3 bran
 """
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 _FIGURE = re.compile(r"(?<![\w.])(\$)?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
                      r"(?:\s*(%|k|m|M|million|bn|billion)\b|\s*(%))?(?![\w])")
@@ -64,8 +65,12 @@ def _values(result) -> list[float]:
 
 
 def _rounded(value: float, decimals: int) -> float:
-    """Rounded as people round: halves up, away from zero."""
-    return float(Decimal(repr(value)).quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP))
+    """Rounded as people round: halves up, away from zero; nan for a value too long to round, or not finite, which
+    then matches nothing."""
+    try:
+        return float(Decimal(repr(value)).quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP))
+    except InvalidOperation:
+        return math.nan
 
 
 def _matches(number: Number, value: float) -> bool:

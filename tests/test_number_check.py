@@ -33,3 +33,9 @@ def test_signs_halves_units_and_dates():
     assert unsupported("$1.3 million and 13 units", [1250000, 12.5]) == []
     assert unsupported("$1.2m", [1234567]) == []
     assert numbers_in("Run on 2026-10-29 at 16:07") == []
+
+
+def test_a_value_too_long_to_round_matches_nothing():
+    results = [{"ref": "order 123456789012345678901234567890"}, {"x": 1e300}, float("inf"), float("nan")]
+    assert unsupported("It costs 42 dollars and 4.25%", results) == ["42", "4.25%"]
+    assert unsupported("It costs 42 dollars", [1e300, 42]) == []
