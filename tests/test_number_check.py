@@ -57,3 +57,8 @@ def test_a_tool_figure_in_m_may_be_metres_too():
 def test_a_number_with_a_comma_is_not_a_year():
     assert [number.text for number in numbers_in("2,000 staff and 1,950 contractors in 2026")] == \
         ["2,000", "1,950"]
+
+
+def test_digits_joined_by_a_comma_are_not_checked():
+    assert unsupported("It costs 12,50 euros, or 1,5000 cents, a 1.5x rise", [12.5]) == []
+    assert [number.text for number in numbers_in("from 1,000, 50 more")] == ["1,000", "50"]
