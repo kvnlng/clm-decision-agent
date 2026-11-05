@@ -201,9 +201,18 @@ async def answer(session: Client | None, question: str, chat: Chat) -> dict:
     "calls", "unsupported", "stopped", "model"}. A reply cut off (max_tokens, or the context window full) or refused
     stops the loop without running the tools it asked for, as does the last turn the limit allows."""
     listed = (await session.list_tools()).tools if session else []
-    if session and chat.system == SYSTEM:
-        # As the server's answer_question prompt does: no line names a tool the server does not offer
+    given = chat.system
+    if session and given == SYSTEM:
+        # As the server's answer_question prompt does: no line names a tool the server does not offer.
+        # The chat keeps its own text, so the next call is filtered for its own server.
         chat.system = instructions.agent_system([tool.name for tool in listed])
+    try:
+        return await _loop(session, question, chat, listed)
+    finally:
+        chat.system = given
+
+
+async def _loop(session: Client | None, question: str, chat: Chat, listed) -> dict:
     tools = chat.tools(listed) if session else []
     messages = chat.start(question)
     calls: list[dict] = []

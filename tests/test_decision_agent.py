@@ -404,6 +404,18 @@ async def test_system_names_only_tools_the_server_offers():
 
 
 @pytest.mark.anyio
+async def test_a_chat_used_again_is_filtered_for_each_server(mcp_server):
+    fewer = build_environment_server(load_environment(EXAMPLE), serve=Serve(exclude_tools=("scenario_*",)))
+    claude = FakeClaude(message(text("Nothing to add.")), message(text("Nothing to add.")))
+    chat = ClaudeChat(claude, "claude-opus-5-5")
+    for each in (fewer, mcp_server):
+        async with Client(each) as session:
+            await answer(session, QUESTION, chat)
+    assert "run the scenario tool" not in claude.requests[0]["system"]
+    assert "run the scenario tool" in claude.requests[1]["system"]
+
+
+@pytest.mark.anyio
 async def test_the_last_turn_runs_no_tools_the_model_would_never_see(mcp_server):
     claude = FakeClaude(*[message(text("Let me look."), tool_use("describe", {}, f"call_{index}"))
                           for index in range(MAX_TURNS)])
