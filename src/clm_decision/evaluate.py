@@ -189,7 +189,8 @@ def _value(answer: dict):
     if kind == "noul":
         return answer["noul"] >= 0.5
     if kind == "score":
-        return round(answer["score"])
+        # The likeliest level, as training and the record's replay count it, not the expected one the rules use
+        return int(clm_schema.label_of(answer))
     return answer["choice"]
 
 
