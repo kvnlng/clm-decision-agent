@@ -176,7 +176,7 @@ def _stale(env: Environment, name: str, entry: dict, on: date) -> str | None:
         return (f"the cited document has a newer edition: {ident} took effect on {edition(document)}, and the entry "
                 f"was derived from the {source.get('edition')} edition")
     if not in_force(document, on):
-        return f"the cited document {ident} is no longer in force"   # no date, so a later check sees the same reason
+        return f"the cited document {ident} is not in force on the date checked"   # no date: a later check sees it too
     return None
 
 

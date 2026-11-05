@@ -427,9 +427,9 @@ needs it, not run a scenario or fill it in.
 **A rule or fact is either supplied or derived and checked.** Supplied means the owner wrote it: the graph, the DMN
 tables, the Python module. When it is not supplied, it can be derived from the environment's own documents by a model
 and checked mechanically, and only a person's approval lets it decide. Which kind each one is is never hidden: every
-decision step, rule and record says `origin: "supplied"` or `"derived"`. Supplied always decides: derivation never
-edits a supplied file, and a document that disagrees with a supplied fact is reported as a conflict. A reading
-that gave no value, or one a person rejected, is no conflict.
+decision step, rule and record says `origin: "supplied"` or `"derived"`. Supplied always decides: derivation never edits
+a supplied file, and a document that disagrees with a supplied fact is reported as a conflict. A reading that gave no
+value, or one a person rejected, opens no conflict; the conflict of a fact rejected later is dropped at the next `run`.
 
 The environment declares **slots**, the decisions and facts it needs, without their contents:
 
@@ -467,42 +467,42 @@ uv run clm-derive status ENVIRONMENT KIND NAME STATUS --by WHO [--note TEXT]
 code renders a decision table into `derived/rules/NAME.dmn` and writes the entry to `derived/derived.json`, with its
 source (document, passages, quote, edition). Each entry is checked; one that fails is asked for once more with the
 failures. An answer that is not JSON, from Claude or Ollama, fails that entry, and the run goes on. The tables are
-written aside and replace the old ones only when every slot is done, so a run that stops part way leaves the tables
-and `derived.json` as they were. Approved and rejected entries on an unchanged edition are kept, unless `--fresh`,
-which derives every slot in the collection again. Entries of slots in other collections are always kept, and a
-collection no slot is in is refused, with nothing written. An entry **passes the
-check** only when all of these hold:
+written aside and replace the old ones only when every slot is done, so a run that stops part way leaves the tables and
+`derived.json` as they were. Approved and rejected entries on an unchanged edition are kept, unless `--fresh`, which
+derives every slot in the collection again and drops the entries of slots no longer in `environment.toml`. Entries of
+slots in other collections are always kept, and a collection no slot is in is refused, with nothing written. An entry
+**passes the check** only when all of these hold:
 
 1. **Edition**: the cited document is in force on the date and its `effective_from` is the entry's edition.
-2. **Quote**: each piece of the quote (split at `...`) is, word for word, in a passage it cites, whole: never
-   ending inside a word or a number ("up to 1" is not in "up to 10").
-3. **Figures**: every number the entry states is in the quote: a fact's value (each item of a list), each bound and numeric output of the
-   table (both ends of a range), each number in a text cell, in the statement and in the reason. In the statement
-   and reason, ISO dates, section references (§ 4, § 4(2), Section 6(1), or bare: 6(3), 401(k)) and a bare year
-   from 1900 to 2100 are not figures, unless the year is dollars, a percentage, a decimal or a count of days, weeks,
-   months or years; a day of the month in a text cell ("31 December") still is. Small numbers, ordinals ("90th") and the words one to
-   twenty count; only zero is exempt.
-4. **Ontology**: a fact's node and property are its slot's, of the slot's type; a table's inputs are exactly the
-   slot's, its outputs include the slot's, it cites only its source; and the model named nothing `missing`.
+2. **Quote**: each piece of the quote (split at `...`) is, word for word, in a passage it cites, whole: never ending
+   inside a word or a number ("up to 1" is not in "up to 10").
+3. **Figures**: every number the entry states is in the quote: a fact's value (each item of a list), each bound and
+   numeric output of the table (both ends of a range), each number in a text cell, in the statement and in the reason.
+   In the statement and reason, ISO dates, section references (§ 4, § 4(2), Section 6(1), or bare: 6(3), 401(k)) and a
+   bare year from 1900 to 2100 are not figures, unless the year is dollars, a percentage, a decimal or a count of days,
+   weeks, months or years; a day of the month in a text cell ("31 December") still is. Small numbers, ordinals ("90th")
+   and the words one to twenty count; only zero is exempt.
+4. **Ontology**: a fact's node and property are its slot's, of the slot's type; a table's inputs are exactly the slot's,
+   its outputs include the slot's, it cites only its source; and the model named nothing `missing`.
 
 Statuses go proposed, then checked once the check passes, then approved or rejected by a person with `status`, which
-refuses to approve an entry that is not checked. Only `check` sets checked: `status` sets approved, rejected, proposed
-(to send an entry back to be checked again) or, for a conflict, resolved or open. A correction (a changed value or table) is written with status
-proposed and check null together, then `check` runs the check again. `check` also sends any entry but a rejected
-one whose cited document has a newer edition (or has left the collection, or is no longer in force) back to
-proposed, approved ones included, keeping who decided and adding the reason to the note, once: while it stays
-stale for that reason, a later `check` counts it as stale and leaves it as it is. Each check records the
-sha256 of the table it checked (`check.dmn_sha256`). If the table is edited after that, `status` refuses to approve
-the entry and loading refuses to admit it, saying its DMN has changed since its check and to run `clm-derive check`
-again; `check` sends an approved one back to proposed and checks it at once. An approved table whose check was
-made before digests were kept is sent back and checked the same way, once, at the next `check`, which prints how
-many (`N approved before table digests were kept: sent back to proposed and checked, to be approved again`); until
+refuses to approve an entry that is not checked. Only the mechanical check (`run` or `check`) sets checked: `status`
+sets approved, rejected, proposed (to send an entry back to be checked again) or, for a conflict, resolved or open. A
+correction (a changed value or table) is written with status proposed and check null together, then `check` runs the
+check again. `check` also sends any entry but a rejected one whose cited document has a newer edition (or has left the
+collection, or is not in force) back to proposed, approved ones included, keeping who decided and adding the reason to
+the note, once: while it stays stale for that reason, a later `check` counts it as stale and leaves it as it is. Each
+check records the sha256 of the table it checked (`check.dmn_sha256`). If the table is edited after that, `status`
+refuses to approve the entry and loading refuses to admit it, saying its DMN has changed since its check and to run
+`clm-derive check` again; `check` sends an approved one back to proposed and checks it at once. An approved table whose
+check was made before digests were kept is sent back and checked the same way, once, at the next `check`, which prints
+how many (`N approved before table digests were kept: sent back to proposed and checked, to be approved again`); until
 then it is taken as it is. Loading admits an entry only when its status is in `admit`, its check passed, its table is
-the one checked, its cited edition is still the one in force (a new edition is re-derived by `run`) and its table
-loads. Anything else leaves the slot **unfilled**: `describe` lists every slot under `derived` with its status
-(`not derived` when the layer has no entry for it) and why, and a step that calls an unfilled slot fails with that
-reason, so the branch fails visibly while the other questions still load. An admitted fact fills its node's property only where the graph has none; a query that
-read it carries `origin: "derived"` and the fact's name.
+the one checked, its cited edition is still the one in force (a new edition is re-derived by `run`) and its table loads.
+Anything else leaves the slot **unfilled**: `describe` lists every slot under `derived` with its status (`not derived`
+when the layer has no entry for it) and why, and a step that calls an unfilled slot fails with that reason, so the
+branch fails visibly while the other questions still load. An admitted fact fills its node's property only where the
+graph has none; a query that read it carries `origin: "derived"` and the fact's name.
 
 ### A second reading
 
@@ -514,33 +514,33 @@ The check proves every figure is in the quote; it cannot prove a figure is in th
 second_reader = { backend = "ollama", model = "qwen3:14b" }   # or backend = "claude"; absent: no second reading
 ```
 
-With a second reader, `run` and `check` give that model each entry's cited document, whole (not made when it is not in force), and its slot,
-never the first answer: it needs the document to find the passage, so it knows which document the first reading
-cited, but never the passages, quote, statement or rows it gave. Then they compare what it derives: a decision over
-a grid of inputs, on the slot's outputs, text in any case and without the spaces around it; a fact within 0.5%.
-For a `number` input the grid takes every bound in either table and a point just either side of it, half the gap
+With a second reader, `run` and `check` give that model each entry's cited document, whole (not made when it is not in
+force), and its slot, never the first answer: it needs the document to find the passage, so it knows which document the
+first reading cited, but never the passages, quote, statement or rows it gave. Then they compare what it derives: a
+decision over a grid of inputs, on the slot's outputs, text in any case and without the spaces around it; a fact within
+0.5%. For a `number` input the grid takes every bound in either table and a point just either side of it, half the gap
 to the next bound but at most 1 away, one below the lowest bound, one above the highest, and 0, negative numbers
-included. For an `integer` input (declare counts such as years of service or days employed so) it takes whole
-numbers only: each bound and one either side, and none below 0 unless a bound is, so `<= 17` and `< 18` agree. It
-takes both booleans, and for a string each value named and one not. A grid of more than 100,000 points is not
-compared, and the second reading is not made. Any difference fails the check, so the entry
-stays proposed, with a failure saying where: `a second reading by MODEL disagrees: at years_of_service=4, 7 against 10` (the first reading, then
-the second). A second reading that cannot be used (the model is unreachable, its answer is not in the schema, or its
-table does not parse) fails the check too, as `could not be made`: agreement is required, so its absence never
-passes. The record is kept in the entry as `check.second_reading = {model, agreed, differences}` (and `error` when it
-could not be made), and `check` prints how many agreed. It is made on every entry checked, including one the
-mechanical check already fails, and again at every `check`, so it is redone from the new edition when a document
-changes. It is never sent back to the first model as a retry. An Ollama second reader is reached at `[documents]`
-`ollama_url`, the Ollama that embeds the passages; `run`'s `--ollama-url` is for the first model only. The second reader must not be the model that derived
-the layer, nor another tag of it (any `gemma4:…` for gemma4) or a dated id of the same Claude model: `run` and
-`check` refuse it, since it would repeat its own reading. Removing `second_reader` does not clear a recorded
-disagreement: `check` keeps failing the entry, as "an earlier second reading by MODEL …", until a later second
-reading agrees or a person corrects the entry. An agreement is not kept that way: it compared the entry as it
-was then, so a `check` without `second_reader` records no second reading. An entry whose slot is no longer in
-`environment.toml` fails the check and is not read again. With `second_reader`, `status` approves an entry only when its check
-holds a second reading by that model that agreed, made since the entry's last change; so a rejected entry with an
-old passing check is set to proposed and checked again first (with `status`, or Correct, unchanged, in the portal). Without `second_reader`, `describe` and `check` say
-there is no second reading and the check is as before.
+included. For an `integer` input (declare counts such as years of service or days employed so) it takes whole numbers
+only: each bound and one either side, and none below 0 unless a bound is, so `<= 17` and `< 18` agree. It takes both
+booleans, and for a string each value named and one not. A grid of more than 100,000 points is not compared, and the
+second reading is not made. Any difference fails the check, so the entry stays proposed, with a failure saying where: `a
+second reading by MODEL disagrees: at years_of_service=4, 7 against 10` (the first reading, then the second). A second
+reading that cannot be used (the model is unreachable, its answer is not in the schema, or its table does not parse)
+fails the check too, as `could not be made`: agreement is required, so its absence never passes. The record is kept in
+the entry as `check.second_reading = {model, agreed, differences}` (and `error` when it could not be made), and `check`
+prints how many agreed. It is made on every entry checked, including one the mechanical check already fails, and again
+at every `check`, so it is redone from the new edition when a document changes. It is never sent back to the first model
+as a retry. An Ollama second reader is reached at `[documents]` `ollama_url`, the Ollama that embeds the passages;
+`run`'s `--ollama-url` is for the first model only. The second reader must not be the model that derived the layer, nor
+another tag of it (any `gemma4:…` for gemma4) or a dated id of the same Claude model: `run` and `check` refuse it, since
+it would repeat its own reading. Removing `second_reader` does not clear a recorded disagreement: `check` keeps failing
+the entry, as "an earlier second reading by MODEL …", until a later second reading agrees or a person corrects the
+entry. An agreement is not kept that way: it compared the entry as it was then, so a `check` without `second_reader`
+records no second reading. An entry whose slot is no longer in `environment.toml` fails the check and is not read again;
+`run --fresh` drops it. With `second_reader`, `status` approves an entry only when its check holds a second reading by
+that model that agreed, made since the entry's last change; so a rejected entry with an old passing check is set to
+proposed and checked again first (with `status`, or Correct, unchanged, in the portal). Without `second_reader`,
+`describe` and `check` say there is no second reading and the check is as before.
 
 **Agreement is necessary, not sufficient.** Two models can make the same mistake: in the handbook example, qwen3:14b
 read the second tier as 50% of pay just as gemma4 had, and the wrong entry passed both. A weak second reader costs
