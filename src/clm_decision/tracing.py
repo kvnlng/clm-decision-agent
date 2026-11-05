@@ -91,11 +91,13 @@ class TraceWriter:
 
     def _open(self):
         """The trace, private to its owner like the corrections record: its lines can hold request text and name
-        callers. A folder made for it is private too, and a trace made before this is tightened."""
+        callers. A folder made for it is private too, and a trace made before this is tightened where it can be: one
+        owned by another user, or on a mount that refuses chmod, is written as it is."""
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         file = os.fdopen(os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600), "a", encoding="utf-8")
         if not self.path.is_symlink():
-            os.chmod(self.path, 0o600)
+            with contextlib.suppress(OSError):
+                os.chmod(self.path, 0o600)
         return file
 
     def close(self) -> None:

@@ -380,6 +380,21 @@ def test_the_trace_file_and_its_new_folder_are_private(tmp_path):
     assert (tmp_path / "runs").stat().st_mode & 0o777 == 0o700
 
 
+def test_a_trace_file_that_cannot_be_tightened_is_still_written(tmp_path, monkeypatch):
+    """Another user's file, or a mount that refuses chmod, kept its trace before the file was tightened."""
+    path = tmp_path / "shared.jsonl"
+    path.write_text("")
+
+    def refuse(*_args, **_kwargs):
+        raise PermissionError("not the owner")
+
+    monkeypatch.setattr(tracing.os, "chmod", refuse)
+    writer = tracing.TraceWriter(path)
+    with writer.call("decide", TEXT):
+        pass
+    assert len(lines(path, writer)) == 1
+
+
 def test_the_report_shows_an_environments_steps(tmp_path, capsys):
     path = tmp_path / "trace.jsonl"
     path.write_text("\n".join(json.dumps(record(100.0 + i, 10.0, tool="scenario_sourcing", query=9, query_ms=3.0,
