@@ -102,11 +102,16 @@ class ClaudeChat:
         return [{"role": "user", "content": question}]
 
     async def turn(self, messages: list[dict], tools: list[dict]) -> Turn:
-        """One streamed reply."""
-        async with self.client.messages.stream(model=self.model, max_tokens=16000, system=self.system,
-                                               **({"tools": tools} if tools else {}),
-                                               thinking={"type": "adaptive"}, messages=messages) as stream:
-            reply = await stream.get_final_message()
+        """One streamed reply; raises AgentError when the API cannot be reached or refuses the request."""
+        import anthropic  # pylint: disable=import-outside-toplevel
+        try:
+            async with self.client.messages.stream(model=self.model, max_tokens=16000, system=self.system,
+                                                   **({"tools": tools} if tools else {}),
+                                                   thinking={"type": "adaptive"}, messages=messages) as stream:
+                reply = await stream.get_final_message()
+        except anthropic.APIError as error:
+            raise AgentError(f"Claude ({self.model}): {error}; check ANTHROPIC_API_KEY or `ant auth login`, "
+                             "and the network") from error
         text = "\n".join(block.text for block in reply.content if block.type == "text").strip()
         uses = [Use(block.id, block.name, dict(block.input or {})) for block in reply.content
                 if block.type == "tool_use"]

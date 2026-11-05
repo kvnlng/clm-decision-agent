@@ -289,6 +289,36 @@ def test_the_agent_writes_the_record_beside_the_answer(tmp_path, monkeypatch):
     assert "## The agent's explanation (not checked)" in (tmp_path / "run.record.md").read_text()
 
 
+class FailingClaude:
+    """The Anthropic client when the API cannot be reached: the request fails as the stream opens."""
+
+    def __init__(self):
+        self.messages = self
+
+    def stream(self, **_request):
+        return _FailingStream()
+
+
+class _FailingStream:
+    async def __aenter__(self):
+        import anthropic  # pylint: disable=import-outside-toplevel
+        raise anthropic.APIConnectionError(request=httpx.Request("POST", "http://127.0.0.1:9/v1/messages"))
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+@pytest.mark.parametrize("no_tools", [False, True])
+def test_a_claude_failure_is_one_line_about_claude(tmp_path, monkeypatch, capsys, no_tools):
+    monkeypatch.setattr("anthropic.AsyncAnthropic", FailingClaude)
+    target = str(tmp_path / "nowhere.toml") if no_tools else str(EXAMPLE)
+    assert main([target, "Should we?", "--out", str(tmp_path / "run.answer.json"),
+                 *(["--no-tools"] if no_tools else [])]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("error: Claude (claude-opus-5-5): ") and "ANTHROPIC_API_KEY" in err
+    assert "server stopped" not in err and "Traceback" not in err
+
+
 def test_no_tools_sends_no_tools_and_its_own_prompt(tmp_path, monkeypatch):
     claude = FakeClaude(message(text("I don't know Meridian's plan.")))
     monkeypatch.setattr("anthropic.AsyncAnthropic", lambda: claude)
