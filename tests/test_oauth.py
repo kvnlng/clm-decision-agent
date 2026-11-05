@@ -261,7 +261,7 @@ async def test_an_unusable_key_set_is_refused_with_a_warning(jwks, caplog):
                                     "http://localhost@evil.example/", "https://user@login.example.org/x",
                                     "http://login.example.org/x", "https:///x"])
 def test_an_issuer_must_be_https_or_on_this_computer(issuer):
-    with pytest.raises(ValueError, match="--issuer must be https"):
+    with pytest.raises(ValueError, match=r"--issuer must be https \(or http on this computer: localhost, 127.0.0.1, ::1\)"):
         oauth.from_args(issuer, AUDIENCE, [], "http://127.0.0.1:8000/mcp")
 
 

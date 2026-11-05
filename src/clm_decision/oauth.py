@@ -174,7 +174,7 @@ def from_args(issuer: str | None, audience: str | None, scopes: list[str] | None
     if not issuer:
         raise ValueError(f"--auth oauth needs --issuer or {ISSUER_ENV}")
     if not is_secure(issuer):
-        raise ValueError(f"--issuer must be https (or http on localhost), not {issuer}")
+        raise ValueError(f"--issuer must be https (or http on this computer: localhost, 127.0.0.1, ::1), not {issuer}")
     audience = audience or os.environ.get(AUDIENCE_ENV, "").strip() or resource_url
     scopes = scopes if scopes is not None else os.environ.get(SCOPES_ENV, "").split()
     return oauth(issuer, audience, scopes, resource_url)
