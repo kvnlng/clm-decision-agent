@@ -1,32 +1,24 @@
 # Handling sensitive text
 
-Read this before real text goes into a decision server built on this framework. It describes what the code does. It is
-not legal or compliance advice, and nothing here makes a deployment compliant with any regulation.
+Read this before real text goes into a decision server built on this framework. It describes what the code does; it
+is not legal or compliance advice, and nothing here makes a deployment compliant with any regulation.
 
 ## Where text goes
 
 The text a caller sends with `decide`, `decide_many`, `check_call` or `correct` reaches:
 
-| Place | When | You control it with |
-|---|---|---|
-| CLM | Every call | `[clm]`: it runs in the server's process, with either backend |
-| Your informing and acting tools, and whatever they call | When the decision runs them | Your tools module and `[tools.settings]` |
-| The corrections record, on disk | `correct`, in review mode only | `[record]` |
-| The examples file and trained heads, on disk | If you train from corrections | Where you keep those files |
-| A trace file, on disk | Only with `--trace FILE --trace-text`: a scenario's `decide`, `decide_many`, `check_call` and `correct` text, and an environment's tool-call arguments; without `--trace-text` the trace leaves the text out | `--trace-text` |
+| What | Where it is written | Who can read it | How to keep it out |
+|---|---|---|---|
+| Every call | CLM, in the server's process (`[clm]`, either backend). The first start downloads CLM from Hugging Face; requests never go there | The process | Not possible |
+| Calls that run tools | Your informing and acting tools, and whatever they call. Acting tools get the raw text, identifiers included; no language model rewords it. The example's `create_ticket` puts it in the ticket | Wherever tools send it | Your tools module and `[tools.settings]`: have tools return and send the least they can |
+| `correct`, in review mode only | The corrections record, `<scenario>.corrections.jsonl` | Owner only (below) | `[record]`; no review mode |
+| Corrections you train from | The examples file and the trained heads, unencrypted | Whoever reads those files | See below |
+| Only with `--trace FILE --trace-text` | The trace: a scenario's `decide`, `decide_many`, `check_call` and `correct` text; an environment's tool-call arguments. Without `--trace-text` the trace has no text | Owner only, like the record | Leave `--trace-text` off |
+| The server's key, on every HTTP call | As a bearer header. `clm-agent` and `clm-portal chat` send it over HTTPS or to this computer only, never over plain http to another host | Key holders: they can call the server and see its decisions and what its informing tools return | Keep the key secret; HTTPS when callers are elsewhere ([serving.md](serving.md)) |
 
-CLM runs inside the server's process, so nothing leaves the machine except what your tools send. The first start
-downloads CLM from Hugging Face; requests are never sent there. The server keeps no log of requests: outside review mode
-and `--trace-text`, it saves no request text.
-
-**Acting tools receive the caller's raw text.** No language model rewords it, so whatever the requester typed, identifiers
-included, can end up wherever a tool sends it. The example's `create_ticket` puts the text in the ticket.
-
-**Anyone with the key can call an HTTP server**, and see its decisions and the facts its informing tools return. Keep the
-key secret, and serve over HTTPS when callers are elsewhere: [serving.md](serving.md).
-
-The language model named in `[generator]` is used only by `clm-synthesize`, which sends it the scenario's route
-descriptions and examples, not requests.
+Nothing leaves the machine except what your tools send. Outside review mode and `--trace-text`, the server saves no
+request text. The language model in `[generator]` is used only by `clm-synthesize`, which sends it the scenario's
+route descriptions and examples, never requests.
 
 ## Keep sensitive text out
 
@@ -36,24 +28,22 @@ This is the protection that matters most, and the framework cannot do it for you
   request" and "how urgent", not anything about a record.
 - Give the scenario a route for requests it must not handle, and make the acting tools skip it.
 - Tell the people behind the calling agents what not to type. **Nothing stops them typing it anyway.**
-- Have tools return and send the least they can.
 
 ## Protect the record
 
-The record (`<scenario>.corrections.jsonl`) holds the text of every request the owner corrected.
-
 ```toml
 [record]
-path = "private/my.corrections.jsonl" # keep it somewhere other than beside the scenario
+path = "private/my.corrections.jsonl" # somewhere other than beside the scenario
 key_file = "record.key"               # encrypt each line with this key ...
-# key_env = "RECORD_KEY"              # ... or with a key held in an environment variable
+# key_env = "RECORD_KEY"              # ... or with a key in an environment variable
 ```
 
-- The file is created readable by its owner only. In review mode the server also makes an older record so.
-- `uv run clm-record newkey record.key` makes a key. Keep it out of version control, and back it up: a record written
+- The record, and a folder made for it, are created readable by their owner only. In review mode the server also
+  makes an older record so.
+- `uv run clm-record newkey record.key` makes a key. Keep it out of version control and back it up: a record written
   with a key cannot be read without it.
-- `uv run clm-record purge <scenario>` deletes the record, after asking.
-- `purge` only deletes a file that is plainly a corrections record, since `path` can name any file.
+- `uv run clm-record purge <scenario>` deletes the record after asking, and only a file that is plainly a corrections
+  record, since `path` can name any file.
 
 ## What encryption does not do
 
@@ -72,8 +62,7 @@ key_file = "record.key"               # encrypt each line with this key ...
 
 - [ ] Check where CLM runs (`[clm]`), and what each of your tools sends, and where.
 - [ ] Decide who gets the server's key, and whether the server is reachable from other machines.
-- [ ] Decide where the record, the examples file and the trained heads live, who can read them, and how long they are
-      kept.
+- [ ] Decide where the record, the examples file and the trained heads live, who can read them, and for how long.
 - [ ] If the record is encrypted, decide who holds the key and where its backup is.
 - [ ] Send something the server should route out of scope, and see what its tools do with it.
 - [ ] Have whoever is responsible for information governance where you work look at this list.

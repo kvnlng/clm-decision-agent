@@ -13,21 +13,19 @@ uv run clm-registry examples/tariff/environment.toml --name io.github.you/tariff
     [--description "..."] [--repository https://github.com/you/repo]
 ```
 
-- **It lists a remote server:** the address clients reach over Streamable HTTP, and no package: a client does not install
-  a deployment.
-- **With the key** (`--auth key`, the default), the entry says a client must send a secret `Authorization` header. The
-  key itself is never in the entry.
-- **With OAuth** (`--auth oauth`), the entry names no header. The client learns which issuer to ask from the server's
-  protected resource metadata ([serving.md](serving.md#with-tokens-from-your-identity-provider-oauth)).
-- **The description** is at most 100 characters, the registry's limit. An environment's defaults to its name. A CLM
-  scenario has none of its own, so give one. The file is read and checked either way, so a mistyped path is refused.
-- **The address must be HTTPS and name a host.** The registry refuses `localhost` and `127.0.0.1`; `clm-registry` also
-  refuses every other bare IP address, so an entry names a host other computers can find. An internal name such as
-  `decisions.corp.internal` is accepted, and so is a path before `/mcp`, as behind a gateway
-  (`https://gateway.corp/tools/decisions/mcp`).
-- **Nothing secret goes in the address.** A user, password, query or fragment is refused: an entry is published as
-  written and never fully removed, and the key belongs in the header.
-- **The repository** must be a GitHub or GitLab project's home page, all the registry takes. Leave it out for any other forge.
+The entry lists a remote server, the address clients reach over Streamable HTTP, and no package: a client does not
+install a deployment.
+
+| Field | Takes |
+|---|---|
+| File | The scenario or `environment.toml` served; read and checked even with `--description`, so a mistyped path is refused |
+| `--name` | `namespace/name`, such as `io.github.you/tariff` |
+| `--url` | HTTPS, a host name, a path ending in `/mcp`. An internal name (`decisions.corp.internal`) and a path before `/mcp` (`https://gateway.corp/tools/decisions/mcp`, behind a gateway) are fine. Refused: `localhost` and `127.0.0.1` (by the registry) and every other bare IP address (by `clm-registry`), since an entry names a host other computers can find; and any user, password, query or fragment, since an entry is published as written and never fully removed, and the key belongs in the header |
+| `--version` | Such as `1.0.0` |
+| `--auth key` (default) | Says a client must send a secret `Authorization` header; the key itself is never in the entry |
+| `--auth oauth` | Names no header; the client learns which issuer to ask from the server's protected resource metadata ([serving.md](serving.md#with-tokens-from-your-identity-provider-oauth)) |
+| `--description` | At most 100 characters, the registry's limit; defaults to an environment's name, and a CLM scenario has none, so give one |
+| `--repository` | A GitHub or GitLab project's home page, all the registry takes; leave it out for any other forge |
 
 Check the file with the registry's own tool, then publish it:
 
@@ -42,23 +40,17 @@ mcp-publisher publish server.json
 ## Public or private
 
 **The public registry** (`registry.modelcontextprotocol.io`) is for a deployment meant for the public, such as a
-demonstration. It lists only what anyone can reach: a publicly accessible remote address, or a package on a public index.
-
-- A name under `io.github.<you>/` needs a GitHub login.
-- A name under a GitHub organisation needs a personal access token with `read:org`, or GitHub Actions, because
-  `mcp-publisher login github` cannot grant organisation names yet.
-- A name under your own domain needs a DNS or HTTP proof.
-- Entries are never fully removed. With `mcp-publisher status`, a version can be marked `deprecated`, which still lists
-  it with a warning, or `deleted`, which hides it from listings but can be undone.
+demonstration, and lists only what anyone can reach: a public remote address, or a package on a public index. A name
+under `io.github.<you>/` needs a GitHub login; one under a GitHub organisation needs a personal access token with
+`read:org`, or GitHub Actions, since `mcp-publisher login github` cannot grant organisation names yet; one under your own
+domain needs a DNS or HTTP proof. Entries are never fully removed: `mcp-publisher status` can mark a version
+`deprecated`, still listed with a warning, or `deleted`, hidden from listings but undoable.
 
 **A private registry** suits a deployment on a private network, as most decision servers will be. It is the same software
-and API, run by your organisation. Clients inside the network search it, and nothing about the deployment leaves the
-network. Who may publish depends on how it is run:
-
-- **GitHub login:** any GitHub user who can reach it may publish under their own `io.github.<user>/` name. It does not
-  limit publishing to an organisation's members.
-- **Your own identity provider (OIDC):** the claims a token must carry decide who may publish and edit.
-- **DNS or HTTP proof:** whoever holds a domain's key may publish under that domain.
+and API, run by your organisation; clients inside the network search it, and nothing about the deployment leaves the
+network. Who may publish depends on how it is run: with GitHub login, any GitHub user who can reach it, under their own
+`io.github.<user>/` name, not only an organisation's members; with your own identity provider (OIDC), whoever holds the
+claims a token must carry; with DNS or HTTP proof, whoever holds a domain's key.
 
 ## A private registry on this computer
 
@@ -81,7 +73,7 @@ Checked on a Mac with the registry's release 1.8.6 and PostgreSQL 18 from Homebr
 
    Anonymous publishing is for trying it out only: anyone who can reach the registry can publish, change or deprecate
    names under `io.modelcontextprotocol.anonymous/`, including an entry that sends clients, and their key, to another
-   host. So listen on `127.0.0.1` only, as above, and never turn it on for a registry others use.
+   host. Listen on `127.0.0.1` only, as above, and never turn it on for a registry others use.
 4. Write and publish the entry:
 
    ```bash
@@ -94,10 +86,8 @@ Checked on a Mac with the registry's release 1.8.6 and PostgreSQL 18 from Homebr
    ```
 
 5. Find it: `curl "http://localhost:8090/v0.1/servers?search=clm-tariff"` gives the entry, with its address and the
-   header it needs. The MCP Inspector lists the server's tools with
-   that header (`--cli <address> --transport http --header "Authorization: Bearer <the key>" --method tools/list`;
-   [serving](serving.md#inspecting-a-server)), and, with the key in `DECISION_SERVER_KEY`,
-   `clm-agent <address> "QUESTION"` asks a model to use them.
-
-In the check, a client found the entry, saw it needed the `Authorization` header, sent the key and called the tools. The
-internal host name does not resolve on a laptop, so the client was pointed at the local server for that name.
+   header it needs. The MCP Inspector lists the server's tools with that header
+   (`--cli <address> --transport http --header "Authorization: Bearer <the key>" --method tools/list`;
+   [serving](serving.md#inspecting-a-server)); with the key in `DECISION_SERVER_KEY`, `clm-agent <address> "QUESTION"`
+   asks a model to use them. The internal host name does not resolve on a laptop, so in the check the client was
+   pointed at the local server for that name.
