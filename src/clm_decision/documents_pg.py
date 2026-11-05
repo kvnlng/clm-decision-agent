@@ -59,8 +59,12 @@ def connect_postgres(settings, password: str) -> PostgresStore:
         connection.close()
         raise ScenarioError(f"documents: {where} has no vector extension (brew install pgvector): "
                             f"{_first_line(error)}") from error
-    register_vector(connection)
-    connection.execute(SCHEMA)
+    try:
+        register_vector(connection)
+        connection.execute(SCHEMA)
+    except psycopg.Error as error:
+        connection.close()
+        raise ScenarioError(f"documents: {where}: cannot prepare the tables: {_first_line(error)}") from error
     return PostgresStore(connection, where)
 
 

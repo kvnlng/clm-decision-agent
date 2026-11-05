@@ -5,10 +5,12 @@ can be wiped, with the password in CLM_TEST_POSTGRES_PASSWORD: `uv run pytest -m
 """
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import contextlib
 import json
 import os
 
 import httpx
+import pgvector.psycopg
 import psycopg
 import pytest
 from fake_documents import FakeEmbedder
@@ -97,6 +99,55 @@ def test_no_vector_extension_is_one_line(monkeypatch):
     with pytest.raises(ScenarioError, match=r"^documents: 127.0.0.1:1/nowhere has no vector extension "
                                             r"\(brew install pgvector\): extension \"vector\" is not available$"):
         documents_pg.connect_postgres(NEVER, "x")
+
+
+class FakeConnection:
+    """A connection, and its own cursor, that fails a statement containing `fail[0]` with `fail[1]`."""
+    def __init__(self, fail=None, rows=()):
+        self.fail, self.rows, self.ran = fail, list(rows), []
+        self.closed = self.broken = False
+
+    def execute(self, sql, params=None):
+        self.ran.append(sql)
+        if self.fail and self.fail[0] in sql:
+            self.broken = isinstance(self.fail[1], psycopg.OperationalError)
+            raise self.fail[1]
+        return self
+
+    def executemany(self, sql, rows):
+        self.execute(sql)
+
+    def fetchall(self):
+        return self.rows
+
+    def close(self):
+        self.closed = True
+
+    def transaction(self):
+        return contextlib.nullcontext()
+
+    def cursor(self):
+        return contextlib.nullcontext(self)
+
+
+@pytest.fixture
+def opens(monkeypatch):
+    """Connections handed out in turn by psycopg.connect, with the vector type registered on none of them."""
+    waiting = []
+    monkeypatch.setattr(psycopg, "connect", lambda **options: waiting.pop(0))
+    monkeypatch.setattr(pgvector.psycopg, "register_vector", lambda connection: None)
+    return waiting
+
+
+def test_tables_that_cannot_be_made_are_one_line(opens):
+    """A role without the right to create tables fails at start-up in one line, not a traceback."""
+    connection = FakeConnection(fail=("CREATE TABLE", psycopg.errors.InsufficientPrivilege(
+        "permission denied for schema public\nDETAIL: more")))
+    opens.append(connection)
+    with pytest.raises(ScenarioError, match=r"^documents: 127.0.0.1:1/nowhere: cannot prepare the tables: "
+                                            r"permission denied for schema public$"):
+        documents_pg.connect_postgres(NEVER, "x")
+    assert connection.closed
 
 
 def test_no_driver_names_the_documents_extra(monkeypatch):
