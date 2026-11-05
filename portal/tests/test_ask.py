@@ -127,7 +127,9 @@ def anyio_backend():
     return "asyncio"
 
 
-def test_testing_mode_restarts_the_server_and_every_page_says_so(client, server):
+def test_testing_mode_restarts_the_server_and_every_page_says_so(client, server, environment):
+    with environment.open("a") as file:
+        file.write("\n[derived]\n")
     token = sign_in(client)
     assert web.TESTING_BANNER not in client.get("/").text
     post(client, "/ask/testing", token, {"on": "1"})
@@ -136,3 +138,11 @@ def test_testing_mode_restarts_the_server_and_every_page_says_so(client, server)
         assert web.TESTING_BANNER in client.get(path).text, path
     post(client, "/ask/testing", token, {"on": "0"})
     assert server.starts[-1] is False and web.TESTING_BANNER not in client.get("/ask").text
+
+
+def test_without_a_derived_table_there_is_no_testing_mode(client, server):
+    token = sign_in(client)
+    assert "/ask/testing" not in client.get("/ask").text
+    response = post(client, "/ask/testing", token, {"on": "1"})
+    assert response.status_code == 400 and "has no [derived] table" in response.text
+    assert server.starts == [False] and not server.testing

@@ -494,11 +494,24 @@ def ask_body(portal: Portal, session: Session, message: str = "", draft: str = "
             '<button>Ask</button></form>'
             f'<form method="post" action="/ask/clear" class="inline">{csrf_field(session)}'
             '<button>New conversation</button></form>'
-            f'<form method="post" action="/ask/testing" class="inline">{csrf_field(session)}'
+            f'{testing_form(session, testing) if testing or has_derived(portal) else ""}')
+
+
+def testing_form(session: Session, testing: bool) -> str:
+    """The switch that restarts the portal's server with every derived status admitted, or without."""
+    return (f'<form method="post" action="/ask/testing" class="inline">{csrf_field(session)}'
             f'<input type="hidden" name="on" value="{"0" if testing else "1"}">'
             f'<button data-confirm="Restart the portal\'s server{" without" if testing else " with"} unapproved '
             f'derived rules?">{"Turn testing off" if testing else "Testing: let unapproved derived rules decide"}'
             '</button></form>')
+
+
+def has_derived(portal: Portal) -> bool:
+    """Whether the environment file has a [derived] table, so there are derived rules to admit."""
+    try:
+        return "derived" in layer.read_toml(portal.environment)
+    except ValueError:
+        return False
 
 
 async def ask_page(request: Request) -> Response:  # pylint: disable=too-many-locals
@@ -565,6 +578,9 @@ async def ask_testing(request: Request) -> Response:
     """POST /ask/testing: restart the portal's server admitting every derived status, or not."""
     portal, session = request.app.state.portal, request.state.session
     form = await request.form()
+    if form.get("on") == "1" and not has_derived(portal):
+        return page(portal, session, "Ask", ask_body(portal, session, f"{portal.environment.name} has no [derived] "
+                                                     "table, so there are no derived rules to admit"), status=400)
     try:
         async with changing(portal):
             await portal.server.restart(testing=form.get("on") == "1")

@@ -109,6 +109,16 @@ async def test_testing_adds_admit_derived_as_the_contract_writes_it(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_a_failed_testing_start_is_not_tried_again_at_the_next_restart(tmp_path):
+    popen = FakePopen(code=2, stderr="error: --admit-derived: nothing to admit\n")
+    server = managed_server(popen, tmp_path)
+    await server.start(testing=True)
+    assert server.error and not server.wanted
+    await server.restart()
+    assert "--admit-derived" not in popen.started[1].args
+
+
+@pytest.mark.anyio
 async def test_a_server_that_exits_at_start_reports_its_error(tmp_path):
     popen = FakePopen(code=2, stderr="error: environment.functions: cannot import 'x'\n")
     server = managed_server(popen, tmp_path)

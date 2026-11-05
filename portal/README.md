@@ -53,7 +53,8 @@ the collection is not offered, rather than when it was built.
   shortened after 1,500 characters. A name the server does not have sends nothing, so a typo cannot let a tool
   run. The conversation is kept for your session. **Testing** restarts the portal's server with `--admit-derived
   proposed,checked,approved`, so unapproved derived rules decide; while it is on, every page says so. It is off at
-  every start.
+  every start, offered only when `environment.toml` has a `[derived]` table, and when it fails to start, the next
+  restart is without it.
 - **Review**: derived decisions, facts and conflicts, each beside its cited passage (or its quote, when the server
   cannot read the passage), its check, and for a fact or conflict the supplied value and its graph row. Approve
   (only once `clm-derive check` passed it), reject, or resolve a conflict; each is recorded with your name and an

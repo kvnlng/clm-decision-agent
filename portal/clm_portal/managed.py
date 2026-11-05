@@ -120,8 +120,14 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
 
     async def start(self, testing: bool = False) -> None:
         """Start the server, and wait until it lists its tools or exits; `error` says why it did not start, and
-        `testing` is true only once a server in testing mode has started."""
+        `testing` is true only once a server in testing mode has started. A testing start that fails is not wanted
+        again, so the next restart after a change starts the server without it."""
         self.wanted = testing
+        await self._start(testing)
+        if self.error is not None:
+            self.wanted = False
+
+    async def _start(self, testing: bool) -> None:
         self.testing, self.error = False, None
         server = self.find("clm-server")
         if server is None:
