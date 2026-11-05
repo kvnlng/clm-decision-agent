@@ -16,7 +16,7 @@ import psycopg
 import pytest
 from fake_documents import FakeEmbedder
 
-from clm_decision import documents_pg
+from clm_decision import documents, documents_pg
 from clm_decision.documents import DocumentSettings, OllamaEmbedder
 from clm_decision.scenario import ScenarioError, StepError
 
@@ -80,6 +80,23 @@ def test_an_embedder_failure_is_one_line():
         lambda request: httpx.Response(404, json={"error": "model not found"}))))
     with pytest.raises(StepError, match="^embedding with toy-embed at http://ollama: "):
         embedder.embed("toy-embed", ["one"])
+
+
+def test_the_embedder_keeps_one_client_with_a_timeout_for_searches(monkeypatch):
+    """A search embeds one query: a stalled Ollama should not hold it for the ten minutes a batch load may take."""
+    made, real = [], httpx.Client
+
+    def client(timeout):
+        made.append(timeout)
+        return real(timeout=timeout, transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"embeddings": [[0.1, 0.2]]})))
+    monkeypatch.setattr(documents.httpx, "Client", client)
+    embedder = OllamaEmbedder("http://ollama")
+    embedder.embed("toy-embed", ["one"])
+    embedder.embed("toy-embed", ["two"])
+    assert made == [60]
+    OllamaEmbedder("http://ollama", timeout=600).embed("toy-embed", ["three"])
+    assert made == [60, 600]
 
 
 def test_an_unreachable_database_is_one_line():

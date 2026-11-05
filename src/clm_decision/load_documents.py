@@ -190,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
         documents = read_jsonl(args.file, collection)
         from .documents import OllamaEmbedder  # pylint: disable=import-outside-toplevel
         store = connect(settings)
-        counts = load(store, OllamaEmbedder(settings.ollama_url), collection, documents,
+        counts = load(store, OllamaEmbedder(settings.ollama_url, timeout=600), collection, documents,
                       source=args.source or Path(args.file).name)
     except (ScenarioError, StepError, ValueError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
