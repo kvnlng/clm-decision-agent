@@ -19,7 +19,7 @@ read with built-in tools, no tool code written. Rules decide; retrieval only fin
 | Part | What | Source | Serves |
 |---|---|---|---|
 | `statutes.jsonl` | 39 sections of TX, CA, CO, WA, IL, MA, MN, FL, OK and ND non-compete statutes, subsections as passages; Washington's twice (until and from 30 June 2027); none for New York | Official state publishers | 1, 3 |
-| `data/cases.jsonl` (built, not committed) | 4,807 published non-compete opinions of those states, New York and the Fifth Circuit (Texas law), plus opinions citing them: 113,481 passages, 130,985 citations; mostly Texas (1,798), then Florida 764, California 570, New York 524, Illinois 507, Colorado 68, Oklahoma 25; mostly 1990 to 2019 | [Caselaw Access Project](https://static.case.law), to about 2020 | 2 |
+| `data/cases.jsonl` (built, not committed) | 4,807 published non-compete opinions of those states, New York and the Fifth Circuit (Texas law), plus opinions citing them: 113,481 passages, 130,985 citations; mostly Texas (1,798), then Florida 764, California 570, New York 524, Illinois 507, Colorado 68, Oklahoma 25; mostly 1990 to 2019 | [Caselaw Access Project](https://static.case.law) (Harvard Law School Library), free of restrictions, to about 2020 | 2 |
 | `graph/` | The company: agreement, staff and lowest pay per state, employees, 2026 pay thresholds | Made up; thresholds from state labour departments | 1, 3 |
 | `rules/` | DMN tables: each state's law, choice of law, court weight, similar case, likely enforced | Written here, each row citing its statute | 1, 2, 3 |
 | `answer_key.toml` | What a good answer says and cites | The cited texts; checked mechanically, not by a lawyer | measuring |
