@@ -3,6 +3,7 @@
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import inspect
 import re
+import sys
 from pathlib import Path
 
 import fake_tools
@@ -90,3 +91,16 @@ def test_two_scenarios_with_the_same_module_name_each_get_their_own(tmp_path):
     for folder in ("a", "b", "a"):
         tools = load_tools(load_scenario(tmp_path / folder / "scenario.toml"))
         assert Path(inspect.getsourcefile(tools["act"])) == tmp_path / folder / "same_name_tools.py"
+
+
+DATACLASS_SOURCE = ("from __future__ import annotations\n\nfrom dataclasses import dataclass\n\n\n@dataclass\n"
+                    "class Found:\n    facts: list\n\n\n" + TOOLS_SOURCE)
+
+
+@pytest.mark.parametrize("name", ["dataclass_tools_for_test", "calendar"])
+def test_a_tools_module_may_hold_a_dataclass_with_future_annotations(write_scenario, tmp_path, name):
+    import calendar  # pylint: disable=import-outside-toplevel
+    (tmp_path / f"{name}.py").write_text(DATACLASS_SOURCE)
+    tools = load_tools(load_scenario(write_scenario(BASE_TOML.replace('"fake_tools"', f'"{name}"'))))
+    assert list(tools) == ["lookup", "act"]
+    assert sys.modules["calendar"] is calendar

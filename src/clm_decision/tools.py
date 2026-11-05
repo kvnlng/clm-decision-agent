@@ -25,8 +25,25 @@ def _module(scenario_dir: Path, name: str) -> ModuleType:
         return imported
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # In sys.modules while it runs, as an import would be, so code that finds its own module by name (a dataclass,
+    # pickling) works; it stays only when no other module holds the name, so a standard one is never replaced
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        _restore(name, imported)
+        raise
+    if imported is not None:
+        _restore(name, imported)
     return module
+
+
+def _restore(name: str, imported: ModuleType | None) -> None:
+    """Put back the module that held the name before, or free the name when none did."""
+    if imported is None:
+        sys.modules.pop(name, None)
+    else:
+        sys.modules[name] = imported
 
 
 def load_tools(scenario: Scenario) -> dict[str, Callable]:
