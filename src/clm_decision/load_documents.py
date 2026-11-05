@@ -96,11 +96,26 @@ def _cites(cites, where: str) -> list[dict]:
     for cite in cites:
         if isinstance(cite, str):
             found.append({"id": cite, "passage": None})
-        elif isinstance(cite, dict) and isinstance(cite.get("id"), str):
+        elif isinstance(cite, dict) and isinstance(cite.get("id"), str) \
+                and isinstance(cite.get("passage"), (str, type(None))):
             found.append({"id": cite["id"], "passage": cite.get("passage")})
         else:
             raise ValueError(f"{where}: each of cites is an id, or {{\"id\", \"passage\"}}")
     return found
+
+
+def _nul(value, name: str) -> str | None:
+    """The name of the first text holding a NUL character, which PostgreSQL text cannot store; None when none does."""
+    if isinstance(value, str):
+        return name if "\x00" in value else None
+    items = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    for key, item in items:
+        if "\x00" in str(key):
+            return f"{name}.{key}"
+        found = _nul(item, f"{name}.{key}" if isinstance(key, str) else f"{name}[{key}]")
+        if found:
+            return found
+    return None
 
 
 def read_jsonl(path: str | Path, collection: Collection) -> list[dict]:
@@ -124,9 +139,13 @@ def read_jsonl(path: str | Path, collection: Collection) -> list[dict]:
             if line["id"] in lines:
                 raise ValueError(f"{where}: id {line['id']} is already on line {lines[line['id']]}")
             lines[line["id"]] = number
-            documents.append({"id": line["id"], "citation": line["citation"], "title": line["title"],
-                              "metadata": _metadata(line.get("metadata", {}), collection, where),
-                              "passages": _passages(line, where), "cites": _cites(line.get("cites", []), where)})
+            document = {"id": line["id"], "citation": line["citation"], "title": line["title"],
+                        "metadata": _metadata(line.get("metadata", {}), collection, where),
+                        "passages": _passages(line, where), "cites": _cites(line.get("cites", []), where)}
+            nul = next(filter(None, (_nul(value, key) for key, value in document.items())), None)
+            if nul:
+                raise ValueError(f"{where}: {nul} contains a NUL character")
+            documents.append(document)
     return documents
 
 
