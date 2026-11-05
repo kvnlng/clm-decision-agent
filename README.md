@@ -37,7 +37,7 @@ A fixed set. The agent asks for a decision; your informing and acting tools run 
 | MCP tool | What it does |
 |---|---|
 | `decide(text, context)` | The route with its probabilities, `uncertain` below the threshold, each question's answer, the rules that apply, the facts found, the option chosen, and what the acting tools did |
-| `decide_many(requests)` | The same for up to 1000 requests at once, faster per request |
+| `decide_many(requests)` | The same for up to 1000 requests at once, faster per request; every request's facts and options are read before any actions run |
 | `check_call(text, call)` | CLM's opinion of a tool call the caller proposes: a probability and approved yes or no |
 | `describe()` | The routes, options, questions, rules and tools |
 | `correct(...)`, `agreement()` | Review mode only: save the right decision; how often CLM agrees with the corrections |

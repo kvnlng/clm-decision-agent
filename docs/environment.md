@@ -231,7 +231,8 @@ function = "credit_check"                 # credit_check(amount) -> a dict of ou
 Each evaluation records its inputs, its outputs and, for a table, the rules that fired. The supported DMN subset
 (`dmn.py`), read from DMN XML of any version:
 
-- **Hit policies:** `UNIQUE` (the default), `FIRST`, `COLLECT` (every matching row; an `aggregation` such as `SUM` is refused).
+- **Hit policies:** `UNIQUE` (the default), `FIRST`, `COLLECT` (every matching row; an `aggregation` such as `SUM`
+  is refused).
 - **Input entries:** `-`; a literal (`1.5`, `"Region B"`, `true`); `<`, `<=`, `>`, `>=`, `=` and `!=` with a number;
   the ranges `[a..b]`, `(a..b)`, `[a..b)` and `(a..b]`; comma-separated lists of these; `not(...)`, which wraps a whole
   entry, not one item of a list.
@@ -291,10 +292,10 @@ def sourcing_branch(steps, params, levers):
 - **A limit** is a decision whose outputs include `allowed` (true or false) and `reason` (text). A branch is
   **rejected** when any evaluation of a limit says not allowed; the result names the decision, reason and inputs.
 - **A branch fails** when a listed limit was never evaluated, when a limit or any other step failed (even if your
-  code caught the error: the failed step is kept in the branch's steps), or when the figures have no finite number for the objective. So no branch skips a limit: in the example, the
-  dependency check runs on every branch because its rule is a limit. A branch with nothing to check a limit against (a
-  product with no key clients, for the SLA rule) fails too: check the limit once with a neutral input, or leave it out
-  of that scenario.
+  code caught the error: the failed step is kept in the branch's steps), or when the figures have no finite number
+  for the objective. So no branch skips a limit: in the example, the dependency check runs on every branch because
+  its rule is a limit. A branch with nothing to check a limit against (a product with no key clients, for the SLA
+  rule) fails too: check the limit once with a neutral input, or leave it out of that scenario.
 - **Kept branches are ranked** by the objective. An unlisted lever value is refused before anything runs.
 
 **What the question fixes is a parameter; only real alternatives are levers.** In the offsite example the team and the
@@ -676,7 +677,8 @@ The citation check does the same for citations, so an answer cannot cite a case 
 - **A case name with no citation after it**, "Smith v. Jones", cannot be checked: it is listed, never passed.
 
 A citation in the question counts as given, as its figures do. The decision record lists each citation found with
-the stored passage it matches, then those no tool returned and those not checked. A decision table's `citation` ids are given with each document's citation and title in its step.
+the stored passage it matches, then those no tool returned and those not checked. A decision table's `citation` ids
+are given with each document's citation and title in its step.
 
 ## What comes later
 
