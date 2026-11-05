@@ -56,6 +56,15 @@ def test_create_ticket_priority_and_label(configured, tracker_server):
     assert made == {"number": made["number"], "url": issue["html_url"]}
 
 
+def test_create_ticket_finds_a_label_past_the_first_page(configured, tracker_server):
+    tracker = tracker_server.tracker
+    for n in range(60):
+        tracker.create_label({"name": f"area-{n}"})
+    tracker.labels = dict(sorted(tracker.labels.items(), key=lambda item: item[1]["name"].startswith("priority")))
+    desk.create_ticket(request(urgency=1.7))
+    assert [label["name"] for label in tracker.labels.values()].count("priority-high") == 1
+
+
 def test_create_ticket_ordinary_request(configured, tracker_server):
     made = desk.create_ticket(request())
     assert [label["name"] for label in tracker_server.tracker.issues[made["number"]]["labels"]] == \

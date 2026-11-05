@@ -14,6 +14,7 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import threading
 from pathlib import Path
 
 import httpx
@@ -30,6 +31,9 @@ def _close_client() -> None:
 
 PATH_SETTINGS = ("queues_file",)
 TITLE_LENGTH = 60
+# Labels are listed a page at a time; 50 is the most Forgejo and Gitea give in one page
+LABEL_PAGE = 50
+LABEL_LOCK = threading.Lock()
 
 
 class TrackerError(RuntimeError):
@@ -91,17 +95,30 @@ def _checked(response: httpx.Response, action: str, expected: int = 200):
     return response.json()
 
 
+def _labels() -> dict[str, int]:
+    """Every label the tracker has, name -> id, read a page at a time until a page comes back short."""
+    existing, page = {}, 1
+    while True:
+        found = _checked(_request("GET", "/labels", params={"page": page, "limit": LABEL_PAGE}), "list its labels")
+        existing.update({label["name"]: label["id"] for label in found})
+        if len(found) < LABEL_PAGE:
+            return existing
+        page += 1
+
+
 def _label_ids(names: list[str]) -> list[int]:
     """The tracker's ids for these label names; a label it does not have yet is created."""
-    existing = {label["name"]: label["id"] for label in _checked(_request("GET", "/labels"), "list its labels")}
-    ids = []
-    for name in names:
-        if name not in existing:
-            # The tracker would accept a second label of the same name, so only create what is missing
-            created = _checked(_request("POST", "/labels", json={"name": name, "color": "#888888"}),
-                               "create a label", 201)
-            existing[name] = created["id"]
-        ids.append(existing[name])
+    # Two tickets made at once must not both find a label missing and both create it
+    with LABEL_LOCK:
+        existing = _labels()
+        ids = []
+        for name in names:
+            if name not in existing:
+                # The tracker would accept a second label of the same name, so only create what is missing
+                created = _checked(_request("POST", "/labels", json={"name": name, "color": "#888888"}),
+                                   "create a label", 201)
+                existing[name] = created["id"]
+            ids.append(existing[name])
     return ids
 
 

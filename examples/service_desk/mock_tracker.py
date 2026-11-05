@@ -6,7 +6,7 @@ It answers the same requests, in the same JSON shapes, as the issue tracker of F
     POST /api/v1/repos/{owner}/{repo}/issues            create an issue
     GET  /api/v1/repos/{owner}/{repo}/issues/{number}   fetch one
     GET  /api/v1/repos/{owner}/{repo}/issues?q=...      search
-    GET  /api/v1/repos/{owner}/{repo}/labels            list labels
+    GET  /api/v1/repos/{owner}/{repo}/labels?page=...   list labels, a page at a time
     POST /api/v1/repos/{owner}/{repo}/labels            create a label
 
 Tickets live in memory, any owner and repository name is accepted, and so are any credentials.
@@ -23,12 +23,19 @@ from urllib.parse import parse_qs, urlparse
 
 REPO_PATH = re.compile(r"/api/v1/repos/([^/]+)/([^/]+)/(issues|labels)(?:/(\d+))?")
 NOT_FOUND = {"message": "The target couldn't be found.", "errors": []}
+# The real tracker lists labels a page at a time: 30 by default, at most 50
+PAGE, MAX_PAGE = 30, 50
 SEED_LABELS = ["priority-high", "priority-medium", "priority-low", "governance-review"]
 SEED = [
     ("Access to the readmissions extract for the quality team", "De-identified, twelve months, for the Q3 audit."),
     ("Monthly count of emergency department attendances by triage category", "Needed for the operations report."),
     ("Support for a study of theatre cancellations", "Ethics approval pending. Need help with design and data."),
 ]
+
+
+def _number(query: dict, name: str, default: int) -> int:
+    value = query.get(name, [""])[0]
+    return int(value) if value.isdigit() else default
 
 
 class Tracker:
@@ -51,6 +58,11 @@ class Tracker:
         label = {"id": len(self.labels) + 1, "name": name, "color": str(body.get("color") or "#cccccc")}
         self.labels[label["id"]] = label
         return 201, label
+
+    def label_page(self, page: int, limit: int) -> list[dict]:
+        """One page of the labels, as the tracker pages them: 30 by default and at most 50."""
+        limit = min(max(limit, 1), MAX_PAGE)
+        return list(self.labels.values())[(max(page, 1) - 1) * limit:max(page, 1) * limit]
 
     def create(self, body: dict, repo_url: str) -> tuple[int, dict]:
         """-> (HTTP status, response body). Like the real tracker, labels must be given as ids."""
@@ -108,7 +120,8 @@ def make_server(port: int = 8765, tracker: Tracker | None = None) -> ThreadingHT
             if not match:
                 self._send(404, NOT_FOUND)
             elif match.group(3) == "labels":
-                self._send(200, list(tracker.labels.values()))
+                query = parse_qs(url.query)
+                self._send(200, tracker.label_page(_number(query, "page", 1), _number(query, "limit", PAGE)))
             elif match.group(4):
                 self._send(*tracker.get(int(match.group(4))))
             else:
