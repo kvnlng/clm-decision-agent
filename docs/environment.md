@@ -417,7 +417,8 @@ needs it, not run a scenario or fill it in.
 tables, the Python module. When it is not supplied, it can be derived from the environment's own documents by a model
 and checked mechanically, and only a person's approval lets it decide. Which kind each one is is never hidden: every
 decision step, rule and record says `origin: "supplied"` or `"derived"`. Supplied always decides: derivation never
-edits a supplied file, and a document that disagrees with a supplied fact is reported as a conflict.
+edits a supplied file, and a document that disagrees with a supplied fact is reported as a conflict. A reading
+that gave no value, or one a person rejected, is no conflict.
 
 The environment declares **slots**, the decisions and facts it needs, without their contents:
 
@@ -463,7 +464,7 @@ check** only when all of these hold:
 1. **Edition**: the cited document is in force on the date and its `effective_from` is the entry's edition.
 2. **Quote**: each piece of the quote (split at `...`) is, word for word, in a passage it cites, whole: never
    ending inside a word or a number ("up to 1" is not in "up to 10").
-3. **Figures**: every number the entry states is in the quote: a fact's value, each bound and numeric output of the
+3. **Figures**: every number the entry states is in the quote: a fact's value (each item of a list), each bound and numeric output of the
    table (both ends of a range), each number in a text cell, in the statement and in the reason. In the statement
    and reason, ISO dates, section references (§ 4, § 4(2), Section 6(1), or bare: 6(3), 401(k)) and a bare year
    from 1900 to 2100 are not figures, unless the year is dollars, a percentage, a decimal or a count of days, weeks,
@@ -509,7 +510,8 @@ For a `number` input the grid takes every bound in either table and a point just
 to the next bound but at most 1 away, one below the lowest bound, one above the highest, and 0, negative numbers
 included. For an `integer` input (declare counts such as years of service or days employed so) it takes whole
 numbers only: each bound and one either side, and none below 0 unless a bound is, so `<= 17` and `< 18` agree. It
-takes both booleans, and for a string each value named and one not. Any difference fails the check, so the entry
+takes both booleans, and for a string each value named and one not. A grid of more than 100,000 points is not
+compared, and the second reading is not made. Any difference fails the check, so the entry
 stays proposed, with a failure saying where: `a second reading by MODEL disagrees: at years_of_service=4, 7 against 10` (the first reading, then
 the second). A second reading that cannot be used (the model is unreachable, its answer is not in the schema, or its
 table does not parse) fails the check too, as `could not be made`: agreement is required, so its absence never

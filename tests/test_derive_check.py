@@ -3,6 +3,7 @@ stand-in store: every figure must be in the quote, the quote in the cited passag
 force."""
 # Test names say what they check.
 # pylint: disable=missing-function-docstring
+import dataclasses
 import json
 from datetime import date
 from pathlib import Path
@@ -12,7 +13,7 @@ from fake_documents import FakeEmbedder, FakeStore
 from test_derived_load import HEAD
 
 from clm_decision import derive, derive_check, derived
-from clm_decision.dmn import load_table
+from clm_decision.dmn import DmnError, load_table
 from clm_decision.environment import Slot, load_environment
 
 HANDBOOK = Path(__file__).parent.parent / "examples" / "handbook" / "handbook.jsonl"
@@ -585,3 +586,43 @@ def test_the_grid_for_two_inputs_takes_every_combination(tmp_path):
     assert len(grid) == 4 * 2 and {"years": 6, "member": False} in grid
     assert [item["inputs"] for item in derive_check.table_differences(first, second, ["k"])] == [
         {"years": 5, "member": False}, {"years": 6, "member": False}]
+
+
+def test_a_grid_over_its_limit_is_refused_before_it_is_built(tmp_path, monkeypatch):
+    inputs, outputs = {"years": "number", "member": "boolean"}, {"k": "number"}
+    first = rendered(tmp_path, "a", inputs, outputs, [({"years": ">= 5", "member": "-"}, {"k": 1})])
+    monkeypatch.setattr(derive_check, "MAX_POINTS", 7)
+    with pytest.raises(DmnError, match="8 points to compare, more than 7"):
+        derive_check.table_differences(first, first, ["k"])
+
+
+@pytest.mark.parametrize("value", [1500000.0, 123456.78, 1e-7, 1e16, 0.1, 6300])
+def test_a_number_output_is_written_whole_without_an_exponent_or_rounding(tmp_path, value):
+    table = rendered(tmp_path, "a", {"n": "number"}, {"k": "number"}, [({"n": "-"}, {"k": value})])
+    assert table.rules[0].values[0] == value
+
+
+def test_a_list_output_is_written_as_its_items_joined(tmp_path):
+    table = rendered(tmp_path, "a", {"n": "number"}, {"k": "list"}, [({"n": "-"}, {"k": ["full time", "part time"]})])
+    assert table.rules[0].values[0] == "full time; part time"
+
+
+def test_a_failed_or_rejected_fact_opens_no_conflict(env):
+    layer = derived.empty("handbook")
+    blank = {key: value for key, value in fact(2024, prop="year").items() if key != "value"}
+    layer["facts"]["k401_2026.year"] = blank
+    assert not derive_check.conflicts(env, layer)
+    layer["facts"]["k401_2026.year"] = {**fact(2024, "which for 2024 is", ("(2)",), prop="year"),
+                                        "status": "rejected"}
+    assert not derive_check.conflicts(env, layer)
+
+
+def test_each_item_of_a_list_fact_has_its_figures_checked(env):
+    tiers = Slot("k401_2026.tiers", "facts", "The match tiers.", "handbook", node="k401_2026", property="tiers",
+                 type="list")
+    listed = dataclasses.replace(env, slots={**env.slots, tiers.name: tiers})
+    entry = {**fact(["100% of the first 3%", "50% up to 6%"], "Meridian matches 100% of the first 3%", ("(3)",),
+                    prop="tiers")}
+    found = derive_check.check(listed, "facts", tiers.name, entry, on=ON)
+    assert "figure 50 (value[1]) is not in the quote" in found and "figure 6 (value[1]) is not in the quote" in found
+    assert not [failure for failure in found if "value[0]" in failure]

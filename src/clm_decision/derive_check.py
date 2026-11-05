@@ -110,8 +110,10 @@ def _fact(env: Environment, slot: Slot, entry: dict) -> tuple[list[str], list[tu
         failures.append(f"ontology: the slot is {slot.node}.{slot.property}, not {node}.{prop}")
     if not _CHECK_TYPE[slot.type](value):
         failures.append(f"ontology: the value {value!r} is not of type {slot.type}")
-    figures = [("value", value)] if _numeric(value) or isinstance(value, str) else []
-    return failures, figures
+    if isinstance(value, list):     # each item of a list states its own figures
+        return failures, [(f"value[{index}]", item) for index, item in enumerate(value)
+                          if _numeric(item) or isinstance(item, str)]
+    return failures, [("value", value)] if _numeric(value) or isinstance(value, str) else []
 
 
 # pylint: disable-next=too-many-locals
@@ -260,6 +262,7 @@ def recheck(folder: str | Path, env: Environment, *, on: date, second: SecondRea
 CLOSE = 0.005           # two readings of a number agree within 0.5%, as the handbook's answer scoring does
 SHOWN = 3               # the points a disagreement's failure line lists
 KEPT = 20               # the points check.second_reading keeps
+MAX_POINTS = 100_000    # the most points two tables are compared on; more and the second reading is not made
 
 
 def _bounds(table: Table, name: str) -> set[float]:
@@ -305,7 +308,8 @@ def _whole_points(bounds: set[float]) -> list[int]:
 def grid(first: Table, second: Table, kinds: dict[str, str] | None = None) -> list[dict]:
     """The inputs two tables are compared on, every combination of: for a number, the points around each bound in
     either table (_points), or for an input `kinds` (the slot's inputs) names an integer, whole numbers only
-    (_whole_points); both booleans; for a string, each value either table names and one neither does."""
+    (_whole_points); both booleans; for a string, each value either table names and one neither does. Raises
+    DmnError, before building it, when it would have more than MAX_POINTS points."""
     axes = []
     for index, name in enumerate(first.inputs):
         kind = first.types[index].rsplit(":", 1)[-1]
@@ -316,6 +320,9 @@ def grid(first: Table, second: Table, kinds: dict[str, str] | None = None) -> li
         else:
             bounds = _bounds(first, name) | _bounds(second, name)
             axes.append(_whole_points(bounds) if (kinds or {}).get(name) == "integer" else _points(bounds))
+    size = math.prod(len(axis) for axis in axes)
+    if size > MAX_POINTS:
+        raise DmnError(f"the tables' inputs give {size} points to compare, more than {MAX_POINTS}")
     return [dict(zip(first.inputs, values)) for values in itertools.product(*axes)]
 
 
@@ -377,9 +384,11 @@ def disagreement(model: str, differences: list[dict]) -> str:
 
 def conflicts(env: Environment, layer: dict) -> dict:
     """Each derived fact whose node already has a supplied value that differs: an open conflict, where the
-    supplied value stands."""
+    supplied value stands. A reading that gave no value, or one a person rejected, derived nothing to differ."""
     found = {}
     for name, entry in layer["facts"].items():
+        if "value" not in entry or entry.get("status") == "rejected":
+            continue
         node, prop = entry.get("node"), entry.get("property")
         if env.graph is None or node not in {item["id"] for item in env.graph.nodes()} \
                 or prop in env.derived_facts.get(node, {}):
