@@ -240,8 +240,10 @@ def decide(text: str, scenario: Scenario, router, tools: dict[str, Callable], co
 
 def decide_many(requests: list[dict], scenario: Scenario, router, tools: dict[str, Callable],
                 read_only: bool = False) -> list[dict]:
-    """decide() for each of `requests` ({"text", "context"?}), with the same replies, made phase by phase so
-    CLM encodes each phase's texts in one batched pass. The tools run in the order of the requests."""
+    """decide() for each of `requests` ({"text", "context"?}), made phase by phase so CLM encodes each phase's texts
+    in one batched pass. Every request's informing and options tools run before any acting tool, so they see the
+    state from before the batch's actions; the acting tools then run in the order of the requests. With tools that
+    keep no state between requests, the replies are decide()'s."""
     if not requests:
         return []
     tracing.add("decisions", len(requests))

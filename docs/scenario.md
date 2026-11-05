@@ -16,8 +16,11 @@ When an agent calls `decide` with the text of a request:
 4. The acting tools whose conditions hold run, unless the route is uncertain.
 5. The reply goes back to the agent.
 
-`decide_many` does this for many requests: CLM reads each step's texts in one batched pass, and tools run in request
-order.
+`decide_many` does this for many requests: CLM reads each step's texts in one batched pass. Every request's informing
+tools run before any acting tool, so they see the state from before the batch's actions; the acting tools then run in
+request order. When an acting tool changes what an informing tool reads, such as seats held for an earlier request, a
+later request can be offered what is already taken, so its acting tool should fail cleanly (as `hold_seats` does).
+Use `decide` when requests contend for the same thing.
 
 ## Routes
 
