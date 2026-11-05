@@ -3,6 +3,8 @@
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import html
 import json
+import re
+import shlex
 from pathlib import Path
 
 import pytest
@@ -36,13 +38,38 @@ def test_a_wrong_key_is_refused(client):
 
 
 def test_a_signed_in_session_has_a_strict_http_only_cookie_and_can_sign_out(client):
-    response = client.post("/sign-in", data={"key": KEY, "name": "Kevin"}, headers={"Origin": ORIGIN})
+    response = client.post("/sign-in", data={"key": KEY, "name": "Kevin"}, headers={"Origin": ORIGIN},
+                           follow_redirects=False)
     cookie = response.headers["set-cookie"].lower()
     assert "httponly" in cookie and "samesite=strict" in cookie and "path=/" in cookie
-    token = csrf_of(response.text)
-    assert "Kevin" in client.get("/").text
+    page = client.get("/").text
+    token = csrf_of(page)
+    assert "Kevin" in page
     post(client, "/sign-out", token)
     assert client.get("/", follow_redirects=False).status_code == 303
+
+
+def test_a_sign_in_redirects_to_configuration_so_a_reload_does_not_send_the_key_again(client, portal):
+    portal.sessions["expired"] = web.Session("Old", "token", 0)
+    response = client.post("/sign-in", data={"key": KEY, "name": "Kevin"}, headers={"Origin": ORIGIN},
+                           follow_redirects=False)
+    assert response.status_code == 303 and response.headers["location"] == "/"
+    assert "set-cookie" in response.headers and len(portal.sessions) == 1
+    assert "Signed in as Kevin" in client.get("/").text
+
+
+def test_a_sign_in_larger_than_its_form_is_refused_before_it_is_read(client):
+    response = client.post("/sign-in", data={"key": KEY, "name": "x" * 20_000}, headers={"Origin": ORIGIN},
+                           follow_redirects=False)
+    assert response.status_code == 413 and "set-cookie" not in response.headers
+    assert client.get("/", follow_redirects=False).status_code == 303
+
+
+def test_a_form_field_too_large_to_read_is_refused_with_a_message(client):
+    token = sign_in(client)
+    response = client.post("/review/decisions/carryover_limit/correct", data={"csrf": token},
+                           files={"dmn": (None, b"x" * (1024 * 1024 + 10))}, headers={"Origin": ORIGIN})
+    assert response.status_code == 400 and "The form could not be read" in response.text
 
 
 def test_a_post_without_the_csrf_token_is_refused(client):
@@ -81,8 +108,8 @@ def test_a_public_origin_behind_a_tls_proxy_is_allowed_only_when_named(portal, m
         assert client.post("/sign-in", data=form, headers=rewritten).status_code == 403
     with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400, public=PUBLIC),
                     base_url=ORIGIN) as client:
-        assert client.post("/sign-in", data=form, headers=proxied).status_code == 200
-        assert client.post("/sign-in", data=form, headers=rewritten).status_code == 200
+        assert client.post("/sign-in", data=form, headers=proxied, follow_redirects=False).status_code == 303
+        assert client.post("/sign-in", data=form, headers=rewritten, follow_redirects=False).status_code == 303
         assert client.post("/sign-in", data=form, headers={"Origin": "https://evil.example",
                                                           "Host": "portal.example"}).status_code == 403
         assert client.get("/sign-in", headers={"Host": "evil.example"}).status_code == 400
@@ -92,17 +119,18 @@ def test_behind_https_the_cookie_is_secure_and_only_the_exact_origin_is_accepted
     monkeypatch.setattr(web, "WRONG_KEY_WAIT", 0.01)
     form = {"key": KEY, "name": "Kevin"}
     with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400, public=PUBLIC), base_url=ORIGIN) as client:
-        response = client.post("/sign-in", data=form, headers={"Origin": PUBLIC, "Host": "portal.example"})
+        response = client.post("/sign-in", data=form, headers={"Origin": PUBLIC, "Host": "portal.example"},
+                               follow_redirects=False)
         assert "secure" in response.headers["set-cookie"].lower()
         assert client.post("/sign-in", data=form, headers={"Origin": "http://portal.example",
                                                           "Host": "portal.example"}).status_code == 403
     with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400), base_url=ORIGIN) as client:
-        assert "secure" not in client.post("/sign-in", data=form, headers={"Origin": ORIGIN}).headers[
-            "set-cookie"].lower()
+        assert "secure" not in client.post("/sign-in", data=form, headers={"Origin": ORIGIN},
+                                           follow_redirects=False).headers["set-cookie"].lower()
     with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400, public="http://10.0.0.5:8080"),
                     base_url=ORIGIN) as client:
-        assert "secure" not in client.post("/sign-in", data=form, headers={"Origin": ORIGIN}).headers[
-            "set-cookie"].lower()
+        assert "secure" not in client.post("/sign-in", data=form, headers={"Origin": ORIGIN},
+                                           follow_redirects=False).headers["set-cookie"].lower()
 
 
 @pytest.mark.parametrize("given, kept",[("https://portal.example/", PUBLIC), ("HTTPS://Portal.Example:443", PUBLIC),
@@ -182,6 +210,14 @@ def test_configuration_shows_every_rule_and_graph_row_and_points_to_the_inspecto
     assert f"npx -y @modelcontextprotocol/inspector@2.13.0 uv run clm-server {environment}" in page
     assert "Resource templates" not in page and "document_handbook" not in page
     assert "/passage?collection=handbook&amp;id=hb-leave&amp;passage=%282%29" in page
+
+
+def test_the_inspector_command_quotes_a_path_with_a_space():
+    environment = Path("/Users/someone/My Envs/handbook/environment.toml")
+    found = {"description": "", "errors": [], "rules": [], "information": [], "collections": [],
+             "graph": {"note": None, "nodes": None, "edges": None}}
+    command = re.search(r"<pre>(npx [^<]*)</pre>", web.configuration_body(found, environment)).group(1)
+    assert shlex.split(html.unescape(command))[-1] == str(environment)
 
 
 def test_supplied_and_derived_rules_are_labelled_with_origin_and_status(client):

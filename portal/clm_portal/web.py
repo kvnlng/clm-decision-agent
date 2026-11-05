@@ -14,15 +14,18 @@ import json
 import os
 import re
 import secrets
+import shlex
 import time
 import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import anyio.to_thread
 import httpx
 from starlette.applications import Starlette
 from starlette.datastructures import UploadFile
+from starlette.formparsers import MultiPartException
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
@@ -35,6 +38,7 @@ COOKIE = "clm_portal_session"
 SESSION_SECONDS = 12 * 60 * 60
 WRONG_KEY_WAIT = 0.5
 MAX_BODY = 200 * 1024 * 1024
+SIGN_IN_MAX_BODY = 16 * 1024    # a key and a name; read before the key is checked, so kept small
 STATIC = Path(__file__).parent / "static"
 INSPECTOR = "@modelcontextprotocol/inspector@2.13.0"
 OPEN_PATHS = ("/sign-in",)
@@ -42,15 +46,18 @@ OPERATOR_NOTE = ("The portal restarts its own server after every change. The ser
                  "start: its operator restarts it, or redeploys from git, to pick up approved changes.")
 TESTING_BANNER = "Testing: unapproved derived rules are deciding."
 BACKENDS = ("openai", "claude")
+STILL_ASKING = "A question is still being answered; reload Ask to see its answer, then try again."
 
 
 @dataclass
 class Session:
-    """A signed-in person: the name they gave, the token every form carries, and their conversation."""
+    """A signed-in person: the name they gave, the token every form carries, and their conversation, which
+    `asking` guards while a question is answered."""
     name: str
     csrf: str
     expires: float
     ask: dict = field(default_factory=dict)
+    asking: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
 
 class Portal:  # pylint: disable=too-few-public-methods
@@ -194,7 +201,7 @@ def configuration_body(found: dict, environment: Path) -> str:
         parts.append(f'<section class="errors"><h2>Load errors</h2><ul>{items}</ul></section>')
     parts.append('<h2>Tools, resources and prompts</h2><p>The MCP Inspector shows what this server offers and calls '
                  'one tool at a time (docs/getting-started.md, "Looking inside the server"):</p>'
-                 f'<pre>npx -y {INSPECTOR} uv run clm-server {esc(str(environment))}</pre>')
+                 f'<pre>npx -y {INSPECTOR} uv run clm-server {esc(shlex.quote(str(environment)))}</pre>')
     parts.append("<h2>Rules</h2>" + ("".join(_rule(rule) for rule in found["rules"]) or "<p>No rules.</p>"))
     if found["information"]:
         parts.append("<h2>Information</h2>" + table(
@@ -458,11 +465,37 @@ def make_model(backend: str, model: str | None, url: str | None, http: httpx.Asy
     return chat.OpenAIModel(http, model or chat.STARTER_MODEL, url or chat.OLLAMA_V1, key)
 
 
-def _ask_settings(portal: Portal, form) -> tuple[str, str, str]:
-    backend = str(form.get("backend") or portal.options.get("backend") or "openai")
+class _OwnErrors:  # pylint: disable=too-few-public-methods
+    """A model whose every failure in a turn is a ClientError, so the chat shows it as the model's error and takes
+    the question back out, rather than `answering()` calling it the server not answering."""
+
+    def __init__(self, model):
+        self.model = model
+
+    def __getattr__(self, name: str):
+        return getattr(self.model, name)
+
+    async def turn(self, messages: list[dict], tools: list[dict]):
+        """The model's turn; any failure but a ClientError becomes one."""
+        try:
+            return await self.model.turn(messages, tools)
+        except chat.ClientError:
+            raise
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            raise chat.ClientError(f"the model failed: {error or type(error).__name__}") from error
+
+
+def _ask_settings(portal: Portal, form, before: tuple | None = None) -> tuple[str, str, str]:
+    """The backend, model and URL a question goes to. The started --model is the default only for the started
+    --backend, and a model name the page kept from the `before` settings is dropped when the backend changes."""
+    started = portal.options.get("backend") or "openai"
+    backend = str(form.get("backend") or started)
     if backend not in BACKENDS:
         backend = "openai"
-    model = str(form.get("model") or "").strip() or portal.options.get("model") or ""
+    model = str(form.get("model") or "").strip()
+    if before and before[0] != backend and model == before[1]:
+        model = ""
+    model = model or (portal.options.get("model") if backend == started else "") or ""
     url = str(form.get("model_url") or "").strip() or portal.options.get("model_url") or ""
     return backend, model, url
 
@@ -518,7 +551,7 @@ def has_derived(portal: Portal) -> bool:
         return False
 
 
-async def ask_page(request: Request) -> Response:  # pylint: disable=too-many-locals
+async def ask_page(request: Request) -> Response:
     """GET and POST /ask: the chat, one question at a time, kept per session. Tools named for a dry run must be the
     server's, or nothing is sent; the dry-run names and full results are kept for the next question."""
     portal, session = request.app.state.portal, request.state.session
@@ -531,7 +564,17 @@ async def ask_page(request: Request) -> Response:  # pylint: disable=too-many-lo
     if not portal.server.running:
         return page(portal, session, "Ask", ask_body(portal, session, "The portal's server is not running: "
                                                      f"{portal.server.error or 'see Configuration'}"), status=409)
-    settings = _ask_settings(portal, form)
+    # Refused rather than queued, as changing() does: a queued double-click would run the same tools twice
+    if session.asking.locked():
+        return page(portal, session, "Ask", ask_body(portal, session, STILL_ASKING, question), status=409)
+    async with session.asking:
+        return await _ask(portal, session, form, question)
+
+
+async def _ask(portal: Portal, session: Session, form, question: str) -> Response:  # pylint: disable=too-many-locals
+    """One question answered into the session's conversation, while it holds `session.asking`."""
+    # With no conversation yet, the page showed the defaults, so a model name kept from them is judged the same way
+    settings = _ask_settings(portal, form, session.ask.get("settings") or _ask_settings(portal, {}))
     if session.ask.get("settings") != settings:
         session.ask = {"settings": settings, "messages": None, "turns": []}
     lines: list[str] = []
@@ -546,7 +589,7 @@ async def ask_page(request: Request) -> Response:  # pylint: disable=too-many-lo
     unknown: list[str] = []
     try:
         async with httpx.AsyncClient() as http:
-            model = portal.make_model(*settings, http)
+            model = _OwnErrors(portal.make_model(*settings, http))
             if session.ask["messages"] is None:
                 session.ask["messages"] = model.start()
                 mark = len(session.ask["messages"])
@@ -573,8 +616,11 @@ async def ask_page(request: Request) -> Response:  # pylint: disable=too-many-lo
 
 
 async def ask_clear(request: Request) -> Response:
-    """POST /ask/clear: start a new conversation."""
-    request.state.session.ask = {}
+    """POST /ask/clear: start a new conversation, unless a question is still being answered."""
+    portal, session = request.app.state.portal, request.state.session
+    if session.asking.locked():
+        return page(portal, session, "Ask", ask_body(portal, session, STILL_ASKING), status=409)
+    session.ask = {}
     return RedirectResponse("/ask", status_code=303)
 
 
@@ -671,6 +717,39 @@ async def _start(request: Request, name: str, argv: list[str], prepare=None) -> 
     return await documents_page(request, f"Started {name}.")
 
 
+def save_aside(partial: Path, content: bytes) -> None:
+    """An upload written to a hidden .partial file of its own beside where it goes, so a failed write leaves the
+    file it would replace as it was."""
+    with partial.open("xb") as file:
+        file.write(content)
+
+
+async def _load_upload(request: Request, collection: str, upload: UploadFile, overwrite: bool) -> Response:
+    """Save an upload in the environment's folder and load the collection from it."""
+    portal = request.app.state.portal
+    name = safe_name(upload.filename)
+    if name is None:
+        return await documents_page(request, "only a .jsonl file can be uploaded", 400)
+    folder = portal.environment.parent
+    target = folder / name
+    if target.exists() and not overwrite:
+        return await documents_page(request, f"{name} is already in the folder; tick overwrite to replace it", 409)
+    content = await upload.read()
+    # Named here, so whatever ends the request, even mid-write, the finally removes it
+    partial = folder / f".{name}.{secrets.token_hex(4)}.partial"
+    try:
+        try:    # off the event loop, so a large upload stops no other page while it is written
+            await anyio.to_thread.run_sync(save_aside, partial, content)
+        except OSError as error:
+            return await documents_page(request, f"the file cannot be saved: {error}", 500)
+        # the rename, once the job holds the lock, replaces the file in one step
+        return await _start(request, f"clm-load-documents {collection}",
+                            ["clm-load-documents", str(portal.environment), collection, str(target)],
+                            lambda: os.replace(partial, target))
+    finally:
+        partial.unlink(missing_ok=True)
+
+
 async def documents_load(request: Request) -> Response:
     """POST /documents/load: clm-load-documents ENVIRONMENT COLLECTION FILE, from a file in the folder or an
     upload saved there."""
@@ -681,24 +760,12 @@ async def documents_load(request: Request) -> Response:
         return await documents_page(request, f"no collection {collection!r}", 400)
     upload = form.get("upload")
     if isinstance(upload, UploadFile) and upload.filename:
-        name = safe_name(upload.filename)
-        if name is None:
-            return await documents_page(request, "only a .jsonl file can be uploaded", 400)
-        target = folder / name
-        if target.exists() and not form.get("overwrite"):
-            return await documents_page(request, f"{name} is already in the folder; tick overwrite to replace it",
-                                        409)
-        content = await upload.read()
-
-        def prepare() -> None:
-            target.write_bytes(content)
-    else:
-        name = str(form.get("file", ""))
-        if name not in jsonl_files(portal):
-            return await documents_page(request, "choose a .jsonl file in the folder, or upload one", 400)
-        target, prepare = folder / name, None
+        return await _load_upload(request, collection, upload, bool(form.get("overwrite")))
+    name = str(form.get("file", ""))
+    if name not in jsonl_files(portal):
+        return await documents_page(request, "choose a .jsonl file in the folder, or upload one", 400)
     return await _start(request, f"clm-load-documents {collection}",
-                        ["clm-load-documents", str(portal.environment), collection, str(target)], prepare)
+                        ["clm-load-documents", str(portal.environment), collection, str(folder / name)])
 
 
 async def documents_derive(request: Request) -> Response:
@@ -734,7 +801,7 @@ def sign_in_page(portal: Portal, message: str = "", status: int = 200) -> HTMLRe
 
 
 async def sign_in(request: Request) -> Response:
-    """GET and POST /sign-in."""
+    """GET and POST /sign-in; signing in also drops the sessions that have expired."""
     portal = request.app.state.portal
     if request.method == "GET":
         return sign_in_page(portal)
@@ -745,11 +812,12 @@ async def sign_in(request: Request) -> Response:
         return sign_in_page(portal, "Wrong key.", 401)
     if not name:
         return sign_in_page(portal, "Give your name: it is recorded with every change you make.", 400)
+    now = time.time()
+    portal.sessions = {found: held for found, held in portal.sessions.items() if held.expires >= now}
     ident = secrets.token_urlsafe(32)
-    session = Session(name, secrets.token_urlsafe(32), time.time() + SESSION_SECONDS)
-    portal.sessions[ident] = session
-    request.state.session = session
-    response = await configuration_page(request)
+    portal.sessions[ident] = Session(name, secrets.token_urlsafe(32), now + SESSION_SECONDS)
+    # A redirect, so reloading the page that follows does not post the key again
+    response = RedirectResponse("/", status_code=303)
     response.set_cookie(COOKIE, ident, max_age=SESSION_SECONDS, path="/", httponly=True, samesite="strict",
                         secure=request.app.state.secure)
     return response
@@ -775,7 +843,7 @@ def _replay(body: bytes):
     return receive
 
 
-async def _body(receive) -> bytes | None:
+async def _body(receive, limit: int = MAX_BODY) -> bytes | None:
     chunks, size = [], 0
     while True:
         message = await receive()
@@ -783,7 +851,7 @@ async def _body(receive) -> bytes | None:
             return None
         chunk = message.get("body", b"")
         size += len(chunk)
-        if size > MAX_BODY:
+        if size > limit:
             return None
         chunks.append(chunk)
         if not message.get("more_body"):
@@ -797,7 +865,7 @@ class Guard:  # pylint: disable=too-few-public-methods
     def __init__(self, app, portal: Portal, hosts: set[str], public: str | None = None):
         self.app, self.portal, self.hosts, self.public = app, portal, hosts, public
 
-    async def __call__(self, scope, receive, send):  # pylint: disable=too-many-return-statements
+    async def __call__(self, scope, receive, send):  # pylint: disable=too-many-return-statements,too-many-locals
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -816,6 +884,12 @@ class Guard:  # pylint: disable=too-few-public-methods
             return
         path = scope["path"]
         if path in OPEN_PATHS or path.startswith("/static/"):
+            if post:
+                body = await _body(receive, SIGN_IN_MAX_BODY)
+                if body is None:
+                    await PlainTextResponse("The request was too large or did not arrive.", 413)(scope, receive, send)
+                    return
+                receive = _replay(body)
             await self.app(scope, receive, send)
             return
         session = self.portal.session(request.cookies.get(COOKIE))
@@ -828,7 +902,11 @@ class Guard:  # pylint: disable=too-few-public-methods
             if body is None:
                 await PlainTextResponse("The request was too large or did not arrive.", 413)(scope, receive, send)
                 return
-            form = await Request(scope, _replay(body)).form()
+            try:
+                form = await Request(scope, _replay(body)).form()
+            except MultiPartException as error:     # Starlette answers this itself only inside the app
+                await PlainTextResponse(f"The form could not be read: {error.message}", 400)(scope, receive, send)
+                return
             token = str(form.get("csrf", ""))
             if not hmac.compare_digest(token.encode(), session.csrf.encode()):
                 await PlainTextResponse("Refused: the form's token is missing or wrong; reload the page.", 403)(

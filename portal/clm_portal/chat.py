@@ -103,8 +103,11 @@ class OpenAIModel:
             raise ClientError(f"no model {self.model} at {self.url}; with Ollama, run `ollama pull {self.model}`")
         if response.status_code != 200:
             raise ClientError(f"the model at {self.url} answered {response.status_code}: {response.text[:200]}")
-        choice = response.json()["choices"][0]
-        message = choice.get("message") or {}
+        try:
+            choice = response.json()["choices"][0]
+            message = choice.get("message") or {}
+        except (ValueError, LookupError, TypeError, AttributeError) as error:
+            raise ClientError(f"the model at {self.url} did not give a chat reply: {response.text[:200]}") from error
         raw = message.get("tool_calls") or []
         kept = {"role": "assistant", "content": message.get("content") or ""}
         if raw:
@@ -149,10 +152,13 @@ class ClaudeModel:
                 for tool in listed]
 
     async def turn(self, messages: list[dict], tools: list[dict]) -> Turn:
-        """One streamed reply."""
-        async with self.client.messages.stream(model=self.model, max_tokens=16000, system=SYSTEM, tools=tools,
-                                               thinking={"type": "adaptive"}, messages=messages) as stream:
-            reply = await stream.get_final_message()
+        """One streamed reply. Any failure, such as a bad or missing key or an unknown model, is a ClientError."""
+        try:
+            async with self.client.messages.stream(model=self.model, max_tokens=16000, system=SYSTEM, tools=tools,
+                                                   thinking={"type": "adaptive"}, messages=messages) as stream:
+                reply = await stream.get_final_message()
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            raise ClientError(f"Claude failed: {error or type(error).__name__}") from error
         text = "\n".join(block.text for block in reply.content if block.type == "text").strip()
         calls = [Call(block.id, block.name, dict(block.input or {})) for block in reply.content
                  if block.type == "tool_use"]
