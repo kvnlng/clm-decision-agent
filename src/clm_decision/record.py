@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import json
 import os
 import sys
@@ -110,16 +112,30 @@ def _is_token(line: bytes) -> bool:
     return line.strip().startswith(b"gAAAA")        # how every Fernet token begins
 
 
+def _whole_token(line: bytes) -> bool:
+    """Whether the line has a whole Fernet token's shape, so a line cut off part way is not one."""
+    try:
+        size = len(base64.urlsafe_b64decode(line.strip()))
+    except (binascii.Error, ValueError):
+        return False
+    # Version, time and IV (25 bytes), ciphertext in 16-byte blocks, and a 32-byte HMAC
+    return size >= 73 and (size - 57) % 16 == 0
+
+
 def locked_lines(path: Path, key: bytes | None) -> int:
     """How many lines are encrypted with a key other than this one (or with a key when there is none).
 
-    Writing to such a record would leave a file that no single key can read."""
+    Writing to such a record would leave a file that no single key can read. A damaged line is not counted:
+    load_records skips it."""
     locked = 0
     for line in _lines(path):
-        if _is_token(line):
+        if _is_token(line) and _whole_token(line):
+            if key is None:
+                locked += 1
+                continue
             try:
-                _decode(line, key)
-            except ValueError:
+                Fernet(key).decrypt(line.strip())
+            except InvalidToken:
                 locked += 1
     return locked
 

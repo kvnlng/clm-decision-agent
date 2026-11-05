@@ -7,6 +7,7 @@ import json
 import stat
 
 import pytest
+from cryptography.fernet import Fernet
 from conftest import BASE_TOML
 
 from clm_decision.record import (append_record, check_record, load_records, locked_lines, new_key, record_key,
@@ -169,6 +170,17 @@ def test_lines_under_another_key_are_counted_separately_from_damage(tmp_path):
     assert locked_lines(path, key) == 1
     assert locked_lines(path, None) == 2
     assert locked_lines(tmp_path / "none.jsonl", key) == 0
+
+
+def test_a_damaged_line_under_the_right_key_is_not_counted_as_under_another_key(tmp_path):
+    path, key = tmp_path / "r.jsonl", new_key()
+    append_record(path, route_record("User: a", "Billing", "Tech"), key=key)
+    good = path.read_bytes().strip()
+    with open(path, "ab") as file:
+        file.write(good[:len(good) // 2] + b"\n")                   # cut off mid-append
+        file.write(Fernet(key).encrypt(b"{not json") + b"\n")       # the right key, bad JSON
+    assert locked_lines(path, key) == 0
+    assert load_records(path, key)[1] == 2
 
 
 def test_purge_refuses_anything_that_is_not_a_record_file(write_scenario, tmp_path, capsys):
