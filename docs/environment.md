@@ -131,6 +131,12 @@ ORDER BY s.id"""
 - each edge becomes a relationship typed by the relation in capitals, carrying the edge's other columns;
 - `Node.id` is made unique.
 
+Two kinds that would become one label, such as `site` and `Site`, or two relations that would become one type, stop
+the load, since the built-in graph keeps them apart.
+
+The delete and the copy are one transaction, so a load that fails leaves the graph that was there. A very large graph
+may need a higher `db.memory.transaction.max`.
+
 ```bash
 brew install neo4j                        # natively; it brings Java 21
 neo4j-admin dbms set-initial-password "$NEO4J_PASSWORD"      # before the first start
@@ -173,7 +179,9 @@ filters = { state = "string", court_level = "string", year = "integer", decided 
 - **Passages** are found by meaning (pgvector) and by words (PostgreSQL full-text search), the two rankings combined.
   Each comes with its document id, citation, title, metadata, passage label and score.
 - **The server connects at start-up.** An unreachable database, or one without the `vector` extension, stops it with
-  one line. The driver is the `documents` extra: `pip install 'clm-decision-agent[documents]'`.
+  one line, as does a role that cannot create the four tables. A connection lost later, when PostgreSQL restarts or
+  the machine sleeps, is opened again on the next call. The driver is the `documents` extra:
+  `pip install 'clm-decision-agent[documents]'`.
 
 `clm-load-documents` loads a collection from JSON lines, **replacing what it holds**:
 

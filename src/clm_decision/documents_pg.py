@@ -8,6 +8,7 @@ document). load_documents.py fills them.
 from __future__ import annotations
 
 import json
+import threading
 
 from .scenario import ScenarioError, StepError
 
@@ -48,9 +49,19 @@ def connect_postgres(settings, password: str) -> PostgresStore:
     except ImportError as error:
         raise ScenarioError(_NO_DRIVER) from error
     where = f"{settings.host}:{settings.port}/{settings.database}"
+    options = {"host": settings.host, "port": settings.port, "dbname": settings.database, "user": settings.user,
+               "password": password, "connect_timeout": 5, "autocommit": True}
+
+    def reconnect():
+        fresh = psycopg.connect(**options)
+        try:
+            register_vector(fresh)
+        except psycopg.Error:
+            fresh.close()
+            raise
+        return fresh
     try:
-        connection = psycopg.connect(host=settings.host, port=settings.port, dbname=settings.database,
-                                     user=settings.user, password=password, connect_timeout=5, autocommit=True)
+        connection = psycopg.connect(**options)
     except psycopg.Error as error:
         raise ScenarioError(f"documents: cannot connect to {where}: {_first_line(error)}") from error
     try:
@@ -59,9 +70,13 @@ def connect_postgres(settings, password: str) -> PostgresStore:
         connection.close()
         raise ScenarioError(f"documents: {where} has no vector extension (brew install pgvector): "
                             f"{_first_line(error)}") from error
-    register_vector(connection)
-    connection.execute(SCHEMA)
-    return PostgresStore(connection, where)
+    try:
+        register_vector(connection)
+        connection.execute(SCHEMA)
+    except psycopg.Error as error:
+        connection.close()
+        raise ScenarioError(f"documents: {where}: cannot prepare the tables: {_first_line(error)}") from error
+    return PostgresStore(connection, where, reconnect)
 
 
 def _filter_sql(filters: dict) -> tuple[str, list]:
@@ -85,42 +100,74 @@ def _filter_sql(filters: dict) -> tuple[str, list]:
 
 
 class PostgresStore:
-    """A DocumentStore on one PostgreSQL connection."""
+    """A DocumentStore on one PostgreSQL connection, opened again through `reconnect` when it is lost."""
 
-    def __init__(self, connection, where: str):
-        self.connection, self.where = connection, where
+    def __init__(self, connection, where: str, reconnect=None):
+        self.connection, self.where, self.reconnect = connection, where, reconnect
+        self._swap = threading.Lock()
+
+    def _lost(self) -> bool:
+        return self.reconnect is not None and (self.connection.closed or self.connection.broken)
+
+    def _connection(self):
+        """The connection, opened again first when a restart, a sleep or a timeout has lost it. One thread opens it
+        and closes the lost one; the others wait and use the new one."""
+        if self._lost():
+            with self._swap:
+                if self._lost():
+                    lost = self.connection
+                    self.connection = self.reconnect()
+                    lost.close()
+        return self.connection
 
     def _rows(self, sql: str, params) -> list[tuple]:
         import psycopg  # pylint: disable=import-outside-toplevel
         try:
-            return self.connection.execute(sql, params).fetchall()
+            # A database still down fails here, once, rather than being tried again below
+            connection = self._connection()
+            try:
+                return connection.execute(sql, params).fetchall()
+            except psycopg.OperationalError:
+                if self.reconnect is None or not (connection.closed or connection.broken):
+                    raise
+                # Lost while idle: these are reads, so run the statement once more on a new connection
+                return self._connection().execute(sql, params).fetchall()
         except psycopg.Error as error:
             raise StepError(f"documents at {self.where}: {_first_line(error)}") from error
 
     def replace(self, collection: str, documents: list[dict], vectors: list[list[list[float]]], built: dict) -> None:
-        """Replace the collection with these documents, one vector per passage, in one transaction."""
+        """Replace the collection with these documents, one vector per passage, in one transaction; raises StepError
+        in one line when the database refuses them, having rolled back."""
+        import psycopg  # pylint: disable=import-outside-toplevel
+        try:
+            # Opened again before the transaction if it was lost, never part of the way through it
+            with self._connection().transaction():
+                self._write(collection, documents, vectors, built)
+        except psycopg.Error as error:
+            raise StepError(f"documents at {self.where}: {_first_line(error)}") from error
+
+    def _write(self, collection: str, documents: list[dict], vectors: list[list[list[float]]], built: dict) -> None:
         import numpy  # pylint: disable=import-outside-toplevel
-        with self.connection.transaction():
-            for table, column in (("citations", "collection"), ("passages", "collection"),
-                                  ("documents", "collection"), ("collections", "name")):
-                self.connection.execute(f"DELETE FROM {table} WHERE {column} = %s", (collection,))
-            with self.connection.cursor() as cursor:
-                for document, document_vectors in zip(documents, vectors):
-                    cursor.execute("INSERT INTO documents VALUES (%s, %s, %s, %s, %s)",
-                                   (collection, document["id"], document["citation"], document["title"],
-                                    json.dumps(document["metadata"])))
-                    cursor.executemany(
-                        "INSERT INTO passages VALUES (%s, %s, %s, %s, %s, to_tsvector('english', %s), %s)",
-                        [(collection, document["id"], n, passage["label"], passage["text"], passage["text"],
-                          numpy.array(vector, dtype=numpy.float32))
-                         for n, (passage, vector) in enumerate(zip(document["passages"], document_vectors))])
-                    cursor.executemany("INSERT INTO citations VALUES (%s, %s, %s, %s)",
-                                       [(collection, document["id"], cite.get("passage"), cite["id"])
-                                        for cite in document.get("cites", [])])
-            self.connection.execute(
-                "INSERT INTO collections VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (collection, built["built_at"], built["source"], built["model"], built["dimensions"],
-                 len(documents), sum(len(document["passages"]) for document in documents)))
+        for table, column in (("citations", "collection"), ("passages", "collection"),
+                              ("documents", "collection"), ("collections", "name")):
+            self.connection.execute(f"DELETE FROM {table} WHERE {column} = %s", (collection,))
+        with self.connection.cursor() as cursor:
+            for document, document_vectors in zip(documents, vectors):
+                cursor.execute("INSERT INTO documents VALUES (%s, %s, %s, %s, %s)",
+                               (collection, document["id"], document["citation"], document["title"],
+                                json.dumps(document["metadata"])))
+                cursor.executemany(
+                    "INSERT INTO passages VALUES (%s, %s, %s, %s, %s, to_tsvector('english', %s), %s)",
+                    [(collection, document["id"], n, passage["label"], passage["text"], passage["text"],
+                      numpy.array(vector, dtype=numpy.float32))
+                     for n, (passage, vector) in enumerate(zip(document["passages"], document_vectors))])
+                cursor.executemany("INSERT INTO citations VALUES (%s, %s, %s, %s)",
+                                   [(collection, document["id"], cite.get("passage"), cite["id"])
+                                    for cite in document.get("cites", [])])
+        self.connection.execute(
+            "INSERT INTO collections VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (collection, built["built_at"], built["source"], built["model"], built["dimensions"],
+             len(documents), sum(len(document["passages"]) for document in documents)))
 
     def built(self, collection: str) -> dict | None:
         """When and from what the collection was built, with its counts; None when it holds nothing."""
@@ -172,8 +219,10 @@ class PostgresStore:
         """Breadth first, one query a step, each document once at its nearest depth: a walk of paths would grow with
         every path between two documents."""
         near, far = ("source", "target") if forward else ("target", "source")
+        # The citing passage is the source's: a cited_by row names the source, a cites row does not
+        citing = "NULL::text" if forward else "c.source_passage"
         sql = f"""
-            SELECT DISTINCT ON (c.{far}) c.{far}, d.citation, c.source_passage
+            SELECT DISTINCT ON (c.{far}) c.{far}, d.citation, {citing}
             FROM citations c LEFT JOIN documents d ON d.collection = c.collection AND d.id = c.{far}
             WHERE c.collection = %s AND c.{near} = ANY(%s) AND NOT c.{far} = ANY(%s)
             ORDER BY c.{far}, c.source_passage"""

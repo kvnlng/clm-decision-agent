@@ -170,19 +170,20 @@ def connect(settings: DocumentSettings) -> DocumentStore:
 
 
 class OllamaEmbedder:  # pylint: disable=too-few-public-methods
-    """Embeds through Ollama's /api/embed, so text never leaves the machine."""
+    """Embeds through Ollama's /api/embed, so text never leaves the machine.
 
-    def __init__(self, url: str, http=None):
-        self.url, self.http = url.rstrip("/"), http
+    One client, made on the first call, serves every call. Its timeout of 60 seconds covers a search's query, and
+    Ollama loading the model on first use; clm-load-documents gives its batches longer."""
+
+    def __init__(self, url: str, http=None, timeout: float = 60):
+        self.url, self.http, self.timeout = url.rstrip("/"), http, timeout
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
         """One vector per text; raises StepError in one line when Ollama cannot embed them."""
+        if self.http is None:
+            self.http = httpx.Client(timeout=self.timeout)
         try:
-            if self.http is None:
-                with httpx.Client(timeout=600) as http:
-                    response = http.post(f"{self.url}/api/embed", json={"model": model, "input": texts})
-            else:
-                response = self.http.post(f"{self.url}/api/embed", json={"model": model, "input": texts})
+            response = self.http.post(f"{self.url}/api/embed", json={"model": model, "input": texts})
             response.raise_for_status()
             vectors = response.json()["embeddings"]
         except (httpx.HTTPError, KeyError, ValueError) as error:

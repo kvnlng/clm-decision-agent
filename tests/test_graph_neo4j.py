@@ -45,10 +45,35 @@ class FakeSession:
             raise RuntimeError("Neo.ClientError.Statement.SyntaxError: bad query")
         return [type("Record", (), {"data": lambda self, row=row: row})() for row in self.driver.rows]
 
+    def begin_transaction(self):
+        return FakeTransaction(self.driver)
+
+
+class FakeTransaction:
+    """Statements it runs count only once committed; leaving it without a commit rolls them back."""
+    def __init__(self, driver):
+        self.driver = driver
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def run(self, cypher, parameters=None):
+        if len(self.driver.pending) == self.driver.fail_in_transaction:
+            raise RuntimeError("Neo.TransientError.General.MemoryPoolOutOfMemoryError: out of memory")
+        self.driver.pending.append(cypher)
+        self.driver.ran.append((cypher, parameters or {}))
+
+    def commit(self):
+        self.driver.committed += self.driver.pending
+
 
 class FakeDriver:
-    def __init__(self, rows=(), fail=False):
+    def __init__(self, rows=(), fail=False, fail_in_transaction=None):
         self.rows, self.fail, self.ran, self.databases = list(rows), fail, [], []
+        self.fail_in_transaction, self.pending, self.committed = fail_in_transaction, [], []
 
     def session(self, database=None):
         self.databases.append(database)
@@ -94,7 +119,9 @@ def test_load_graph_writes_nodes_and_edges():
     counts = load_graph.load(env.graph, driver, "neo4j")
     assert counts == {"nodes": 20, "edges": 24}
     statements = [cypher for cypher, _ in driver.ran]
-    assert statements[0] == "MATCH (n) DETACH DELETE n" and "REQUIRE n.id IS UNIQUE" in statements[1]
+    # The constraint is a schema change, which Neo4j will not run in the transaction that replaces the data
+    assert "REQUIRE n.id IS UNIQUE" in statements[0] and statements[1] == "MATCH (n) DETACH DELETE n"
+    assert driver.committed == statements[1:]
     providers = next(parameters for cypher, parameters in driver.ran if ":Node:Provider" in cypher)
     assert {row["name"] for row in providers["rows"]} >= {"Kestrel Polymers"}
     depends = next(parameters for cypher, parameters in driver.ran if ":DEPENDS_ON]" in cypher)
@@ -108,6 +135,29 @@ def test_a_kind_that_cannot_be_a_label_is_refused(tmp_path):
     (tmp_path / "edges.csv").write_text("source,relation,target\n", encoding="utf-8")
     from clm_decision.graph import Graph  # pylint: disable=import-outside-toplevel
     with pytest.raises(ValueError, match="kind 'bad kind!' cannot be a Neo4j label"):
+        load_graph.load(Graph.from_csv(tmp_path / "nodes.csv", tmp_path / "edges.csv"), FakeDriver(), "neo4j")
+
+
+def test_a_load_that_fails_partway_changes_nothing():
+    """The delete and every batch are one transaction, so a failure leaves the graph that was there."""
+    driver = FakeDriver(fail_in_transaction=3)
+    with pytest.raises(RuntimeError, match="out of memory"):
+        load_graph.load(load_environment(EXAMPLE).graph, driver, "neo4j")
+    assert len(driver.pending) == 3 and not driver.committed
+
+
+def test_kinds_or_relations_differing_only_in_case_are_refused(tmp_path):
+    """Neo4j would merge them into one label or type, where the built-in graph keeps them apart."""
+    from clm_decision.graph import Graph  # pylint: disable=import-outside-toplevel
+    (tmp_path / "nodes.csv").write_text("id,kind,name\nA,site,A\nB,Site,B\n", encoding="utf-8")
+    (tmp_path / "edges.csv").write_text("source,relation,target\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="^kinds 'Site' and 'site' both become the label :Site$"):
+        load_graph.load(Graph.from_csv(tmp_path / "nodes.csv", tmp_path / "edges.csv"), FakeDriver(), "neo4j")
+    (tmp_path / "nodes.csv").write_text("id,kind,name\nA,site,A\nB,site,B\n", encoding="utf-8")
+    (tmp_path / "edges.csv").write_text("source,relation,target\nA,depends_on,B\nB,Depends_on,A\n",
+                                        encoding="utf-8")
+    with pytest.raises(ValueError, match="^relations 'Depends_on' and 'depends_on' both become the type "
+                                         ":DEPENDS_ON$"):
         load_graph.load(Graph.from_csv(tmp_path / "nodes.csv", tmp_path / "edges.csv"), FakeDriver(), "neo4j")
 
 

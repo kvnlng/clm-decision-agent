@@ -71,8 +71,28 @@ def test_single_points_of_failure(graph):
     assert not graph.single_points_of_failure(["S1", "S3"], ["depends_on"], 3)
 
 
+def test_single_points_of_failure_walks_each_id_once_and_stops_when_nothing_is_shared(graph, monkeypatch):
+    """An agent's list of ids has no length limit, so a repeat or a walk past an empty answer is wasted work."""
+    walked, walk = [], graph._paths  # pylint: disable=protected-access
+    monkeypatch.setattr(graph, "_paths", lambda node_id, *rest: walked.append(node_id) or walk(node_id, *rest))
+    assert {node["id"] for node in graph.single_points_of_failure(["S1", "S1", "S2"], ["depends_on"], 3)} == \
+        {"R1", "M1"}
+    assert walked == ["S1", "S2"]
+    walked.clear()
+    assert not graph.single_points_of_failure(["S1", "S3", "S2"], ["depends_on"], 3)
+    assert walked == ["S1", "S3"]
+
+
 def test_an_edge_to_an_unknown_node_is_an_error(tmp_path):
     (tmp_path / "nodes.csv").write_text(NODES, encoding="utf-8")
     (tmp_path / "edges.csv").write_text(EDGES + "S1,depends_on,X9,\n", encoding="utf-8")
     with pytest.raises(ValueError, match=r"edges.csv line 6: unknown node 'X9'"):
         Graph.from_csv(tmp_path / "nodes.csv", tmp_path / "edges.csv")
+
+
+def test_files_saved_with_a_byte_order_mark_are_read(tmp_path):
+    """Excel's "CSV UTF-8" starts the file with a BOM, which would otherwise hide the id column."""
+    (tmp_path / "nodes.csv").write_text("﻿" + NODES, encoding="utf-8")
+    (tmp_path / "edges.csv").write_text("﻿" + EDGES, encoding="utf-8")
+    graph = Graph.from_csv(tmp_path / "nodes.csv", tmp_path / "edges.csv")
+    assert graph.node("S1")["name"] == "North Mill" and len(graph.edges()) == 4

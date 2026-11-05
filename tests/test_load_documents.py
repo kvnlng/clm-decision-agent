@@ -52,6 +52,14 @@ def test_metadata_of_the_wrong_type_is_refused(tmp_path):
             load_documents.read_jsonl(write(tmp_path, line), CASES)
 
 
+def test_a_date_must_be_written_yyyy_mm_dd(tmp_path):
+    """Search filters and in_force compare dates as YYYY-MM-DD text, so 20190501 or 2019-W18-3 would never match."""
+    for value in ("20190501", "2019-W18-3", "2019-13-45"):
+        line = GOOD | {"metadata": GOOD["metadata"] | {"decided": value}}
+        with pytest.raises(ValueError, match=r"^cases\.jsonl:1: metadata\.decided must be a YYYY-MM-DD date"):
+            load_documents.read_jsonl(write(tmp_path, line), CASES)
+
+
 def test_sources_may_go_beside_the_filters(tmp_path):
     line = GOOD | {"metadata": GOOD["metadata"] | {"sources": {"year": "1"}}}
     assert load_documents.read_jsonl(write(tmp_path, line), CASES)[0]["metadata"]["sources"] == {"year": "1"}
@@ -101,3 +109,23 @@ def test_main_names_an_unknown_collection(tmp_path, capsys):
     toml.write_text('[documents]\n[collections.cases]\ndescription = "x"\nembedding_model = "m"\n')
     assert load_documents.main([str(toml), "laws", str(write(tmp_path, GOOD))]) == 2
     assert capsys.readouterr().err == "error: no collection laws in environment.toml (cases)\n"
+
+
+def test_a_nul_character_is_refused_before_embedding(tmp_path):
+    """PostgreSQL text cannot hold NUL, so it would fail only after every passage had been embedded."""
+    for line in (GOOD | {"text": "The manager\u0000 was barred."}, GOOD | {"title": "Case\u0000A"},
+                 GOOD | {"metadata": GOOD["metadata"] | {"state": "T\u0000X"}},
+                 {k: v for k, v in GOOD.items() if k != "text"} | {"passages": [{"label": "(a\u0000)", "text": "x"}]}):
+        with pytest.raises(ValueError, match=r"^cases\.jsonl:1: .* contains a NUL character"):
+            load_documents.read_jsonl(write(tmp_path, line), CASES)
+
+
+def test_a_citing_passage_must_be_text(tmp_path):
+    with pytest.raises(ValueError, match=r"^cases\.jsonl:1: each of cites is an id"):
+        load_documents.read_jsonl(write(tmp_path, GOOD | {"cites": [{"id": "tx-15.50", "passage": 3}]}), CASES)
+
+
+def test_a_file_saved_with_a_byte_order_mark_is_read(tmp_path):
+    path = write(tmp_path, GOOD)
+    path.write_text("\ufeff" + path.read_text(encoding="utf-8"), encoding="utf-8")
+    assert load_documents.read_jsonl(path, CASES)[0]["id"] == "case-a"
