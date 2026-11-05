@@ -4,8 +4,8 @@ Every number a decision rests on passes through here: a query's rows, a rule's i
 calculation's result. The owner's branch function asks for them through `Steps`, so the engine carries the numbers
 and the agent only chooses which branches to run. A branch is rejected when a limit says not allowed, and fails
 when a step fails, even if its code caught the error, or a limit was never checked, so no branch can skip a limit or
-a failed step unnoticed. A query, decision or calculation with an unknown name or bad parameters raises without being
-recorded.
+a failed step unnoticed. A query, decision, calculation or judge with an unknown name, or a query, decision or
+calculation with bad parameters, raises without being recorded.
 """
 from __future__ import annotations
 
@@ -245,11 +245,12 @@ class Steps:
     def judge(self, name: str, text: str) -> dict:
         """CLM's judgement of the text: {"probability"}, a number from 0 to 1."""
         judge = _part(self.env.judges, "judge", name)
-        if not isinstance(text, str) or not text.strip():
-            raise StepError(f"judge {name}: there is no text to judge")
-        tracing.add("judgement")
-        with self._recorded("judgement", name, {"text": text}), tracing.timed("judgement_ms"):
-            result = {"probability": self.env.clm.probability(judge, text)}
+        with self._recorded("judgement", name, {"text": text}):
+            if not isinstance(text, str) or not text.strip():
+                raise StepError(f"judge {name}: there is no text to judge")
+            tracing.add("judgement")
+            with tracing.timed("judgement_ms"):
+                result = {"probability": self.env.clm.probability(judge, text)}
         self.steps.append({"kind": "judgement", "name": name, "inputs": {"text": text}, "result": result})
         return result
 

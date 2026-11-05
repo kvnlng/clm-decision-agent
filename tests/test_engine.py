@@ -205,6 +205,15 @@ def test_empty_text_is_refused(write_environment, fake_clm):
     assert fake_clm.asked == []
 
 
+def test_a_judgement_refused_for_its_text_is_recorded(write_environment, fake_clm):
+    steps = Steps(load_environment(write_environment(ENV_TOML + JUDGE_TOML)))
+    with pytest.raises(StepError):
+        steps.judge("risk", text="  ")
+    assert steps.steps == [{"kind": "judgement", "name": "risk", "inputs": {"text": "  "}, "result": None,
+                            "error": "judge risk: there is no text to judge"}]
+    assert fake_clm.asked == []
+
+
 def test_a_clm_that_cannot_load_fails_the_branch(write_environment, monkeypatch):
     from clm_decision import clm_router  # pylint: disable=import-outside-toplevel
 
