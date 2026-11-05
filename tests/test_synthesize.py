@@ -42,7 +42,8 @@ def test_the_example_keeps_its_help_desk_wording():
 
 
 def test_synthesize_writes_labelled_examples_without_repeats(scenario, tmp_path):
-    gen = FakeGenerator(*['["refund please", "charged twice"]', '["refund please", "wrong amount"]'] * 2)
+    gen = FakeGenerator('["refund please", "charged twice"]', '["refund please", "wrong amount"]',
+                        '["app down", "slow"]', '["app down", "crash"]')
     path = tmp_path / "out.jsonl"
     count = synthesize(scenario, gen, path, per_route=3, per_call=2, write=lambda line: None)
     rows = load_examples(path)
@@ -55,7 +56,19 @@ def test_synthesize_stops_when_the_generator_stops_producing_new_messages(scenar
     gen = FakeGenerator(*['["same"]'] * 40)
     count = synthesize(scenario, gen, tmp_path / "out.jsonl", per_route=5, per_call=2,
                        write=lambda line: None)
-    assert count == 2
+    assert count == 1          # "same" for one route, and for no other
+
+
+def test_a_message_written_for_two_routes_is_kept_for_the_first_only(scenario, tmp_path):
+    gen = FakeGenerator('["refund please", "help me"]', '["help me", "app down"]', '["crash"]')
+    lines = []
+    count = synthesize(scenario, gen, tmp_path / "out.jsonl", per_route=2, per_call=2, write=lines.append)
+    rows = load_examples(tmp_path / "out.jsonl")
+    assert count == 4
+    assert [(r["text"], r["route"]) for r in rows] == \
+        [("refund please", "Billing"), ("help me", "Billing"), ("app down", "Tech"), ("crash", "Tech")]
+    assert lines[1].split() == ["Tech", "2", "examples;", "1", "left", "out", "as", "written", "for", "another",
+                                "route"]
 
 
 def test_parse_messages_handles_one_list_per_line_and_nested_lists():

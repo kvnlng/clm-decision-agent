@@ -95,23 +95,35 @@ def parse_messages(text: str) -> list[str]:
 
 
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def _route_rows(scenario, generator, route, taken: set, per_route: int, per_call: int) -> tuple[list, int]:
+    """-> (one route's rows, how many messages were left out as already written for an earlier route in `taken`)."""
+    rows, seen, elsewhere, call, idle = [], set(), set(), 0, 0
+    # Two calls in a row with nothing new means the generator has run out of variety
+    while len(seen) < per_route and idle < 2:
+        style = STYLES[call % len(STYLES)]
+        # The batch number varies the request, so a model that always picks its likeliest words still varies
+        reply = generator.generate(build_prompt(scenario, route, style, per_call), f"Batch {call + 1}.")
+        parsed = [m for m in dict.fromkeys(parse_messages(reply)) if m not in seen]
+        elsewhere.update(m for m in parsed if m in taken)
+        fresh = [m for m in parsed if m not in taken][:per_route - len(seen)]
+        idle = 0 if fresh else idle + 1
+        seen.update(fresh)
+        rows += [{"text": message, "route": route.name, "style": style} for message in fresh]
+        call += 1
+    return rows, len(elsewhere)
+
+
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def synthesize(scenario, generator, path, per_route: int = 64, per_call: int = 8, write=print) -> int:
-    """Ask for messages route by route, cycling through the styles, until each route has enough."""
-    rows = []
+    """Ask for messages route by route, cycling through the styles, until each route has enough. A message
+    already written for an earlier route is left out, so no message is labelled with two routes."""
+    rows, taken = [], set()
     for route in scenario.routes.values():
-        seen, call, idle = set(), 0, 0
-        # Two calls in a row with nothing new means the generator has run out of variety
-        while len(seen) < per_route and idle < 2:
-            style = STYLES[call % len(STYLES)]
-            # The batch number varies the request, so a model that always picks its likeliest words still varies
-            reply = generator.generate(build_prompt(scenario, route, style, per_call), f"Batch {call + 1}.")
-            fresh = [m for m in dict.fromkeys(parse_messages(reply)) if m not in seen]
-            fresh = fresh[:per_route - len(seen)]
-            idle = 0 if fresh else idle + 1
-            seen.update(fresh)
-            rows += [{"text": message, "route": route.name, "style": style} for message in fresh]
-            call += 1
-        write(f"  {route.name:<24}{len(seen):>4} examples")
+        found, left_out = _route_rows(scenario, generator, route, taken, per_route, per_call)
+        rows += found
+        taken.update(row["text"] for row in found)
+        dropped = f"; {left_out} left out as written for another route" if left_out else ""
+        write(f"  {route.name:<24}{len(found):>4} examples{dropped}")
     save_examples(path, rows)
     return len(rows)
 
