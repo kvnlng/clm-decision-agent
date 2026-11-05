@@ -70,7 +70,8 @@ class FakeStore:
                         seen.add(far)
                         following.append(far)
                         citation = documents.get(far, {}).get("citation")
-                        found.append({"document": far, "citation": citation, "depth": step, "passage": passage})
+                        found.append({"document": far, "citation": citation, "depth": step,
+                                      "passage": None if forward else passage})
             frontier = following
         return found
 

@@ -134,6 +134,8 @@ def test_cited_by_walks_two_steps(store):
     assert [(row["document"], row["depth"]) for row in store.cited_by("cases", "tx-15.50", 2)] == [
         ("case-a", 1), ("case-b", 2)]
     assert [row["document"] for row in store.cites("cases", "case-b", 2)] == ["case-a", "tx-15.50"]
+    # A citing passage belongs to the citing document, which a cites row does not name
+    assert {row["passage"] for row in store.cites("cases", "case-b", 2)} == {None}
 
 
 @pytest.mark.postgres

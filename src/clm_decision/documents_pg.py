@@ -172,8 +172,10 @@ class PostgresStore:
         """Breadth first, one query a step, each document once at its nearest depth: a walk of paths would grow with
         every path between two documents."""
         near, far = ("source", "target") if forward else ("target", "source")
+        # The citing passage is the source's: a cited_by row names the source, a cites row does not
+        citing = "NULL::text" if forward else "c.source_passage"
         sql = f"""
-            SELECT DISTINCT ON (c.{far}) c.{far}, d.citation, c.source_passage
+            SELECT DISTINCT ON (c.{far}) c.{far}, d.citation, {citing}
             FROM citations c LEFT JOIN documents d ON d.collection = c.collection AND d.id = c.{far}
             WHERE c.collection = %s AND c.{near} = ANY(%s) AND NOT c.{far} = ANY(%s)
             ORDER BY c.{far}, c.source_passage"""
