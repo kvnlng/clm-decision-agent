@@ -203,7 +203,7 @@ encoded and, for an environment, steps per call. A stage no call had is left out
 
 - The trace leaves out the requests' text. `--trace-text` adds it; the trace then needs the same care as the corrections
   record ([data-handling.md](data-handling.md)). It covers `decide`, `decide_many`, `check_call` and `correct`; an
-  environment's tools take no request text, so their lines never hold any. The trace file is made readable by its
+  environment's tools' arguments, such as a search's query, are never written to the trace. The trace file is made readable by its
   owner only, like the record.
 - Tracing is off by default and adds little: a few clock readings and counts per call. A background thread writes the
   file; if it cannot, the server says so once and stops tracing, and decisions carry on.

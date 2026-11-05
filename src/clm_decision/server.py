@@ -328,7 +328,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--trace", metavar="FILE", help="write one line per call to FILE, saying where the time went")
     parser.add_argument("--trace-text", action="store_true",
                         help="include each request's text in the trace: decide, decide_many, check_call and "
-                             "correct's (an environment's tools take no request text)")
+                             "correct's (an environment's tools' arguments are never traced)")
     parser.add_argument("--tools", metavar="NAMES",
                         help="offer only these tools, comma-separated, and describe; NAME* matches a prefix "
                              "(replaces [serve] tools)")
