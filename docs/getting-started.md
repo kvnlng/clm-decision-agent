@@ -7,12 +7,12 @@ about patient care out of scope.
 
 | Guide | What it covers |
 |---|---|
-| [environment](environment.md) | An environment for weighing options |
+| [environment](environment.md) | An environment for weighing options; its keys, limits and figures in the [reference](environment-reference.md) |
 | [scenario](scenario.md) | A scenario for routing |
 | [walkthrough](walkthrough.md) | A scenario, step by step |
 | [fine-tuning](fine-tuning.md) | Training CLM on your routes |
 | [models](models.md) | CLM and language models, and where they run |
-| [serving](serving.md) | Serving decisions to agents |
+| [serving](serving.md) | Serving decisions to agents; the flags, OAuth setups and measurements in the [reference](serving-reference.md) |
 | [registry](registry.md) | Listing a deployment in an MCP registry |
 | [data handling](data-handling.md) | Where text goes; read before using real text |
 | [findings](findings.md) | What the benchmark traces showed |
