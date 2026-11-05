@@ -23,27 +23,28 @@ def _module(scenario_dir: Path, name: str) -> ModuleType:
     found = getattr(imported, "__file__", None)
     if found is not None and Path(found).resolve() == path.resolve():
         return imported
-    spec = importlib.util.spec_from_file_location(name, path)
+    # In sys.modules while it runs and after, as an import would be, so code that finds its own module by name (a
+    # dataclass, pickling) works. Under its own name only when nothing else provides that name; otherwise under a
+    # private one, so a standard or installed module of that name is never replaced, imported or not
+    alias = name if imported is None and _only_here(name, path) else f"_clm_tools_{name}"
+    spec = importlib.util.spec_from_file_location(alias, path)
     module = importlib.util.module_from_spec(spec)
-    # In sys.modules while it runs, as an import would be, so code that finds its own module by name (a dataclass,
-    # pickling) works; it stays only when no other module holds the name, so a standard one is never replaced
-    sys.modules[name] = module
+    sys.modules[alias] = module
     try:
         spec.loader.exec_module(module)
     except BaseException:
-        _restore(name, imported)
+        sys.modules.pop(alias, None)
         raise
-    if imported is not None:
-        _restore(name, imported)
     return module
 
 
-def _restore(name: str, imported: ModuleType | None) -> None:
-    """Put back the module that held the name before, or free the name when none did."""
-    if imported is None:
-        sys.modules.pop(name, None)
-    else:
-        sys.modules[name] = imported
+def _only_here(name: str, path: Path) -> bool:
+    """True when an import of the name would find this file, so no other module provides it."""
+    try:
+        found = importlib.util.find_spec(name)
+    except (ImportError, ValueError):
+        return False
+    return found is None or (found.origin is not None and Path(found.origin).resolve() == path.resolve())
 
 
 def load_tools(scenario: Scenario) -> dict[str, Callable]:
