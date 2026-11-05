@@ -76,3 +76,11 @@ def test_an_edge_to_an_unknown_node_is_an_error(tmp_path):
     (tmp_path / "edges.csv").write_text(EDGES + "S1,depends_on,X9,\n", encoding="utf-8")
     with pytest.raises(ValueError, match=r"edges.csv line 6: unknown node 'X9'"):
         Graph.from_csv(tmp_path / "nodes.csv", tmp_path / "edges.csv")
+
+
+def test_files_saved_with_a_byte_order_mark_are_read(tmp_path):
+    """Excel's "CSV UTF-8" starts the file with a BOM, which would otherwise hide the id column."""
+    (tmp_path / "nodes.csv").write_text("﻿" + NODES, encoding="utf-8")
+    (tmp_path / "edges.csv").write_text("﻿" + EDGES, encoding="utf-8")
+    graph = Graph.from_csv(tmp_path / "nodes.csv", tmp_path / "edges.csv")
+    assert graph.node("S1")["name"] == "North Mill" and len(graph.edges()) == 4

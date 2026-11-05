@@ -27,7 +27,7 @@ def _value(cell: str):
 
 def _rows(path: Path, needed: tuple[str, ...]) -> list[tuple[int, dict]]:
     """-> (line number, row) for each row, without empty cells; raises ValueError naming the file."""
-    with open(path, encoding="utf-8", newline="") as file:
+    with open(path, encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
         missing = [column for column in needed if column not in (reader.fieldnames or [])]
         if missing:

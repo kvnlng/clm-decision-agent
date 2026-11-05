@@ -122,7 +122,7 @@ def read_jsonl(path: str | Path, collection: Collection) -> list[dict]:
     """The file's documents, checked; raises ValueError naming the file and line."""
     path = Path(path)
     documents, lines = [], {}
-    with open(path, encoding="utf-8") as file:
+    with open(path, encoding="utf-8-sig") as file:
         for number, text in enumerate(file, 1):
             if not text.strip():
                 continue

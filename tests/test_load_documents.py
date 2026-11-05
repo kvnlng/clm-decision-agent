@@ -124,3 +124,8 @@ def test_a_citing_passage_must_be_text(tmp_path):
     with pytest.raises(ValueError, match=r"^cases\.jsonl:1: each of cites is an id"):
         load_documents.read_jsonl(write(tmp_path, GOOD | {"cites": [{"id": "tx-15.50", "passage": 3}]}), CASES)
 
+
+def test_a_file_saved_with_a_byte_order_mark_is_read(tmp_path):
+    path = write(tmp_path, GOOD)
+    path.write_text("\ufeff" + path.read_text(encoding="utf-8"), encoding="utf-8")
+    assert load_documents.read_jsonl(path, CASES)[0]["id"] == "case-a"
