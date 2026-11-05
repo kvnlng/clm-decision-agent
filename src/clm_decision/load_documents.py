@@ -48,6 +48,9 @@ def _value_ok(kind: str, value) -> bool:
     if not isinstance(value, _TYPES[kind]):
         return False
     if kind == "date":
+        # The form search filters and in_force compare as text; fromisoformat alone also takes 20240115
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            return False
         try:
             date.fromisoformat(value)
         except ValueError:
@@ -68,7 +71,7 @@ def _metadata(metadata, collection: Collection, where: str) -> dict:
                              f"({', '.join(sorted(collection.filters))})")
         kind = collection.filters[field]
         if value is not None and not _value_ok(kind, value):
-            raise ValueError(f"{where}: metadata.{field} must be {'an ISO date' if kind == 'date' else kind}, "
+            raise ValueError(f"{where}: metadata.{field} must be {'a YYYY-MM-DD date' if kind == 'date' else kind}, "
                              f"not {value!r}")
     return metadata
 

@@ -52,6 +52,14 @@ def test_metadata_of_the_wrong_type_is_refused(tmp_path):
             load_documents.read_jsonl(write(tmp_path, line), CASES)
 
 
+def test_a_date_must_be_written_yyyy_mm_dd(tmp_path):
+    """Search filters and in_force compare dates as YYYY-MM-DD text, so 20190501 or 2019-W18-3 would never match."""
+    for value in ("20190501", "2019-W18-3", "2019-13-45"):
+        line = GOOD | {"metadata": GOOD["metadata"] | {"decided": value}}
+        with pytest.raises(ValueError, match=r"^cases\.jsonl:1: metadata\.decided must be a YYYY-MM-DD date"):
+            load_documents.read_jsonl(write(tmp_path, line), CASES)
+
+
 def test_sources_may_go_beside_the_filters(tmp_path):
     line = GOOD | {"metadata": GOOD["metadata"] | {"sources": {"year": "1"}}}
     assert load_documents.read_jsonl(write(tmp_path, line), CASES)[0]["metadata"]["sources"] == {"year": "1"}
@@ -101,3 +109,4 @@ def test_main_names_an_unknown_collection(tmp_path, capsys):
     toml.write_text('[documents]\n[collections.cases]\ndescription = "x"\nembedding_model = "m"\n')
     assert load_documents.main([str(toml), "laws", str(write(tmp_path, GOOD))]) == 2
     assert capsys.readouterr().err == "error: no collection laws in environment.toml (cases)\n"
+
