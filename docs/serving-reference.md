@@ -142,7 +142,7 @@ its own encoder and does neither.
 | Measured | Result |
 |---|---|
 | Row size, A100 | 1,024 and 2,048 tokens equally fast; 4,096 7% slower; 8,192 25% slower: the mask makes attention cover the whole row |
-| Tools' share, A100 | The example's tools at first made a new HTTP client per call, about 17 ms each, which held `decide_many` to 23 a second until they shared one ([scenario.md](scenario.md#tools)). Their share grows as CLM gets faster |
+| Tools' share, A100 | The example's tools at first made a new HTTP client per call, about 17 ms each, which held `decide_many` to 23 a second until they shared one ([scenario reference](scenario-reference.md#tools)). Their share grows as CLM gets faster |
 | Packing's effect on routes | A text's numbers differ very slightly when it is encoded with others, so a near tie can flip. 2 of the 318 did on the Mac and 1 on the A100, all about 0.50 against 0.49, well below the confidence threshold; no acting tool ran |
 | Holding the lock | A `decide_many` call holds CLM for its batch, so other calls wait: 1,000 requests take about 20 seconds on the A100 |
 | H100 80 GB (SXM) | The CrowdStrike example decided 2.5 times as fast as on the A100, 46.6 against 18.8 a second on the same 3,000 bookings, and the whole day of 99,806 in 32.5 minutes ([its README](../examples/crowdstrike/README.md#the-whole-day-on-a-data-centre-gpu)) |
