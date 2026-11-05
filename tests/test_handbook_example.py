@@ -161,8 +161,8 @@ def test_a_further_figure_is_counted_by_whether_a_tool_returned_it():
     assert scored["wrong_as_fact"] == 0 and scored["right"] == 3
 
 
-def test_a_further_figure_the_check_cannot_see_is_unsourced():
-    # number_check skips small whole numbers and years, and 1250000 was once written as 1.25e+06
+def test_a_further_figure_no_tool_returned_is_unsourced():
+    # 1250000 was once written as 1.25e+06
     read = {"items": {"match": item(3400), "cap": item(6), "limit": item(24500)},
             "other": [{"text": f"figure {value}", "value": value, "hedged": False}
                       for value in (5, 4.0, 2030, 1250000, 777)]}
@@ -174,6 +174,16 @@ def test_a_large_further_figure_a_tool_returned_is_from_tools():
     read = {"items": {"match": item(3400), "cap": item(6), "limit": item(24500)},
             "other": [{"text": "$1,250,000", "value": 1250000, "hedged": False}]}
     assert _measure().score_figures(read, KEYED, [{"total": 1250000}])["other_from_tools"] == 1
+
+
+def test_a_small_further_figure_or_year_a_tool_returned_is_from_tools():
+    # number_check skips small whole numbers and years, but the tool's value is still compared
+    read = {"items": {"match": item(3400), "cap": item(6), "limit": item(24500)},
+            "other": [{"text": "6 weeks", "value": 6, "hedged": False},
+                      {"text": "in 2030", "value": 2030, "hedged": False},
+                      {"text": "$5", "value": 5, "hedged": False}]}
+    scored = _measure().score_figures(read, KEYED, [{"weeks": 6}, "the plan ends in 2030"])
+    assert scored["other_from_tools"] == 2 and scored["other_unsourced"] == 1
 
 
 class Recorder:
