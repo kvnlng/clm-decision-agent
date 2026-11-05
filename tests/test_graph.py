@@ -71,6 +71,18 @@ def test_single_points_of_failure(graph):
     assert not graph.single_points_of_failure(["S1", "S3"], ["depends_on"], 3)
 
 
+def test_single_points_of_failure_walks_each_id_once_and_stops_when_nothing_is_shared(graph, monkeypatch):
+    """An agent's list of ids has no length limit, so a repeat or a walk past an empty answer is wasted work."""
+    walked, walk = [], graph._paths  # pylint: disable=protected-access
+    monkeypatch.setattr(graph, "_paths", lambda node_id, *rest: walked.append(node_id) or walk(node_id, *rest))
+    assert {node["id"] for node in graph.single_points_of_failure(["S1", "S1", "S2"], ["depends_on"], 3)} == \
+        {"R1", "M1"}
+    assert walked == ["S1", "S2"]
+    walked.clear()
+    assert not graph.single_points_of_failure(["S1", "S3", "S2"], ["depends_on"], 3)
+    assert walked == ["S1", "S3"]
+
+
 def test_an_edge_to_an_unknown_node_is_an_error(tmp_path):
     (tmp_path / "nodes.csv").write_text(NODES, encoding="utf-8")
     (tmp_path / "edges.csv").write_text(EDGES + "S1,depends_on,X9,\n", encoding="utf-8")
