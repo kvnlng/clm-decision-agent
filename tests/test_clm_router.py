@@ -4,6 +4,7 @@
 # pylint: disable=missing-function-docstring,missing-class-docstring,redefined-outer-name
 # pylint: disable=unused-argument,attribute-defined-outside-init,use-implicit-booleaness-not-comparison
 import json
+import sys
 
 import numpy as np
 import pytest
@@ -71,8 +72,8 @@ class VectorRouter(LocalContrastiveRouter):
         super().__init__(engine=engine)
         self.vectors = vectors
 
-    def embed_state(self, state_text, scenario):
-        return self.vectors[state_text]
+    def embed_states(self, state_texts, scenario):
+        return [self.vectors[text] for text in state_texts]
 
 
 def correction(state_text, clm, human):
@@ -132,22 +133,46 @@ def test_live_corrections_can_be_switched_off(write_scenario):
     assert router.decide("User: bill me", off)["source"] == "clm"
 
 
-def test_embed_state_projects_context_plus_routing_question(scenario):
-    class Engine(FakeEngine):
-        def embed(self, texts):
-            self.texts = texts
-            return np.array([[3.0, 4.0]], dtype=np.float32)
+class StateVectorEngine(FakeEngine):
+    """An engine whose state vectors come from a table, noting each call for them."""
 
-        def project(self, vectors, which):
-            self.which = which
-            return np.array([[0.6, 0.8]], dtype=np.float32)
+    def __init__(self, vectors):
+        super().__init__({ROUTE_QID: ROUTE_ANSWER, "urgent": URGENT_ANSWER})
+        self.vectors, self.asked = vectors, []
 
-    engine = Engine({})
-    vector = LocalContrastiveRouter(engine=engine).embed_state("User: hi ", scenario)
+    def state_vectors(self, texts):
+        self.asked.append(list(texts))
+        return np.array([self.vectors[text] for text in texts], dtype=np.float32)
 
-    assert engine.texts == ["User: hi\n\nWhich workflow?"]
-    assert engine.which == "state"
-    assert vector == pytest.approx([0.6, 0.8])
+
+def test_embed_state_reads_the_engines_state_vector_for_context_plus_routing_question(scenario):
+    engine = StateVectorEngine({"User: hi\n\nWhich workflow?": [0.6, 0.8], "Which workflow?": [1.0, 0.0]})
+    router = LocalContrastiveRouter(engine=engine)
+    assert router.embed_state("User: hi ", scenario) == pytest.approx([0.6, 0.8])
+    # The text is the one answer() encodes, so an empty state gives the question alone
+    assert router.embed_state("", scenario) == pytest.approx([1.0, 0.0])
+    assert engine.asked == [["User: hi\n\nWhich workflow?"], ["Which workflow?"]]
+
+
+def test_load_verdicts_encodes_them_all_in_one_call(scenario):
+    engine = StateVectorEngine({f"{text}\n\nWhich workflow?": vector for text, vector in VECTORS.items()})
+    router = LocalContrastiveRouter(engine=engine)
+    texts = ["User: bill me", "User: app crashed"]
+    assert router.load_verdicts([correction(text, "Billing", "Tech") for text in texts], scenario) == 2
+    assert len(engine.asked) == 1 and len(engine.asked[0]) == 2
+    decision = router.decide("User: bill me please", scenario)
+    assert (decision["route"], decision["similarity"]) == ("Tech", pytest.approx(0.98, abs=1e-3))
+
+
+def test_matching_a_verdict_encodes_nothing_that_deciding_did_not(scenario):
+    from test_clm_torch import CONFIG, FakeEncoder, tiny_weights  # pylint: disable=import-outside-toplevel
+    from clm_decision.clm_torch import TorchEngine, TorchHeads  # pylint: disable=import-outside-toplevel
+    encoder = FakeEncoder()
+    router = LocalContrastiveRouter(engine=TorchEngine(encoder, TorchHeads(tiny_weights(), CONFIG, "cpu")))
+    router.load_verdicts([correction("User: bill me", "Billing", "Tech")], scenario)
+    encoder.asked.clear()
+    router.route("User: app crashed", scenario)
+    assert encoder.asked.count("User: app crashed\n\nWhich workflow?") == 1
 
 
 def test_a_confirmed_route_is_reused_too(scenario):
@@ -181,7 +206,12 @@ def test_heads_are_used_only_when_they_match_the_scenario(write_scenario):
     assert folder is None and "different CLM build" in note
 
     (scenario.clm_heads / "training.json").write_text("[]")
-    assert resolve_heads(scenario)[0] is None
+    folder, note = resolve_heads(scenario)
+    assert folder is None and "training.json in my.heads cannot be read" in note and "clm-synthesize" not in note
+
+    (scenario.clm_heads / "training.json").write_text('{"routing_sha": ')
+    folder, note = resolve_heads(scenario)
+    assert folder is None and "training.json in my.heads cannot be read" in note and "run clm-train again" in note
 
 
 def test_no_heads_setting_means_the_released_heads(scenario):
@@ -317,9 +347,54 @@ def test_a_trained_ranking_goes_stale_with_its_instructions(write_scenario):
 
 def test_without_the_clm_extra_the_error_says_how_to_install_it(monkeypatch):
     import importlib  # pylint: disable=import-outside-toplevel
-    import sys  # pylint: disable=import-outside-toplevel
     from clm_decision.clm_common import ClmError  # pylint: disable=import-outside-toplevel
     monkeypatch.setitem(sys.modules, "huggingface_hub", None)      # None makes the import fail, as when not installed
     monkeypatch.delitem(sys.modules, "clm_decision.clm_router")
     with pytest.raises(ClmError, match=r"^CLM is not installed \(huggingface_hub is missing\): install the clm extra"):
         importlib.import_module("clm_decision.clm_router")
+
+
+def fake_mlx_build(folder):
+    """A model folder holding a stand-in clm_mlx package, as the MLX build ships one."""
+    (folder / "clm_mlx").mkdir()
+    (folder / "clm_mlx" / "__init__.py").write_text("")
+    (folder / "clm_mlx" / "engine.py").write_text("class Engine:\n    def __init__(self, *args, **kwargs):\n"
+                                                  "        self.args = args\n")
+    (folder / "heads").mkdir()
+    (folder / "heads" / "config.json").write_text("{}")
+    return str(folder)
+
+
+@pytest.fixture
+def own_clm_mlx(monkeypatch):
+    """The import path and clm_mlx modules as they were, once the test is done with its own clm_mlx."""
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    before = {name: module for name, module in sys.modules.items() if name.split(".")[0] == "clm_mlx"}
+    for name in before:
+        del sys.modules[name]
+    yield
+    for name in [name for name in sys.modules if name.split(".")[0] == "clm_mlx"]:
+        del sys.modules[name]
+    sys.modules.update(before)
+
+
+def test_the_mlx_build_is_downloaded_at_a_pinned_commit_and_does_not_shadow_other_modules(tmp_path, monkeypatch,
+                                                                                         capsys, own_clm_mlx):
+    seen = {}
+    folder = fake_mlx_build(tmp_path)
+    monkeypatch.setattr(clm_router, "snapshot_download", lambda **kwargs: seen.update(kwargs) or folder)
+    clm_router.load_mlx_engine("mlx-community/CLM-v0.1-8B-MLX-8bit")
+    assert seen == {"repo_id": "mlx-community/CLM-v0.1-8B-MLX-8bit",
+                    "revision": clm_router.MLX_REVISIONS["mlx-community/CLM-v0.1-8B-MLX-8bit"]}
+    assert sys.path[-1] == folder and sys.path[0] != folder
+    assert capsys.readouterr().err == ""
+
+
+def test_an_mlx_build_with_no_pinned_commit_is_taken_as_it_is_now_with_a_warning(tmp_path, monkeypatch, capsys,
+                                                                                   own_clm_mlx):
+    seen = {}
+    folder = fake_mlx_build(tmp_path)
+    monkeypatch.setattr(clm_router, "snapshot_download", lambda **kwargs: seen.update(kwargs) or folder)
+    clm_router.load_mlx_engine("someone/CLM-MLX-custom")
+    assert seen["revision"] is None
+    assert "someone/CLM-MLX-custom has no pinned commit" in capsys.readouterr().err

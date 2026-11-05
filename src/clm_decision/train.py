@@ -37,7 +37,7 @@ from .clm_router import HEADS_FILE, ClmError, load_engine
 from .clm_torch import Head
 from .dataset import examples_path, load_examples, training_rows
 from .decision import routed_text
-from .record import load_records, record_key
+from .record import load_records, record_key, skipped_note
 from .scenario import ScenarioError
 from .scenario import load_for_command
 
@@ -422,10 +422,12 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-retu
         print(f"error: {examples_path(scenario).name} has a line that is not JSON: {error}", file=sys.stderr)
         return 2
     try:
-        records, _ = load_records(scenario.record_path, key=record_key(scenario))
+        records, skipped = load_records(scenario.record_path, record_key(scenario))
     except (ScenarioError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
+    if skipped:
+        print(skipped_note(skipped, scenario.record_path), file=sys.stderr)
     try:
         train_rows, reviewed, test_rows = training_rows(scenario, examples, records)
     except (KeyError, TypeError) as error:

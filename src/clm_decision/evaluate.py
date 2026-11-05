@@ -24,7 +24,7 @@ from . import clm_schema
 from .clm_common import ClmError
 from .dataset import reviewed_row
 from .decision import decide_many, routed_text
-from .record import route_verdicts, load_records, record_key
+from .record import route_verdicts, load_records, record_key, skipped_note
 from .scenario import ScenarioError, load_scenario
 from .tools import load_tools
 
@@ -51,16 +51,15 @@ def confidence_bands(pairs: list[tuple[float, bool]]) -> list[dict]:
 
 
 def match_report(route_records: list[dict], scenario, router) -> dict:
-    """How many reviewed cases would match another reviewed case at the scenario's match_threshold."""
-    corrected = {id(r) for r in route_verdicts(route_records, scenario)}
-    report = {"n": len(route_records), "matched": 0, "same_route": 0}
-    if not corrected:
-        return report
-    vectors = [router.embed_state(r["state_text"], scenario) for r in route_records]
-    for i, case in enumerate(route_records):
+    """How many reviewed cases would match another reviewed case at the scenario's match_threshold. A case is a
+    state's latest verdict, as the server reuses it."""
+    cases = route_verdicts(route_records, scenario)
+    report = {"n": len(cases), "matched": 0, "same_route": 0}
+    vectors = [router.embed_state(r["state_text"], scenario) for r in cases]
+    for i, case in enumerate(cases):
         best_route, best_similarity = None, scenario.match_threshold
-        for j, other in enumerate(route_records):
-            if j == i or id(other) not in corrected:
+        for j, other in enumerate(cases):
+            if j == i:
                 continue
             similarity = sum(a * b for a, b in zip(vectors[i], vectors[j]))
             if similarity >= best_similarity:
@@ -72,8 +71,10 @@ def match_report(route_records: list[dict], scenario, router) -> dict:
 
 
 def _replay_routing(route_records: list[dict], scenario, router) -> dict:
-    """CLM's routing of each reviewed state compared with the reviewer's route."""
-    usable = [r for r in route_records if r["human"] in scenario.routes]
+    """CLM's routing of each reviewed state compared with the reviewer's latest route for it. A state with no
+    route the scenario still has is skipped."""
+    usable = route_verdicts(route_records, scenario)
+    states = {r["state_text"] for r in route_records if r["kind"] == "route"}
     per_route = {name: {"n": 0, "correct": 0} for name in scenario.routes}
     confusion, misses, pairs = Counter(), [], []
     for case in usable:
@@ -87,7 +88,7 @@ def _replay_routing(route_records: list[dict], scenario, router) -> dict:
             misses.append({"state_text": case["state_text"], "human": case["human"],
                            "clm": decision["route"], "confidence": decision["confidence"]})
     return {"n": len(usable), "correct": sum(correct for _, correct in pairs),
-            "skipped": len(route_records) - len(usable), "per_route": per_route,
+            "skipped": len(states) - len(usable), "per_route": per_route,
             "confusion": dict(confusion), "misses": misses,
             "bands": confidence_bands(pairs), "suggested_threshold": suggest_threshold(pairs)}
 
@@ -138,9 +139,7 @@ def evaluate(records: list[dict], scenario, router) -> dict:
         "routing": _replay_routing(route_records, scenario, router),
         "answers": answers,
         "options": options,
-        # A CLM server gives no vectors, so there is nothing to measure: reuse is then by exact text
-        "matching": None if getattr(router, "exact_match", False)
-        else match_report([r for r in route_records if r["human"] in scenario.routes], scenario, router),
+        "matching": match_report(route_records, scenario, router),
     }
 
 
@@ -191,7 +190,8 @@ def _value(answer: dict):
     if kind == "noul":
         return answer["noul"] >= 0.5
     if kind == "score":
-        return round(answer["score"])
+        # The likeliest level, as training and the record's replay count it, not the expected one the rules use
+        return int(clm_schema.label_of(answer))
     return answer["choice"]
 
 
@@ -266,9 +266,6 @@ def format_report(result: dict, scenario) -> str:
         lines.append(f"Options of {route}: the reviewer's choice {right} of {of}")
 
     matching = result["matching"]
-    if matching is None:
-        lines.append("Reuse of reviewed routes: with a CLM server, only when the request is the same exact text.")
-        return "\n".join(lines)
     lines.append(f"Reuse of reviewed routes at match_threshold {scenario.match_threshold:.2f}: "
                  f"{matching['matched']} of {matching['n']} reviewed cases match another reviewed case; "
                  f"{matching['same_route']} of those carry the route the reviewer chose.")
@@ -340,7 +337,7 @@ def main(argv: list[str] | None = None) -> int:
               "in the MCP Inspector (docs/getting-started.md, \"Looking inside the server\").")
         return 0
     if skipped:
-        print(f"{skipped} unreadable lines skipped in {scenario.record_path.name}")
+        print(skipped_note(skipped, scenario.record_path))
     try:
         from .clm_router import make_router  # pylint: disable=import-outside-toplevel
         router, clm_note = make_router(scenario)

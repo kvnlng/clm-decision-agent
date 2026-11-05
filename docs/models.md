@@ -31,6 +31,9 @@ Community MLX builds of CLM, converted from the authors' release and checked aga
   unchanged. The 4-bit build's heads were re-fitted to a more compressed encoder, so its answers differ more.
 - The agreement figures are the build publishers' own.
 - A Mac needs about 9 GB of free memory for the 8-bit build; 16 GB is the practical minimum.
+- An MLX build runs the Python code (`clm_mlx`) that ships in its model repo, inside the server's process. The two
+  builds above are downloaded at a fixed commit, so that code does not change. Any other `model_id` is taken as its
+  repo has it now, and the server warns that it is.
 
 ### On Linux with an NVIDIA GPU: `backend = "torch"`
 
@@ -101,7 +104,7 @@ model = "gemma4:26b"
 backend = "openai"                                    # any server with the OpenAI chat interface
 base_url = "http://localhost:11434/v1"                # Ollama, vLLM, LM Studio, llama.cpp ...
 model = "gemma4:26b"
-api_key_env = "MODEL_API_KEY"                         # optional
+api_key_env = "MODEL_API_KEY"                         # optional; if set, the variable must be too
 ```
 
 All three have written the example's training messages. A larger model writes more varied examples but takes longer; the

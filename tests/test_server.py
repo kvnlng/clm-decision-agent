@@ -13,7 +13,7 @@ from mcp.client.streamable_http import streamable_http_client
 from clm_decision import clm_router
 from clm_decision import server
 from clm_decision.decision import decide, routed_text
-from clm_decision.record import load_records
+from clm_decision.record import append_record, load_records, new_key
 from clm_decision.scenario import load_scenario
 from clm_decision.serving import Serve
 from clm_decision.tools import load_tools
@@ -452,3 +452,26 @@ def test_the_command_line_replaces_the_files_selection(write_scenario, monkeypat
     text = BASE_TOML + '\n[serve]\ntools = ["decide"]\nexclude_tools = ["check_call"]\n'
     assert server.main([str(write_scenario(text)), "--tools", "decide_many", "--read-only"]) == 0
     assert built["serve"] == Serve(("decide_many",), ("check_call",), True) and built["transport"] == "stdio"
+
+
+def test_review_mode_stops_before_clm_loads_on_a_record_under_another_key(write_scenario, capsys, monkeypatch):
+    monkeypatch.setattr(server, "load", lambda path: pytest.fail("CLM was loaded"))
+    scenario = load_scenario(write_scenario())
+    append_record(scenario.record_path, {"kind": "route", "state_text": "User: a", "human": "Tech",
+                                         "clm": {"route": "Billing", "confidence": 0.8}}, key=new_key())
+    assert server.main([str(scenario.path), "--review"]) == 2
+    assert "1 line of scenario.corrections.jsonl is encrypted and the scenario names no key" in capsys.readouterr().err
+
+
+def test_loading_says_how_many_record_lines_it_could_not_read(write_scenario, capsys, monkeypatch):
+    class Router(FakeRouter):
+        """A router that reuses none of the record's corrections."""
+
+        def load_verdicts(self, records, scenario):  # pylint: disable=unused-argument
+            return 0
+    monkeypatch.setattr(clm_router, "make_router", lambda scenario: (Router(decision("Tech")), "test heads"))
+    scenario = load_scenario(write_scenario())
+    append_record(scenario.record_path, {"kind": "route", "state_text": "User: a", "human": "Tech",
+                                         "clm": {"route": "Billing", "confidence": 0.8}}, key=new_key())
+    server.load(str(scenario.path))
+    assert "1 unreadable line skipped in scenario.corrections.jsonl" in capsys.readouterr().err

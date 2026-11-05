@@ -49,7 +49,7 @@ key_file = "record.key"               # encrypt each line with this key ...
 # key_env = "RECORD_KEY"              # ... or with a key held in an environment variable
 ```
 
-- The file is created readable by its owner only.
+- The file is created readable by its owner only. In review mode the server also makes an older record so.
 - `uv run clm-record newkey record.key` makes a key. Keep it out of version control, and back it up: a record written
   with a key cannot be read without it.
 - `uv run clm-record purge <scenario>` deletes the record, after asking.
@@ -62,6 +62,8 @@ key_file = "record.key"               # encrypt each line with this key ...
 - The examples file and the trained heads are not encrypted. If you train from corrections, the heads are derived from
   that text; store them as carefully as the record.
 - There is no key rotation. To change the key, purge the record and start a new one.
+- In review mode the server will not start on a record that has lines under another key, since saving more would leave
+  a file no single key can read. Without review mode, the server and `clm-train` say how many lines they could not read.
 - Lines written before you set a key stay unencrypted in the same file.
 - Server addresses in a scenario may not contain a user name or password; put a key in the variable named by
   `api_key_env`, which is never printed.

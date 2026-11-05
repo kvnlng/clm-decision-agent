@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
+from collections import Counter
 from pathlib import Path
 
 from . import clm_schema
@@ -99,24 +101,44 @@ def _row(scenario: Scenario, example: dict, text: str | None = None) -> dict:
     return row
 
 
-def training_rows(scenario: Scenario, examples: list[dict], records: list[dict]) -> tuple[list, list, list]:
+def _warn(line: str) -> None:
+    print(line, file=sys.stderr)
+
+
+def _left_out(gone: Counter, dropped: int, write) -> None:
+    """Say what training leaves out: examples by the route the scenario no longer has, and corrected values."""
+    for route, n in gone.items():
+        write(f"{n} example{'' if n == 1 else 's'} of route '{route}', which the scenario no longer has, "
+              f"{'was' if n == 1 else 'were'} left out")
+    if dropped:
+        write(f"{dropped} corrected value{'' if dropped == 1 else 's'} no longer fit{'s' if dropped == 1 else ''} "
+              f"the scenario and {'was' if dropped == 1 else 'were'} left out")
+
+
+def training_rows(scenario: Scenario, examples: list[dict], records: list[dict],
+                  write=_warn) -> tuple[list, list, list]:
     """-> (train, reviewed, test) lists of rows: {"text", "route", "answers" ({question: candidate index}),
     "facts", "options" (or None), "option" (the right option's index, or None)}.
 
     `reviewed` are the routes the owner chose in review mode. They are real, so all of them are trained on,
-    except one that repeats a held-back example. Raises ValueError naming the examples line that is wrong."""
-    train, test = [], []
+    except one that repeats a held-back example. Examples of a route the scenario no longer has, and corrected
+    values it can no longer take, are left out, and `write` says how many. Raises ValueError naming the examples
+    line that is wrong."""
+    train, test, gone = [], [], Counter()
     for number, example in enumerate(examples, start=1):
-        if example["route"] in scenario.routes:
-            try:
-                row = _row(scenario, example)
-            except ValueError as error:
-                raise ValueError(f"line {number}: {error}") from error
-            (test if split_of(example["text"]) == "test" else train).append(row)
+        if example["route"] not in scenario.routes:
+            gone[example["route"]] += 1
+            continue
+        try:
+            row = _row(scenario, example)
+        except ValueError as error:
+            raise ValueError(f"line {number}: {error}") from error
+        (test if split_of(example["text"]) == "test" else train).append(row)
     held_back = {row.get("message", row["text"]) for row in test}
     # A reviewed route's text may carry routing's facts after the message; the message is what repeats an example
     reviewed = [reviewed_row(scenario, verdict) for verdict in route_verdicts(records, scenario)
                 if message_of(verdict["state_text"]) not in held_back]
+    _left_out(gone, sum(row["dropped"] for row in reviewed), write)
     return train, reviewed, test
 
 
@@ -125,15 +147,27 @@ def message_of(state_text: str) -> str:
     return state_text.split("\n\nKnown:\n")[0]
 
 
+def _fits(scenario: Scenario, name: str, value) -> bool:
+    try:
+        labels(scenario, {"answers": {name: value}})
+    except ValueError:
+        return False
+    return True
+
+
 def reviewed_row(scenario: Scenario, verdict: dict) -> dict:
-    """A training row from the owner's correction. Answers and options the scenario can no longer take are left
-    out: the scenario may have changed since."""
-    answers = {name: value for name, value in verdict.get("answers", {}).items() if name in scenario.questions}
+    """A training row from the owner's correction. Each answer the scenario can no longer take is left out, and
+    so are the options if they no longer fit: the scenario may have changed since. "dropped" says how many."""
+    given = verdict.get("answers", {})
+    answers = {name: value for name, value in given.items() if _fits(scenario, name, value)}
     ranked = {key: verdict[key] for key in ("options", "option") if key in verdict} \
         if scenario.routes[verdict["human"]].options else {}
-    example = {"route": verdict["human"], "answers": answers, "facts": verdict.get("facts", []), **ranked}
+    example = {"route": verdict["human"], "answers": answers, "facts": verdict.get("facts", [])}
+    dropped = len(given) - len(answers)
     try:
-        row = _row(scenario, example, verdict["state_text"])
+        row = _row(scenario, {**example, **ranked}, verdict["state_text"])
     except ValueError:
-        row = _row(scenario, {"route": verdict["human"]}, verdict["state_text"])
-    return {**row, "message": message_of(verdict["state_text"])}
+        # Every answer left fits, so the options are what does not
+        row = _row(scenario, example, verdict["state_text"])
+        dropped += 1
+    return {**row, "message": message_of(verdict["state_text"]), "dropped": dropped}

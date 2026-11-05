@@ -23,6 +23,9 @@ except ModuleNotFoundError as missing:
     raise not_installed(missing) from missing
 
 ROUTE_QID = "__route__"
+# The MLX builds ship their own Python (clm_mlx), which runs in this process, so each is taken at a known commit
+MLX_REVISIONS = {"mlx-community/CLM-v0.1-8B-MLX-8bit": "eb39b6c777c579720f7a1458f2614be4508a4e15",
+                 "mlx-community/CLM-v0.1-8B-MLX-4bit": "489b421bafc007e3ae409528d77006d26d362689"}
 
 
 class MlxEngine:
@@ -64,11 +67,21 @@ class MlxEngine:
             tracing.add("texts_encoded", len({(which, text) for which, found in texts.items() for text in found
                                               if (which, text) not in self.engine.cache}))
         before = self.engine.tokens_spent
-        # _vectors is the build's own; the model revision pins the build, so it does not change under us
+        # _vectors is the build's own; MLX_REVISIONS pins the build, so it does not change under us
         with tracing.timed("encode_ms"):
             for which, found in texts.items():
                 self.engine._vectors(found, which)  # pylint: disable=protected-access
         tracing.add("tokens", self.engine.tokens_spent - before)
+
+    def state_vectors(self, texts: list[str]) -> np.ndarray:
+        """[n, projection] state-head vectors, unit length, from the build's cache where it has them."""
+        if tracing.active():
+            tracing.add("texts_encoded", len({text for text in texts if ("state", text) not in self.engine.cache}))
+        before = self.engine.tokens_spent
+        with tracing.timed("encode_ms"):
+            found = np.array(self.engine._vectors(texts, "state"))  # pylint: disable=protected-access
+        tracing.add("tokens", self.engine.tokens_spent - before)
+        return found
 
     def embed(self, texts: list[str]) -> np.ndarray:
         """[n, hidden] encoder vectors, unit length."""
@@ -111,10 +124,15 @@ def load_mlx_engine(model_id: str, heads_dir=None) -> MlxEngine:
 
     `heads_dir` swaps the build's own heads for ones trained with train.py; the encoder is the same."""
     logging.getLogger("transformers").setLevel(logging.ERROR)
-    model_dir = snapshot_download(repo_id=model_id)
-    # The clm_mlx package ships inside the model repo rather than on PyPI
+    revision = MLX_REVISIONS.get(model_id)
+    if revision is None:
+        print(f"warning: {model_id} has no pinned commit, so its clm_mlx code is taken as the repo has it now",
+              file=sys.stderr)
+    model_dir = snapshot_download(repo_id=model_id, revision=revision)
+    # The clm_mlx package ships inside the model repo rather than on PyPI. At the end of the path, nothing in the
+    # model folder can stand in for a module installed here
     if model_dir not in sys.path:
-        sys.path.insert(0, model_dir)
+        sys.path.append(model_dir)
     from clm_mlx.engine import Engine  # pylint: disable=import-outside-toplevel,import-error
     # truncation="tail" keeps the most recent tokens when a state exceeds 2048 tokens
     heads = str(heads_dir) if heads_dir else os.path.join(model_dir, "heads")
@@ -162,11 +180,17 @@ def resolve_heads(scenario: Scenario):
         return None, "released heads"
     try:
         facts = json.loads((folder / "training.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        facts = None
-    if not isinstance(facts, dict):
+        why = None if isinstance(facts, dict) else "not a JSON object"
+    except FileNotFoundError:
         return None, (f"released heads ({folder.name} has no trained heads yet; "
                       f"create them with clm-synthesize and clm-train)")
+    except OSError as error:
+        why = error.strerror
+    except ValueError as error:
+        why = str(error)
+    if why:
+        # A folder that was trained once should not look like one that never was
+        return None, f"released heads (training.json in {folder.name} cannot be read: {why}; run clm-train again)"
     reason = _stale(folder, facts, scenario)
     return (None, f"released heads ({reason})") if reason else (folder, f"trained heads from {folder.name}")
 
@@ -193,6 +217,7 @@ class LocalContrastiveRouter:
     def __init__(self, engine):
         self.engine = engine
         self.verdicts: list = []
+        self._matrix = (None, 0, np.zeros((0, 0)))     # the verdicts' vectors, for the list and length they had
 
     def decide(self, state_text: str, scenario: Scenario) -> dict:
         """One CLM call: the routing question plus the scenario's extra questions."""
@@ -253,14 +278,21 @@ class LocalContrastiveRouter:
 
     def embed_state(self, state_text: str, scenario: Scenario) -> list[float]:
         """CLM's state-head vector for this state under the routing question (unit length)."""
-        # Same layout as clm_mlx.schema.state_text: context, blank line, question
-        text = f"{state_text.strip()}\n\n{scenario.routing_instructions.strip()}"
-        return self.engine.project(self.engine.embed([text]), "state")[0].tolist()
+        return self.embed_states([state_text], scenario)[0]
+
+    def embed_states(self, state_texts: list[str], scenario: Scenario) -> list[list[float]]:
+        """embed_state() for each state, in one call. The texts are the ones answering the routing question
+        encodes, so a state just routed is found in the engine's cache."""
+        if not state_texts:
+            return []
+        texts = [clm_schema.state_text(text, scenario.routing_instructions) for text in state_texts]
+        return self.engine.state_vectors(texts).tolist()
 
     def load_verdicts(self, records: list[dict], scenario: Scenario) -> int:
         """Embed the reviewed routes in `records` for matching in decide(); returns how many."""
-        self.verdicts = [(self.embed_state(r["state_text"], scenario), r["human"])
-                         for r in route_verdicts(records, scenario)]
+        verdicts = route_verdicts(records, scenario)
+        vectors = self.embed_states([r["state_text"] for r in verdicts], scenario)
+        self.verdicts = [(vector, r["human"]) for vector, r in zip(vectors, verdicts)]
         return len(self.verdicts)
 
     def add_verdict(self, state_text: str, route: str, scenario: Scenario) -> None:
@@ -269,13 +301,18 @@ class LocalContrastiveRouter:
 
     def match_verdict(self, vector: list[float], threshold: float) -> tuple[str, float] | None:
         """The closest stored verdict at or above the threshold; on a tie the later one wins."""
-        best_route, best_similarity = None, threshold
+        if not self.verdicts:
+            return None
         with tracing.timed("match_ms"):
-            for stored, human_route in self.verdicts:
-                similarity = sum(a * b for a, b in zip(vector, stored))
-                if similarity >= best_similarity:
-                    best_route, best_similarity = human_route, similarity
-        return None if best_route is None else (best_route, best_similarity)
+            listed, count, matrix = self._matrix
+            if listed is not self.verdicts or count != len(self.verdicts):
+                matrix = np.array([stored for stored, _ in self.verdicts], dtype=np.float64)
+                self._matrix = (self.verdicts, len(self.verdicts), matrix)
+            similarities = matrix @ np.asarray(vector, dtype=np.float64)
+            best = len(similarities) - 1 - int(np.argmax(similarities[::-1]))
+        if similarities[best] < threshold:
+            return None
+        return self.verdicts[best][1], float(similarities[best])
 
     def check_tool(self, state_text: str, scenario: Scenario) -> float:
         """Probability that a proposed tool call is appropriate; the call is described in state_text."""

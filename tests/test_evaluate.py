@@ -95,24 +95,22 @@ def test_scenario_path_is_required(capsys):
     assert "scenario" in capsys.readouterr().err
 
 
-def test_evaluate_works_without_vectors_and_says_reuse_is_by_exact_text(scenario):
-    class NoVectors(FakeRouter):
-        exact_match = True
-
-        def embed_state(self, state_text, scenario):
-            raise AssertionError("a server backend has no vectors")
-
-    records = [route_record("User: a", "Billing", "Billing"), route_record("User: b", "Billing", "Tech")]
-    result = evaluate(records, scenario, NoVectors(decision("Billing")))
-    assert result["matching"] is None
-    assert "exact text" in format_report(result, scenario)
-
-
 def test_agreement_counts(scenario):
     records = [route_record("refund", "Billing", "Billing"), route_record("crash", "Billing", "Tech"),
                route_record("parcel", "Tech", "Shipping")]          # route no longer in the scenario
     router = FakeRouter({"refund": decision("Billing"), "crash": decision("Billing")})
     assert agreement(records, scenario, router) == {"n": 2, "agree": 1}
+
+
+def test_a_correction_that_a_later_one_replaced_is_not_counted(scenario):
+    records = [route_record("crash", "Billing", "Billing"), route_record("crash", "Billing", "Tech"),
+               route_record("parcel", "Tech", "Shipping"), route_record("parcel", "Tech", "Shipping")]
+    router = FakeRouter({"crash": decision("Tech")}, vectors={"crash": [1.0, 0.0]})
+    assert agreement(records, scenario, router) == {"n": 1, "agree": 1}
+    result = evaluate(records, scenario, router)
+    assert (result["routing"]["n"], result["routing"]["skipped"], result["routing"]["confusion"]) == \
+        (1, 1, {("Tech", "Tech"): 1})
+    assert result["matching"]["n"] == 1
 
 
 def test_main_when_clm_cannot_load_is_one_line(write_scenario, monkeypatch, capsys):
@@ -152,16 +150,29 @@ def test_a_corrected_answer_is_replayed_with_only_the_facts_its_question_hears(w
     assert router.ask_calls[0][0] == "User: refund"
 
 
+def level(*probabilities):
+    """A score answer as CLM gives it, with its expected level and the probability of each level."""
+    return {"type": "score", "score": sum(i * p for i, p in enumerate(probabilities)),
+            "probabilities": {str(i): p for i, p in enumerate(probabilities)}}
+
+
+def test_a_score_answer_counts_as_its_likeliest_level_as_in_training_and_the_replay():
+    # The expected level is 1.0, but level 1 is the least likely of the three
+    found = score_cases([{"route": "Refund", "answers": {"upset": 1}}, {"route": "Refund", "answers": {"upset": 0}}],
+                        [{"route": "Refund", "uncertain": False, "answers": {"upset": level(0.45, 0.1, 0.45)}}] * 2)
+    assert found["answers"]["upset"] == {1: (0, 1), 0: (1, 1)}
+
+
 def test_cases_are_scored_per_class():
     cases = [{"route": "Rebook", "option": "T1", "answers": {"deadline": 2, "vulnerable": True, "travel_mode": "air"}},
              {"route": "Rebook", "option": "T1", "answers": {"deadline": 0, "vulnerable": False}},
              {"route": "Refund", "answers": {"upset": 2}}]
     replies = [{"route": "Rebook", "uncertain": False, "option": {"id": "T1"},
-                "answers": {"deadline": {"type": "score", "score": 1.6}, "vulnerable": {"type": "noul", "noul": 0.7},
+                "answers": {"deadline": level(0.1, 0.2, 0.7), "vulnerable": {"type": "noul", "noul": 0.7},
                             "travel_mode": {"type": "choice", "choice": "rail"}}},
                {"route": "Rebook", "uncertain": False, "option": {"id": "T2"},
-                "answers": {"deadline": {"type": "score", "score": 0.4}, "vulnerable": {"type": "noul", "noul": 0.6}}},
-               {"route": "Agent", "uncertain": True, "answers": {"upset": {"type": "score", "score": 1.2}}}]
+                "answers": {"deadline": level(0.7, 0.2, 0.1), "vulnerable": {"type": "noul", "noul": 0.6}}},
+               {"route": "Agent", "uncertain": True, "answers": {"upset": level(0.1, 0.6, 0.3)}}]
     found = score_cases(cases, replies)
     assert found["route"] == {"Rebook": (2, 2), "Refund": (0, 1)}
     assert found["option"] == {"Rebook": (1, 2)}
