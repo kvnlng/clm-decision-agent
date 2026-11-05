@@ -231,7 +231,7 @@ def test_set_check_refuses_conflicts(tmp_path):
 def test_a_person_cannot_set_checked_only_clm_derive_check_does(tmp_path, kind, name):
     derived.write(tmp_path, _layer())
     derived.set_status(tmp_path, kind, name, "rejected", by="kevin")
-    with pytest.raises(derived.DerivedError, match="checked is set only by clm-derive check"):
+    with pytest.raises(derived.DerivedError, match="checked is set only by the mechanical check.*run clm-derive check"):
         derived.set_status(tmp_path, kind, name, "checked", by="kevin")
     assert derived.read(tmp_path)[kind][name]["status"] == "rejected"
     assert derived.set_status(tmp_path, kind, name, "proposed", by="kevin")["status"] == "proposed"

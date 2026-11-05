@@ -20,7 +20,8 @@ KINDS = ("decisions", "facts", "conflicts")
 STATUSES = {"decisions": ("proposed", "checked", "approved", "rejected"),
             "facts": ("proposed", "checked", "approved", "rejected"),
             "conflicts": ("open", "resolved")}
-# The statuses a person sets: checked only clm-derive check sets (set_check), and proposed sends an entry back
+# The statuses a person sets: checked only the mechanical check sets (clm-derive run or check), and proposed sends
+# an entry back
 PERSON = tuple(dict.fromkeys(status for statuses in STATUSES.values() for status in statuses if status != "checked"))
 
 
@@ -107,13 +108,14 @@ def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str
     approved only once checked: a proposed one, such as a corrected one, is not, whatever its old check said, nor
     one whose table changed since its check. With `second_reader`, the model [derived] second_reader names, it is
     approved only with an agreeing second reading by that model made since its last change. Any can be
-    rejected. Checked is never a person's to set: only set_check sets it."""
+    rejected. Checked is never a person's to set: only the mechanical check (clm-derive run or check) sets it."""
     if kind not in KINDS:
         raise DerivedError(f"{kind!r} is not one of {', '.join(KINDS)}")
     if status not in STATUSES[kind]:
         raise DerivedError(f"{status!r} is not a status of {kind}: {', '.join(STATUSES[kind])}")
     if status not in PERSON:
-        raise DerivedError(f"{name}: {status} is set only by clm-derive check: set the entry to proposed and run it")
+        raise DerivedError(f"{name}: {status} is set only by the mechanical check: set the entry to proposed and run "
+                           "clm-derive check")
     if not by:
         raise DerivedError("a status change needs by: who made it")
     layer = read(folder)

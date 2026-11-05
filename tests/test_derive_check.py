@@ -420,7 +420,7 @@ def test_an_entry_whose_document_is_out_of_force_is_sent_back_once_over_several_
     folder = layer_with(env, k401_2026__match_cap=("facts", entry))
     derive_check.recheck(folder, env, on=ON)
     once = derived.read(folder)["facts"]["k401_2026.match_cap"]
-    assert once["note"].count("back to proposed") == 1 and "no longer in force" in once["note"]
+    assert once["note"].count("back to proposed") == 1 and "not in force on the date checked" in once["note"]
     derive_check.recheck(folder, env, on=date(2026, 12, 2))
     assert derived.read(folder)["facts"]["k401_2026.match_cap"] == once
 
