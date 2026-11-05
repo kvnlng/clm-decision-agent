@@ -13,7 +13,6 @@ from urllib.parse import urlsplit
 import httpx2
 from mcp import StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared._httpx_utils import create_mcp_http_client
 
 KEY_ENV = "DECISION_SERVER_KEY"
 
@@ -59,11 +58,11 @@ def key_for(url: str) -> str | None:
 @contextlib.asynccontextmanager
 async def http_streams(url: str, headers: dict | None, refused: list[int] | None = None,
                        read: float | None = None):
-    """Streams to a server over HTTP through the SDK's own HTTP client, sending these headers and waiting up to
-    `read` seconds for a reply (the SDK's default when None). A list given as `refused` collects the status of any
-    response refusing them."""
-    timeout = httpx2.Timeout(30, read=read) if read else None
-    async with create_mcp_http_client(headers=headers, timeout=timeout) as http, \
+    """Streams to a server over HTTP through our own httpx2 client, as the SDK documents, sending these headers and
+    waiting up to `read` seconds for a reply (the SDK's own defaults when None: 30 seconds, 300 to read a stream).
+    A list given as `refused` collects the status of any response refusing them."""
+    timeout = httpx2.Timeout(30, read=read or 300)
+    async with httpx2.AsyncClient(headers=headers, timeout=timeout) as http, \
             streamable_http_client(url, http_client=http) as streams:
         # The SDK reports a refusal only as "an error response"; keep its status to say why
         async def note(response) -> None:
