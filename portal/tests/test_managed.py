@@ -150,6 +150,17 @@ class SlowProcess(FakeProcess):
 
 
 @pytest.mark.anyio
+async def test_a_page_that_reads_running_while_the_server_stops_sees_no_error(tmp_path):
+    popen = FakePopen()
+    server = managed_server(popen, tmp_path)
+    await server.start()
+    seen = []
+    popen.started[0].wait = lambda timeout=None: seen.append(server.running)
+    server.stop()
+    assert seen == [False] and server.error is None and not server.running
+
+
+@pytest.mark.anyio
 async def test_a_restart_waits_for_the_old_server_without_blocking_other_requests(tmp_path):
     server = managed_server(lambda argv, *, env, stderr, **_: SlowProcess(argv, env, stderr), tmp_path)
     await server.start()

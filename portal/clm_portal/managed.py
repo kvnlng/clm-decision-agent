@@ -109,9 +109,10 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
     def running(self) -> bool:
         """Whether the server started and is still running. One that exited after starting gets its stderr, or its
         exit code, as `error`."""
-        if self.process is None or self.error is not None:
+        process = self.process
+        if process is None or self.error is not None:
             return False
-        code = self.process.poll()
+        code = process.poll()
         if code is not None:
             self.error = f"clm-server stopped after starting: {self._tail() or f'it exited with code {code}'}"
         return code is None
@@ -166,14 +167,15 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
         await self.start(wanted)
 
     def stop(self) -> None:
-        """Stop the server, if it is running; this waits up to 10 seconds for it to stop."""
-        if self.process is not None and self.process.poll() is None:
-            self.process.terminate()
+        """Stop the server, if it is running; this waits up to 10 seconds for it to stop. The process is let go
+        first, so a page that reads `running` meanwhile sees it stopped, not stopped with an error."""
+        process, self.process = self.process, None
+        if process is not None and process.poll() is None:
+            process.terminate()
             try:
-                self.process.wait(timeout=10)
+                process.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                self.process.kill()
-        self.process = None
+                process.kill()
 
     def _tail(self) -> str:
         self._stderr.seek(0)
