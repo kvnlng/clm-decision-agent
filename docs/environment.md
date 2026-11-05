@@ -473,7 +473,8 @@ check** only when all of these hold:
    slot's, its outputs include the slot's, it cites only its source; and the model named nothing `missing`.
 
 Statuses go proposed, then checked once the check passes, then approved or rejected by a person with `status`, which
-refuses to approve an entry that is not checked. A correction (a changed value or table) is written with status
+refuses to approve an entry that is not checked. Only `check` sets checked: `status` sets approved, rejected, proposed
+(to send an entry back to be checked again) or, for a conflict, resolved or open. A correction (a changed value or table) is written with status
 proposed and check null together, then `check` runs the check again. `check` also sends any entry but a rejected
 one whose cited document has a newer edition (or has left the collection, or is no longer in force) back to
 proposed, approved ones included, keeping who decided and adding the reason to the note. Each check records the
@@ -520,7 +521,7 @@ the layer, nor another tag of it (any `gemma4:…` for gemma4) or a dated id of 
 disagreement: `check` keeps failing the entry, as "an earlier second reading by MODEL …", until a later second
 reading agrees or a person corrects the entry. With `second_reader`, `status` approves an entry only when its check
 holds a second reading by that model that agreed, made since the entry's last change; so a rejected entry with an
-old passing check is set to proposed and checked again first. Without `second_reader`, `describe` and `check` say
+old passing check is set to proposed and checked again first (with `status`, or Correct, unchanged, in the portal). Without `second_reader`, `describe` and `check` say
 there is no second reading and the check is as before.
 
 **Agreement is necessary, not sufficient.** Two models can make the same mistake: in the handbook example, qwen3:14b

@@ -519,7 +519,7 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-loca
     status.add_argument("environment")
     status.add_argument("kind", choices=derived.KINDS)
     status.add_argument("name")
-    status.add_argument("status")
+    status.add_argument("status", choices=derived.PERSON)
     status.add_argument("--by", required=True, help="who decided")
     status.add_argument("--note", help="why")
     args = parser.parse_args(argv)

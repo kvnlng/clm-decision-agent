@@ -20,6 +20,8 @@ KINDS = ("decisions", "facts", "conflicts")
 STATUSES = {"decisions": ("proposed", "checked", "approved", "rejected"),
             "facts": ("proposed", "checked", "approved", "rejected"),
             "conflicts": ("open", "resolved")}
+# The statuses a person sets: checked only clm-derive check sets (set_check), and proposed sends an entry back
+PERSON = tuple(dict.fromkeys(status for statuses in STATUSES.values() for status in statuses if status != "checked"))
 
 
 class DerivedError(ValueError):
@@ -41,8 +43,11 @@ def read(folder: str | Path) -> dict:
     file = path(folder)
     if not file.exists():
         return empty(None)
-    layer = json.loads(file.read_text(encoding="utf-8"))
-    if layer.get("version") != VERSION or any(not isinstance(layer.get(kind), dict) for kind in KINDS):
+    try:
+        layer = json.loads(file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise DerivedError(f"{file}: not valid JSON: {error}") from error
+    if not isinstance(layer, dict) or layer.get("version") != VERSION or any(not isinstance(layer.get(kind), dict) for kind in KINDS):
         raise DerivedError(f"{file}: not a derived layer of version {VERSION}")
     return layer
 
@@ -101,11 +106,13 @@ def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str
     approved only once checked: a proposed one, such as a corrected one, is not, whatever its old check said, nor
     one whose table changed since its check. With `second_reader`, the model [derived] second_reader names, it is
     approved only with an agreeing second reading by that model made since its last change. Any can be
-    rejected."""
+    rejected. Checked is never a person's to set: only set_check sets it."""
     if kind not in KINDS:
         raise DerivedError(f"{kind!r} is not one of {', '.join(KINDS)}")
     if status not in STATUSES[kind]:
         raise DerivedError(f"{status!r} is not a status of {kind}: {', '.join(STATUSES[kind])}")
+    if status not in PERSON:
+        raise DerivedError(f"{name}: {status} is set only by clm-derive check: set the entry to proposed and run it")
     if not by:
         raise DerivedError("a status change needs by: who made it")
     layer = read(folder)
@@ -121,7 +128,8 @@ def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str
         raise DerivedError(changed_line(name))
     if status == "approved" and second_reader and not _read_again_since(entry, second_reader):
         raise DerivedError(f"{name} has no second reading by {second_reader} that agrees, made since its last "
-                           "change: run clm-derive check (set a rejected entry to proposed first)")
+                           "change: run clm-derive check (send a rejected entry back to proposed first, with "
+                           "clm-derive status or Correct in the portal)")
     entry.update(status=status, decided_by=by, note=note,
                  decided_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     write(folder, layer)

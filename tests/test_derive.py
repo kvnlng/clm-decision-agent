@@ -531,3 +531,17 @@ def test_the_command_lists_only_the_collections_slots_and_says_nothing_derived_o
     # The match cap, proposed or checked in contracts, is neither listed nor counted as approved
     assert "carryover_limit: approved, kept" in out and "match_cap" not in out
     assert "Nothing derived" in out
+
+
+def test_a_broken_layer_is_a_one_line_error(path, capsys):
+    (path.parent / "derived").mkdir()
+    derived.path(path.parent).write_text('{"version": 1,', encoding="utf-8")
+    assert derive.main(["status", str(path), "decisions", "carryover_limit", "approved", "--by", "kevin"]) == 2
+    error = capsys.readouterr().err
+    assert error.startswith("error: ") and "not valid JSON" in error and error.count("\n") == 1
+
+
+def test_the_status_command_offers_only_a_persons_statuses(path, capsys):
+    with pytest.raises(SystemExit):
+        derive.main(["status", str(path), "decisions", "carryover_limit", "checked", "--by", "kevin"])
+    assert "invalid choice: 'checked'" in capsys.readouterr().err
