@@ -4,6 +4,7 @@
 import os
 import time
 
+import anyio.to_thread
 import pytest
 from starlette.datastructures import UploadFile
 
@@ -101,6 +102,18 @@ def test_an_upload_is_not_saved_when_a_job_starts_while_it_arrives(client, envir
     response = upload(client, token, "handbook.jsonl", b'{"id": "hb-1"}\n')
     assert response.status_code == 409 and "wait" in response.text
     assert not (environment.parent / "handbook.jsonl").exists() and not partials(environment.parent)
+
+
+def test_an_upload_whose_save_is_cut_off_leaves_no_partial_file(client, environment, runner, monkeypatch):
+    async def written_then_cut_off(function, *args):
+        function(*args)
+        raise RuntimeError("the request ended while the file was written")
+    monkeypatch.setattr(anyio.to_thread, "run_sync", written_then_cut_off)
+    token = sign_in(client)
+    with pytest.raises(RuntimeError):
+        upload(client, token, "handbook.jsonl", b'{"id": "hb-1"}\n')
+    assert not partials(environment.parent) and not (environment.parent / "handbook.jsonl").exists()
+    assert not runner.seen
 
 
 def test_derive_runs_clm_derive_run(client, environment, runner):

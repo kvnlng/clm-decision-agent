@@ -693,17 +693,11 @@ async def _start(request: Request, name: str, argv: list[str], prepare=None) -> 
     return await documents_page(request, f"Started {name}.")
 
 
-def save_aside(folder: Path, name: str, content: bytes) -> Path:
+def save_aside(partial: Path, content: bytes) -> None:
     """An upload written to a hidden .partial file of its own beside where it goes, so a failed write leaves the
-    file it would replace as it was; nothing is left when the write fails."""
-    partial = folder / f".{name}.{secrets.token_hex(4)}.partial"
-    try:
-        with partial.open("xb") as file:
-            file.write(content)
-    except BaseException:
-        partial.unlink(missing_ok=True)
-        raise
-    return partial
+    file it would replace as it was."""
+    with partial.open("xb") as file:
+        file.write(content)
 
 
 async def _load_upload(request: Request, collection: str, upload: UploadFile, overwrite: bool) -> Response:
@@ -717,11 +711,14 @@ async def _load_upload(request: Request, collection: str, upload: UploadFile, ov
     if target.exists() and not overwrite:
         return await documents_page(request, f"{name} is already in the folder; tick overwrite to replace it", 409)
     content = await upload.read()
-    try:    # off the event loop, so a large upload stops no other page while it is written
-        partial = await anyio.to_thread.run_sync(save_aside, folder, name, content)
-    except OSError as error:
-        return await documents_page(request, f"the file cannot be saved: {error}", 500)
-    try:    # the rename, once the job holds the lock, replaces the file in one step
+    # Named here, so whatever ends the request, even mid-write, the finally removes it
+    partial = folder / f".{name}.{secrets.token_hex(4)}.partial"
+    try:
+        try:    # off the event loop, so a large upload stops no other page while it is written
+            await anyio.to_thread.run_sync(save_aside, partial, content)
+        except OSError as error:
+            return await documents_page(request, f"the file cannot be saved: {error}", 500)
+        # the rename, once the job holds the lock, replaces the file in one step
         return await _start(request, f"clm-load-documents {collection}",
                             ["clm-load-documents", str(portal.environment), collection, str(target)],
                             lambda: os.replace(partial, target))
