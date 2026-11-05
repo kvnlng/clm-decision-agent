@@ -282,6 +282,14 @@ def review(environment: Path) -> dict:  # pylint: disable=too-many-locals
     return {"groups": [(title, group) for title, group in groups if group], "errors": errors}
 
 
+def has_second_reader(environment: Path) -> bool:
+    """Whether the environment file's [derived] table names a second_reader; False when the file cannot be read."""
+    try:
+        return second_reader_of(environment) is not None
+    except ScenarioError:
+        return False
+
+
 # pylint: disable-next=too-many-arguments
 def decide(environment: Path, kind: str, name: str, status: str, *, by: str, note: str | None,
            updates: dict | None = None) -> dict:

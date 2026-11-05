@@ -234,3 +234,14 @@ def test_a_derived_layer_that_is_not_an_object_is_a_load_error(environment, text
     assert any("not a derived layer" in error for error in layer.review(environment)["errors"])
     with pytest.raises(layer.Refused):
         layer.correct_fact(environment, FACT, 1, by="Kevin", note=None)
+
+
+def test_with_a_second_reader_a_rejected_entry_offers_correct_not_approve(client, environment):
+    token = sign_in(client, "Kevin")
+    assert post(client, "/review/decisions/carryover_limit/reject", token).status_code == 200
+    with environment.open("a") as file:
+        file.write('\n[derived]\nsecond_reader = { backend = "ollama", model = "qwen3:14b" }\n')
+    page = client.get("/review").text
+    part = page[page.index('id="decisions-carryover_limit"'):]
+    approve = part[:part.index("</section>")].split("Approve")[0][-300:]
+    assert "disabled" in approve and "Correct" in approve

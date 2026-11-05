@@ -359,19 +359,22 @@ async def review_item(portal: Portal, session: Session, item: dict, collection: 
         parts.append(f'<p>{check_text(entry.get("check"))}</p>')
     parts.append(await _passages(portal, entry.get("collection") or collection, entry.get("source")))
     parts.append(_decided(entry))
-    parts.append(review_actions(session, item))
+    parts.append(review_actions(session, item, layer.has_second_reader(portal.environment)))
     return f'<section class="entry" id="{esc(kind)}-{esc(name)}">{"".join(parts)}</section>'
 
 
-def review_actions(session: Session, item: dict) -> str:
+def review_actions(session: Session, item: dict, second_reader: bool = False) -> str:
     """The buttons an entry allows: approve (once checked and passed, or rejected after passing, to undo the
-    rejection), reject, resolve, correct."""
+    rejection, unless a second reader must read it again first), reject, resolve, correct."""
     entry, kind = item["entry"], item["kind"]
     if kind == "conflicts":
         return action_form(session, item, "resolve", "Resolve") if entry.get("status") == "open" else ""
     passed = bool((entry.get("check") or {}).get("passed")) and entry.get("status") in ("checked", "rejected")
-    forms = [action_form(session, item, "approve", "Approve", enabled=passed,
-                         why="only an entry that passed clm-derive check can be approved"),
+    why = "only an entry that passed clm-derive check can be approved"
+    if passed and second_reader and entry.get("status") == "rejected":
+        passed, why = False, ("a rejected entry needs a new second reading: Correct it, which sends it back to "
+                              "proposed, then run clm-derive check")
+    forms = [action_form(session, item, "approve", "Approve", enabled=passed, why=why),
              action_form(session, item, "reject", "Reject")]
     if kind == "facts":
         value = esc(json.dumps(entry.get("value"), ensure_ascii=False))
