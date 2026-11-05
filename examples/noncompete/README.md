@@ -40,6 +40,10 @@ a passage can contain the words and still be misread. Checking the labels found 
 read as the covenant's length, post-judgment interest read as a covenant reformed, a contractor read as an
 employee. Of the 626 opinions with an outcome, 395 also have a length.
 
+`build` keeps what it reads in `data/facts-MODEL.jsonl` and skips an opinion already there, even one read as no
+facts. An older run logged an Ollama error as no facts. Delete an opinion's line, or the whole file, and `build`
+reads it again.
+
 ## Running it
 
 PostgreSQL (18 here) with pgvector (Homebrew, no Docker) and Ollama with `embeddinggemma` and `gemma4:26b`.
