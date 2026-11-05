@@ -40,7 +40,8 @@ limit out of the scenario.
 
 The share of each component bought from Region B: 0, 50% or 100%. The objective is the Q3 margin. A branch's lead
 time is each component's volume-weighted lead time, and the product waits for its slowest component. The delivery
-extension is measured against buying everything in Region A.
+extension is measured against buying everything in Region A. A component with no offer in a region the branch
+buys from, or a supplier outside Region A and Region B, stops the branch with an error that names it.
 
 | Region B share | Q3 margin | Delivery extension | Defect rate | Largest share on one provider | Result |
 |---|---|---|---|---|---|

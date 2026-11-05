@@ -1,6 +1,7 @@
 """Tests for the tariff example: the COO's sourcing question, decided from the graph, the rules and the levers."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -123,3 +124,29 @@ def test_without_news_the_limit_is_decided_with_zero(fake_clm, monkeypatch):  # 
         decided = [step for step in item["steps"] if step["name"] == "news_risk"]
         assert decided[0]["inputs"] == {"probability": 0.0, "supplier": "no supplier in use has news"}
     assert result["best"] == {"region_b_share": 0.5} and fake_clm.loads == 0
+
+
+def _functions():
+    spec = importlib.util.spec_from_file_location("tariff_functions", EXAMPLE.parent / "tariff_functions.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def offer(component, supplier, region):
+    return {"component": component, "supplier": supplier, "region": region, "unit_price": 10, "tariff_rate": 0,
+            "freight_per_unit": 0, "lead_time_days": 10, "defect_rate": 0.01, "units_per_product": 1}
+
+
+def test_every_unit_of_a_component_is_bought():
+    offers = [offer("C1", "SA1", "Region A"), offer("C1", "SB1", "Region B"), offer("C2", "SA2", "Region A")]
+    assert _functions().branch_figures(100, 50, offers, 0.0)["q3_cost"] == 2000
+
+
+@pytest.mark.parametrize("offers, share, named", [
+    ([offer("C1", "SA1", "Region A"), offer("C1", "SB1", "Region B"), offer("C2", "SA2", "Region A")], 0.5, "C2"),
+    ([offer("C1", "SA1", "Region A"), offer("C1", "SC1", "Region C")], 0.5, "SC1"),
+    ([offer("C1", "SB1", "Region B")], 1.0, "C1")])
+def test_a_component_the_share_cannot_buy_is_named(offers, share, named):
+    with pytest.raises(ValueError, match=named):
+        _functions().branch_figures(100, 50, offers, share)
