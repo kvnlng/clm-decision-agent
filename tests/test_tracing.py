@@ -153,6 +153,21 @@ async def test_check_call_and_describe_are_traced(traced_server):
     assert describe["tool"] == "describe"
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("text", [False, True])
+async def test_decide_many_is_traced_with_its_outcomes_and_with_trace_text_its_texts(write_scenario, tmp_path,
+                                                                                    text):
+    scenario = load_scenario(write_scenario(BASE_TOML))
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl", text=text)
+    built = server.build_server(scenario, FakeRouter(decision("Tech")), load_tools(scenario), review=False,
+                                trace=writer)
+    async with Client(built) as client:
+        await client.call_tool("decide_many", {"requests": [{"text": TEXT}, {"text": "other"}]})
+    [record] = lines(writer.path, writer)
+    assert [made["route"] for made in record["outcome"]["decisions"]] == ["Tech", "Tech"]
+    assert record.get("text") == ([TEXT, "other"] if text else None)
+
+
 def test_the_torch_engine_counts_cache_texts_tokens_and_padding(tmp_path):
     engine = TorchEngine(FakeEncoder(), TorchHeads(tiny_weights(), CONFIG, "cpu"))
     writer = tracing.TraceWriter(tmp_path / "trace.jsonl")

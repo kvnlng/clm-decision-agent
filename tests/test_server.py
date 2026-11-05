@@ -255,6 +255,14 @@ async def test_decide_many_over_mcp(parts):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("context", [[], "", 0, False])
+async def test_decide_many_refuses_a_context_that_is_not_an_object(parts, context):
+    async with Client(server.build_server(*parts, review=False)) as client:
+        result = await client.call_tool("decide_many", {"requests": [{"text": TEXT, "context": context}]})
+    assert result.is_error and "requests[0]" in result.content[0].text
+
+
+@pytest.mark.anyio
 async def test_decide_many_accepts_a_null_context_as_decide_does(parts):
     async with Client(server.build_server(*parts, review=False)) as client:
         result = await client.call_tool("decide_many", {"requests": [{"text": TEXT, "context": None}]})

@@ -130,8 +130,11 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         except ClmError as error:
             raise ToolError(str(error)) from error
 
-    def traced(tool: str, text: str | None = None):
+    def traced(tool: str, text: str | list[str] | None = None):
         return trace.call(tool, text) if trace else contextlib.nullcontext({})
+
+    def outcome(result: dict) -> dict:
+        return {key: result.get(key) for key in ("route", "confidence", "uncertain", "source")}
 
     @server.tool(annotations=deciding)
     def decide(text: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -141,7 +144,7 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         with traced("decide", text) as record:
             result = clm(lambda: decision.decide(text, scenario, router, tools, context, serve.read_only))
             if trace:
-                record["outcome"] = {key: result.get(key) for key in ("route", "confidence", "uncertain", "source")}
+                record["outcome"] = outcome(result)
             return result
 
     @server.tool(annotations=deciding)
@@ -151,11 +154,13 @@ def build_server(scenario: Scenario, router, tools: dict[str, Callable], review:
         if len(requests) > MAX_BATCH:
             raise ToolError(f"decide_many takes at most {MAX_BATCH} requests a call, not {len(requests)}")
         for i, request in enumerate(requests):
-            if not isinstance(request.get("text"), str) or not isinstance(request.get("context") or {}, dict):
+            if not isinstance(request.get("text"), str) or not isinstance(request.get("context"), dict | None):
                 raise ToolError(f"requests[{i}] must be {{'text': ..., 'context': {{...}}}}, with context optional")
-        with traced("decide_many"):
-            return {"decisions": clm(lambda: decision.decide_many(requests, scenario, router, tools,
-                                                                  serve.read_only))}
+        with traced("decide_many", [request["text"] for request in requests]) as record:
+            decisions = clm(lambda: decision.decide_many(requests, scenario, router, tools, serve.read_only))
+            if trace:
+                record["outcome"] = {"decisions": [outcome(made) for made in decisions]}
+            return {"decisions": decisions}
 
     @server.tool(annotations=READ_ONLY)
     def check_call(text: str, call: dict[str, Any]) -> dict[str, Any]:
@@ -306,7 +311,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--allowed-host", action="append", dest="allowed_hosts",
                         help="a host callers name, such as decisions.example.org, taken on any port (repeatable)")
     parser.add_argument("--trace", metavar="FILE", help="write one line per call to FILE, saying where the time went")
-    parser.add_argument("--trace-text", action="store_true", help="include each request's text in the trace")
+    parser.add_argument("--trace-text", action="store_true",
+                        help="include each request's text in the trace: decide, decide_many, check_call and "
+                             "correct's (an environment's tools take no request text)")
     parser.add_argument("--tools", metavar="NAMES",
                         help="offer only these tools, comma-separated, and describe; NAME* matches a prefix "
                              "(replaces [serve] tools)")

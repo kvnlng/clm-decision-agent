@@ -105,8 +105,9 @@ class TraceWriter:
             self._thread.join()
 
     @contextlib.contextmanager
-    def call(self, tool: str, request_text: str | None = None) -> Generator[dict]:
-        """Trace one call; the block may fill in the record's "outcome"."""
+    def call(self, tool: str, request_text: str | list[str] | None = None) -> Generator[dict]:
+        """Trace one call, with its request's text (a list for decide_many); the block may fill in the record's
+        "outcome"."""
         record: dict = {"tool": tool, "started": time.time(), "counts": {}, "tools": [], "outcome": {}}
         if self.text and request_text is not None:
             record["text"] = request_text
