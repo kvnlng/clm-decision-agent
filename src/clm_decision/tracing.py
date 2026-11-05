@@ -12,6 +12,7 @@ import atexit
 import contextlib
 import contextvars
 import json
+import os
 import queue
 import sys
 import threading
@@ -78,9 +79,7 @@ class TraceWriter:
             try:
                 line = json.dumps(record) + "\n"
                 # Opened once and kept open for the writer's life, so it is closed below, not by a with
-                if file is None:
-                    self.path.parent.mkdir(parents=True, exist_ok=True)
-                file = file or self.path.open("a", encoding="utf-8")  # pylint: disable=consider-using-with
+                file = file or self._open()
                 file.write(line)
                 if self._records.empty():
                     file.flush()
@@ -89,6 +88,15 @@ class TraceWriter:
                 print(f"warning: tracing stopped: cannot write to {self.path}: {error}", file=sys.stderr)
         if file:
             file.close()
+
+    def _open(self):
+        """The trace, private to its owner like the corrections record: its lines can hold request text and name
+        callers. A folder made for it is private too, and a trace made before this is tightened."""
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        file = os.fdopen(os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600), "a", encoding="utf-8")
+        if not self.path.is_symlink():
+            os.chmod(self.path, 0o600)
+        return file
 
     def close(self) -> None:
         """Write what is left and stop. Called at exit too."""

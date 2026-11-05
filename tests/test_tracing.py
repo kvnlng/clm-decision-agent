@@ -352,6 +352,19 @@ def test_the_trace_file_s_folder_is_made_if_missing(tmp_path):
     assert len(lines(tmp_path / "runs" / "trace.jsonl", writer)) == 1
 
 
+def test_the_trace_file_and_its_new_folder_are_private(tmp_path):
+    old = tmp_path / "old.jsonl"
+    old.write_text("")
+    old.chmod(0o644)
+    for path in (tmp_path / "runs" / "trace.jsonl", old):
+        writer = tracing.TraceWriter(path)
+        with writer.call("decide", TEXT):
+            pass
+        writer.close()
+        assert path.stat().st_mode & 0o777 == 0o600
+    assert (tmp_path / "runs").stat().st_mode & 0o777 == 0o700
+
+
 def test_the_report_shows_an_environments_steps(tmp_path, capsys):
     path = tmp_path / "trace.jsonl"
     path.write_text("\n".join(json.dumps(record(100.0 + i, 10.0, tool="scenario_sourcing", query=9, query_ms=3.0,
