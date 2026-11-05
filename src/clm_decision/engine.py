@@ -3,10 +3,13 @@
 Every number a decision rests on passes through here: a query's rows, a rule's inputs and the rules that fired, a
 calculation's result. The owner's branch function asks for them through `Steps`, so the engine carries the numbers
 and the agent only chooses which branches to run. A branch is rejected when a limit says not allowed, and fails
-when a step fails or a limit was never checked, so no branch can skip a limit unnoticed.
+when a step fails, even if its code caught the error, or a limit was never checked, so no branch can skip a limit or
+a failed step unnoticed. A query, decision or calculation with an unknown name or bad parameters raises without being
+recorded.
 """
 from __future__ import annotations
 
+import contextlib
 import itertools
 import math
 import re
@@ -164,10 +167,25 @@ class Steps:
         self.case = case or {}
         self.steps: list[dict] = []
 
+    @contextlib.contextmanager
+    def _recorded(self, kind: str, name: str, inputs: dict, **extra):
+        """Record the step as failed if what runs inside raises, even if the owner's code then catches it, so a
+        branch cannot carry on from a failed step unnoticed."""
+        try:
+            yield
+        except Exception as error:
+            self.steps.append({"kind": kind, "name": name, "inputs": inputs, "result": None, **extra,
+                               "error": _message(error)})
+            raise
+
     def query(self, name: str, **params) -> list[dict]:
         """A named query's rows."""
         query = _part(self.env.queries, "query", name)
         _check(f"query {name}", query.params, params)
+        with self._recorded("query", name, params, information=query.kind):
+            return self._query(query, name, params)
+
+    def _query(self, query, name: str, params: dict) -> list[dict]:
         tracing.add("query")
         read: set[str] = set()
         with tracing.timed("query_ms"):
@@ -205,7 +223,8 @@ class Steps:
         origin = {"origin": decision.origin, **({"status": decision.status} if decision.origin == "derived" else {})}
         _check(f"decision {name}", decision.params, inputs)
         tracing.add("decision")
-        try:
+        # Recorded even if the owner's code catches it, so a limit that failed cannot pass unnoticed
+        with self._recorded("decision", name, inputs, fired=[], **origin):
             with tracing.timed("decision_ms"):
                 if decision.table is not None:
                     result = evaluate(decision.table, inputs)
@@ -220,11 +239,6 @@ class Steps:
             ids = dict.fromkeys(part.strip() for cell in cells if isinstance(cell, str) for part in cell.split(";"))
             if decision.collection and ids:
                 step["citations"] = _resolved(self.env, decision.collection, ";".join(ids))
-        except Exception as error:
-            # Recorded even if the owner's code catches it, so a limit that failed cannot pass unnoticed
-            self.steps.append({"kind": "decision", "name": name, "inputs": inputs, "result": None, "fired": [],
-                               **origin, "error": _message(error)})
-            raise
         self.steps.append(step)
         return outputs
 
@@ -234,13 +248,8 @@ class Steps:
         if not isinstance(text, str) or not text.strip():
             raise StepError(f"judge {name}: there is no text to judge")
         tracing.add("judgement")
-        try:
-            with tracing.timed("judgement_ms"):
-                result = {"probability": self.env.clm.probability(judge, text)}
-        except Exception as error:
-            self.steps.append({"kind": "judgement", "name": name, "inputs": {"text": text}, "result": None,
-                               "error": _message(error)})
-            raise
+        with self._recorded("judgement", name, {"text": text}), tracing.timed("judgement_ms"):
+            result = {"probability": self.env.clm.probability(judge, text)}
         self.steps.append({"kind": "judgement", "name": name, "inputs": {"text": text}, "result": result})
         return result
 
@@ -249,16 +258,21 @@ class Steps:
         calculation = _part(self.env.calculations, "calculation", name)
         _check(f"calculation {name}", calculation.params, inputs)
         tracing.add("calculation")
-        with tracing.timed("calculation_ms"):
-            result = getattr(self.env.functions, calculation.function)(**inputs)
-        if not isinstance(result, dict):
-            raise StepError(f"calculation {name}: its function must return a dict")
+        with self._recorded("calculation", name, inputs):
+            with tracing.timed("calculation_ms"):
+                result = getattr(self.env.functions, calculation.function)(**inputs)
+            if not isinstance(result, dict):
+                raise StepError(f"calculation {name}: its function must return a dict")
         self.steps.append({"kind": "calculation", "name": name, "inputs": inputs, "result": result})
         return result
 
     def search(self, collection: str, text: str, filters: dict | None = None, limit: int = 10) -> list[dict]:
         """The passages closest to the text, by meaning and words, that the filters allow: evidence to read, which
         decides nothing by itself."""
+        with self._recorded("search", collection, {"text": text, "filters": filters, "limit": limit}):
+            return self._search(collection, text, filters, limit)
+
+    def _search(self, collection: str, text: str, filters: dict | None, limit: int) -> list[dict]:
         built = build_record(self.env, collection)
         if not isinstance(text, str) or not text.strip():
             raise StepError(f"search {collection}: there is no text to search for")
@@ -280,6 +294,10 @@ class Steps:
 
     def document(self, collection: str, id: str, passage: str | None = None) -> dict:  # pylint: disable=redefined-builtin
         """A document with its passages, or one passage, as stored: for checking what a citation says."""
+        with self._recorded("document", collection, {"id": id, "passage": passage}):
+            return self._document(collection, id, passage)
+
+    def _document(self, collection: str, id: str, passage: str | None) -> dict:  # pylint: disable=redefined-builtin
         built = build_record(self.env, collection)
         tracing.add("document")
         found = self.env.store.document(collection, id, passage)
@@ -292,6 +310,10 @@ class Steps:
         return found
 
     def _citations(self, collection: str, id: str, depth: int, direction: str) -> list[dict]:  # pylint: disable=redefined-builtin
+        with self._recorded("citations", collection, {"id": id, "depth": depth, "direction": direction}):
+            return self._walk(collection, id, depth, direction)
+
+    def _walk(self, collection: str, id: str, depth: int, direction: str) -> list[dict]:  # pylint: disable=redefined-builtin
         built = build_record(self.env, collection)
         if not isinstance(depth, int) or isinstance(depth, bool) or not 1 <= depth <= MAX_DEPTH:
             raise StepError(f"{direction} {collection}: depth must be from 1 to {MAX_DEPTH}, not {depth!r}")
@@ -453,6 +475,8 @@ def _run_branch(env: Environment, scenario, params: dict, levers: dict, case: di
         branch["objective"] = objective
         branch["rejected_by"] = _limits(scenario, steps.steps)
         branch["approvals"] = _approvals(scenario, steps.steps)
+        if failed := next((step for step in steps.steps if step.get("error")), None):
+            raise StepError(f"{failed['kind']} {failed['name']} failed: {failed['error']}")
         branch["status"] = "rejected" if branch["rejected_by"] else "kept"
     # The owner's code can fail in any way; one branch failing should not stop the others
     except Exception as error:  # pylint: disable=broad-exception-caught

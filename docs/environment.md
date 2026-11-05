@@ -290,8 +290,8 @@ def sourcing_branch(steps, params, levers):
 
 - **A limit** is a decision whose outputs include `allowed` (true or false) and `reason` (text). A branch is
   **rejected** when any evaluation of a limit says not allowed; the result names the decision, reason and inputs.
-- **A branch fails** when a listed limit was never evaluated or failed (even if your code caught the error), a step
-  fails, or the figures have no finite number for the objective. So no branch skips a limit: in the example, the
+- **A branch fails** when a listed limit was never evaluated, when a limit or any other step failed (even if your
+  code caught the error: the failed step is kept in the branch's steps), or when the figures have no finite number for the objective. So no branch skips a limit: in the example, the
   dependency check runs on every branch because its rule is a limit. A branch with nothing to check a limit against (a
   product with no key clients, for the SLA rule) fails too: check the limit once with a neutral input, or leave it out
   of that scenario.

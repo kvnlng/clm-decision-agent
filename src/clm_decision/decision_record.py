@@ -22,7 +22,8 @@ def _information(record: dict, steps: list[dict], descriptions: dict) -> None:
     """Add each query a run used, once per query and inputs, with its rows; an estimate's with their ranges and
     sources."""
     for step in steps:
-        if step["kind"] != "query" or step.get("case", "central") != "central":
+        # A failed query returned nothing; the branch's error says why
+        if step["kind"] != "query" or step.get("case", "central") != "central" or step.get("error"):
             continue
         item = {"query": step["name"], "kind": step.get("information", "fact"), "inputs": step["inputs"],
                 "description": descriptions.get(step["name"], "")}
@@ -39,6 +40,8 @@ def _documents(record: dict, steps: list[dict]) -> None:
     """Every passage a search or document step returned, and every passage of a document a rule cited, once, with
     its collection and when it was built."""
     for step in steps:
+        if step.get("error"):
+            continue
         if step["kind"] == "search":
             passages = [(step["name"], step["built_at"], row["document"], row["citation"], row["passage"], row["text"])
                         for row in step["result"]]
