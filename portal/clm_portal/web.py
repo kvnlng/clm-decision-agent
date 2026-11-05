@@ -24,6 +24,7 @@ from typing import Any
 import httpx
 from starlette.applications import Starlette
 from starlette.datastructures import UploadFile
+from starlette.formparsers import MultiPartException
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
@@ -775,7 +776,7 @@ class Guard:  # pylint: disable=too-few-public-methods
     def __init__(self, app, portal: Portal, hosts: set[str], public: str | None = None):
         self.app, self.portal, self.hosts, self.public = app, portal, hosts, public
 
-    async def __call__(self, scope, receive, send):  # pylint: disable=too-many-return-statements
+    async def __call__(self, scope, receive, send):  # pylint: disable=too-many-return-statements,too-many-locals
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -812,7 +813,11 @@ class Guard:  # pylint: disable=too-few-public-methods
             if body is None:
                 await PlainTextResponse("The request was too large or did not arrive.", 413)(scope, receive, send)
                 return
-            form = await Request(scope, _replay(body)).form()
+            try:
+                form = await Request(scope, _replay(body)).form()
+            except MultiPartException as error:     # Starlette answers this itself only inside the app
+                await PlainTextResponse(f"The form could not be read: {error.message}", 400)(scope, receive, send)
+                return
             token = str(form.get("csrf", ""))
             if not hmac.compare_digest(token.encode(), session.csrf.encode()):
                 await PlainTextResponse("Refused: the form's token is missing or wrong; reload the page.", 403)(
