@@ -46,7 +46,7 @@ OPERATOR_NOTE = ("The portal restarts its own server after every change. The ser
                  "start: its operator restarts it, or redeploys from git, to pick up approved changes.")
 TESTING_BANNER = "Testing: unapproved derived rules are deciding."
 BACKENDS = ("openai", "claude")
-STILL_ASKING = "A question is still being answered; wait for it, then try again."
+STILL_ASKING = "A question is still being answered; reload Ask to see its answer, then try again."
 
 
 @dataclass

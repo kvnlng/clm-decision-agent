@@ -174,6 +174,7 @@ async def test_a_second_question_while_one_is_answered_is_refused_and_the_conver
             gate.set()
             answered = await first
     assert second.status_code == 409 and "still being answered" in second.text and ">Two</textarea>" in second.text
+    assert "reload Ask to see its answer" in second.text
     assert cleared.status_code == 409 and "still being answered" in cleared.text
     assert answered.status_code == 200 and "First." in answered.text
     assert [item["content"] for item in seen[0]["messages"] if item["role"] == "user"] == ["One"]
