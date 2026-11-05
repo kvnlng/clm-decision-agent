@@ -2,6 +2,7 @@
 unfilled slot does. The layers are written by hand here; nothing is derived."""
 # Test names say what they check.
 # pylint: disable=missing-function-docstring,too-many-arguments,unbalanced-tuple-unpacking
+import json
 from datetime import date
 from pathlib import Path
 
@@ -338,7 +339,8 @@ def test_a_broken_layer_is_ignored_without_a_derived_table(tmp_path, text):
     assert not load(path).slots
 
 
-@pytest.mark.parametrize("text", ['{"version": 2}', "{bad"])
+@pytest.mark.parametrize("text", ['{"version": 2}', "{bad", "[]", '"layer"',
+                                  json.dumps({**derived.empty("hb"), "decisions": {"carry": "approved"}})])
 def test_a_broken_layer_with_a_derived_table_is_one_line(tmp_path, text):
     path = make(tmp_path, decision=entry())
     derived.path(tmp_path).write_text(text, encoding="utf-8")

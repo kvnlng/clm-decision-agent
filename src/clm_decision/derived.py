@@ -42,7 +42,9 @@ def read(folder: str | Path) -> dict:
     if not file.exists():
         return empty(None)
     layer = json.loads(file.read_text(encoding="utf-8"))
-    if layer.get("version") != VERSION or any(not isinstance(layer.get(kind), dict) for kind in KINDS):
+    if not isinstance(layer, dict) or layer.get("version") != VERSION \
+            or any(not isinstance(layer.get(kind), dict) for kind in KINDS) \
+            or any(not isinstance(entry, dict) for kind in KINDS for entry in layer[kind].values()):
         raise DerivedError(f"{file}: not a derived layer of version {VERSION}")
     return layer
 
