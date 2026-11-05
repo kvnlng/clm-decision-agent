@@ -28,6 +28,22 @@ def test_written_layer_reads_back(tmp_path):
     assert json.loads((tmp_path / "derived" / "derived.json").read_text(encoding="utf-8"))["version"] == 1
 
 
+@pytest.mark.parametrize("text", ["[]", "null", "1", '"x"'])
+def test_a_layer_that_is_not_an_object_is_refused_as_not_a_layer(tmp_path, text):
+    (tmp_path / "derived").mkdir()
+    (tmp_path / "derived" / "derived.json").write_text(text, encoding="utf-8")
+    with pytest.raises(derived.DerivedError, match="not a derived layer of version 1"):
+        derived.read(tmp_path)
+
+
+def test_a_status_change_writes_its_updates_in_the_same_write(tmp_path):
+    derived.write(tmp_path, _layer())
+    entry = derived.set_status(tmp_path, "facts", "k401_2026.match_cap", "proposed", by="kevin", note="6000",
+                               updates={"value": 6000, "check": None, "status": "approved"})
+    assert entry["status"] == "proposed" and entry["value"] == 6000 and entry["check"] is None
+    assert derived.read(tmp_path)["facts"]["k401_2026.match_cap"] == entry and entry["decided_by"] == "kevin"
+
+
 def test_approving_a_checked_entry_records_who_and_when(tmp_path):
     derived.write(tmp_path, _layer())
     entry = derived.set_status(tmp_path, "decisions", "carryover_limit", "approved", by="kevin", note="matches § 3")

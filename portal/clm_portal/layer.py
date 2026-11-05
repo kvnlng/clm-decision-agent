@@ -216,10 +216,12 @@ def _nodes(environment: Path, data: dict) -> dict[str, dict]:
     return {row.get("id"): row for row in (graph["nodes"] or {"rows": []})["rows"]}
 
 
-def _target(kind: str, name: str, entry: dict) -> tuple[str, str]:
-    """The graph node and property a fact, or a conflict over one, touches."""
-    if kind == "facts" and entry.get("node") and entry.get("property"):
-        return entry["node"], entry["property"]
+def _target(kind: str, name: str, entry: dict, facts: dict) -> tuple[str, str]:
+    """The graph node and property a fact, or a conflict over one, touches: the fact's own node and property,
+    as a node id may hold a dot; the name split at its first dot only when the fact does not say."""
+    fact = entry if kind == "facts" else facts.get(entry.get("name") or name) or {}
+    if fact.get("node") and fact.get("property"):
+        return fact["node"], fact["property"]
     node, _, prop = str((entry.get("name") or name) if kind == "conflicts" else name).partition(".")
     return node, prop
 
@@ -244,7 +246,7 @@ def review(environment: Path) -> dict:  # pylint: disable=too-many-locals
                     item["dmn_text"] = path.read_text(encoding="utf-8")
                     item["table"] = _table(path, errors, f"derived decisions.{name}.dmn")
             else:
-                node, prop = _target(kind, name, entry)
+                node, prop = _target(kind, name, entry, found["facts"])
                 item["graph_row"] = nodes.get(node)
                 item["supplied"] = entry.get("supplied") if kind == "conflicts" else (nodes.get(node) or {}).get(prop)
             items.append(item)
@@ -257,13 +259,15 @@ def review(environment: Path) -> dict:  # pylint: disable=too-many-locals
 
 
 # pylint: disable-next=too-many-arguments
-def decide(environment: Path, kind: str, name: str, status: str, *, by: str, note: str | None) -> dict:
-    """Approve, reject or resolve one entry, recording who and why; Refused when the layer does not allow it. With a
-    [derived] second_reader, approving needs its agreeing reading, as clm-derive status does."""
+def decide(environment: Path, kind: str, name: str, status: str, *, by: str, note: str | None,
+           updates: dict | None = None) -> dict:
+    """Approve, reject or resolve one entry, recording who and why, with `updates` to its fields in the same write;
+    Refused, with nothing written, when the layer does not allow it. With a [derived] second_reader, approving
+    needs its agreeing reading, as clm-derive status does; nothing else reads that table."""
     try:
-        reader = second_reader_of(environment)
+        reader = second_reader_of(environment) if status == "approved" else None
         return derived.set_status(Path(environment).parent, kind, name, status, by=by, note=note or None,
-                                  second_reader=reader["model"] if reader else None)
+                                  second_reader=reader["model"] if reader else None, updates=updates)
     except (derived.DerivedError, ScenarioError) as error:
         raise Refused(str(error)) from error
 
@@ -279,27 +283,23 @@ def _entry(environment: Path, kind: str, name: str) -> tuple[dict, dict]:
 
 
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
-def _proposed(environment: Path, kind: str, name: str, found: dict, by: str, note: str | None) -> dict:
-    """A correction's last steps: in one write, the entry proposed with its check cleared; then the change recorded
-    with who made it and why."""
-    found[kind][name].update(status="proposed", check=None)
-    derived.write(Path(environment).parent, found)
-    return decide(environment, kind, name, "proposed", by=by, note=note)
+def _proposed(environment: Path, kind: str, name: str, by: str, note: str | None, **changes) -> dict:
+    """A correction in one write: the changes, the entry proposed with its check cleared, and who made it and why."""
+    return decide(environment, kind, name, "proposed", by=by, note=note, updates={**changes, "check": None})
 
 
 def correct_fact(environment: Path, name: str, value, *, by: str, note: str | None) -> dict:
     """Give a derived fact a corrected value: it goes back to proposed with no check, so clm-derive check must pass
     it again before anyone can approve it."""
-    found, entry = _entry(environment, "facts", name)
-    entry["value"] = value
-    return _proposed(environment, "facts", name, found, by, note)
+    _entry(environment, "facts", name)
+    return _proposed(environment, "facts", name, by, note, value=value)
 
 
 def correct_decision(environment: Path, name: str, dmn_text: str, *, by: str, note: str | None) -> dict:
     """Replace a derived decision's DMN table with corrected text, which must stay inside derived/ and load as a
     table. The entry is written as proposed with no check before the table is replaced, so a failure part way never
     leaves a checked or approved entry with an unchecked table. Refused, with nothing written, otherwise."""
-    found, entry = _entry(environment, "decisions", name)
+    _, entry = _entry(environment, "decisions", name)
     folder = derived_folder(environment)
     if not isinstance(entry.get("dmn"), str) or not entry["dmn"]:
         raise Refused(f"{name} has no DMN table to correct")
@@ -316,7 +316,7 @@ def correct_decision(environment: Path, name: str, dmn_text: str, *, by: str, no
         partial.unlink()
         raise Refused(f"{name}: the corrected table cannot be used: {error}") from error
     try:
-        changed = _proposed(environment, "decisions", name, found, by, note)
+        changed = _proposed(environment, "decisions", name, by, note)
         os.replace(partial, path)
     finally:
         partial.unlink(missing_ok=True)

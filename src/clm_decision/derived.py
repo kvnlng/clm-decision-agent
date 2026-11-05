@@ -42,7 +42,8 @@ def read(folder: str | Path) -> dict:
     if not file.exists():
         return empty(None)
     layer = json.loads(file.read_text(encoding="utf-8"))
-    if layer.get("version") != VERSION or any(not isinstance(layer.get(kind), dict) for kind in KINDS):
+    if not isinstance(layer, dict) or layer.get("version") != VERSION \
+            or any(not isinstance(layer.get(kind), dict) for kind in KINDS):
         raise DerivedError(f"{file}: not a derived layer of version {VERSION}")
     return layer
 
@@ -96,12 +97,12 @@ def _read_again_since(entry: dict, reader: str) -> bool:
 
 # pylint: disable-next=too-many-arguments
 def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str, note: str | None = None,
-               second_reader: str | None = None) -> dict:
+               second_reader: str | None = None, updates: dict | None = None) -> dict:
     """Change one entry's status, recording who did it, when and why, and return the entry. A rule or fact is
     approved only once checked: a proposed one, such as a corrected one, is not, whatever its old check said, nor
     one whose table changed since its check. With `second_reader`, the model [derived] second_reader names, it is
     approved only with an agreeing second reading by that model made since its last change. Any can be
-    rejected."""
+    rejected. `updates`, such as a correction's new value, change other fields in the same write."""
     if kind not in KINDS:
         raise DerivedError(f"{kind!r} is not one of {', '.join(KINDS)}")
     if status not in STATUSES[kind]:
@@ -122,7 +123,7 @@ def set_status(folder: str | Path, kind: str, name: str, status: str, *, by: str
     if status == "approved" and second_reader and not _read_again_since(entry, second_reader):
         raise DerivedError(f"{name} has no second reading by {second_reader} that agrees, made since its last "
                            "change: run clm-derive check (set a rejected entry to proposed first)")
-    entry.update(status=status, decided_by=by, note=note,
+    entry.update(updates or {}, status=status, decided_by=by, note=note,
                  decided_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     write(folder, layer)
     return entry
