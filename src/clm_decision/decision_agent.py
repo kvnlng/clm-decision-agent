@@ -257,7 +257,7 @@ def _new(runs: Path, stamp: str) -> Path:
     return out
 
 
-async def _main(args, refused: list[int]) -> int:
+async def _main(args, refused: list[int]) -> int:  # pylint: disable=too-many-locals
     system = NO_TOOLS_SYSTEM if args.no_tools else SYSTEM
     async with contextlib.AsyncExitStack() as stack:
         if args.backend == "ollama":

@@ -12,7 +12,6 @@ read from LLM_API_KEY. Neither is printed.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
 import os
 import sys
@@ -22,9 +21,10 @@ import anyio
 import anyio.to_thread
 import httpx
 from mcp import Client, MCPError
-from mcp.client.streamable_http import streamable_http_client
 
-from clm_decision.connection import key_for
+from clm_decision.connection import http_streams, key_for
+
+from .managed import READ_TIMEOUT
 
 KEY_ENV = "DECISION_SERVER_KEY"
 LLM_KEY_ENV = "LLM_API_KEY"
@@ -106,9 +106,10 @@ class OpenAIModel:
         try:
             choice = response.json()["choices"][0]
             message = choice.get("message") or {}
-        except (ValueError, LookupError, TypeError, AttributeError) as error:
-            raise ClientError(f"the model at {self.url} did not give a chat reply: {response.text[:200]}") from error
-        raw = message.get("tool_calls") or []
+            raw = message.get("tool_calls") or []
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError) as error:
+            raise ClientError(f"the model at {self.url} sent a reply that is not a chat completion: "
+                              f"{response.text[:200]}") from error
         kept = {"role": "assistant", "content": message.get("content") or ""}
         if raw:
             kept["tool_calls"] = raw
@@ -152,13 +153,13 @@ class ClaudeModel:
                 for tool in listed]
 
     async def turn(self, messages: list[dict], tools: list[dict]) -> Turn:
-        """One streamed reply. Any failure, such as a bad or missing key or an unknown model, is a ClientError."""
+        """One streamed reply; ClientError when the API fails, as with a wrong or missing key or a rate limit."""
         try:
             async with self.client.messages.stream(model=self.model, max_tokens=16000, system=SYSTEM, tools=tools,
                                                    thinking={"type": "adaptive"}, messages=messages) as stream:
                 reply = await stream.get_final_message()
         except Exception as error:  # pylint: disable=broad-exception-caught
-            raise ClientError(f"Claude failed: {error or type(error).__name__}") from error
+            raise ClientError(f"the Anthropic API failed: {error or type(error).__name__}") from error
         text = "\n".join(block.text for block in reply.content if block.type == "text").strip()
         calls = [Call(block.id, block.name, dict(block.input or {})) for block in reply.content
                  if block.type == "tool_use"]
@@ -185,11 +186,12 @@ async def _send(client: Client, call: Call) -> tuple[str, bool]:
         result = await client.call_tool(call.name, call.arguments)
     except MCPError as error:
         return f"Error: {error}", True
+    text = "\n".join(block.text for block in result.content if block.type == "text")
     if result.is_error:
-        return (result.content[0].text if result.content else "Error: the server reported an error"), True
+        return text or "Error: the server reported an error", True
     if result.structured_content is not None:
         return json.dumps(result.structured_content, indent=2), False
-    return "\n".join(block.text for block in result.content if block.type == "text"), False
+    return text, False
 
 
 async def _handle(client: Client, call: Call, dry_run: DryRun, show, full: bool) -> str:
@@ -257,18 +259,9 @@ def banner(url: str, model: str, dry_run: DryRun) -> str:
     return f"Server: {url}\nModel: {model}\n{tools}\nType a question; /tools lists the tools; /quit leaves."
 
 
-@contextlib.asynccontextmanager
-async def _connect(url: str, refused: list[int]):
+def _connect(url: str, refused: list[int]):
     key = key_for(url)      # never in the clear to another computer
-    headers = {"Authorization": f"Bearer {key}"} if key else None
-    async with httpx.AsyncClient(headers=headers, follow_redirects=True,
-                                 timeout=httpx.Timeout(30, read=600)) as http:
-        async def note(response) -> None:
-            if response.status_code in (401, 403):
-                refused.append(response.status_code)
-        http.event_hooks["response"].append(note)
-        async with streamable_http_client(url, http_client=http) as streams:
-            yield streams
+    return http_streams(url, {"Authorization": f"Bearer {key}"} if key else None, refused, read=READ_TIMEOUT)
 
 
 def _list(listed) -> str:

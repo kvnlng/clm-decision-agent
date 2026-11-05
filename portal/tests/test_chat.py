@@ -193,10 +193,10 @@ async def test_the_key_goes_only_over_https_or_to_this_computer(monkeypatch, cap
     seen = {}
 
     @contextlib.asynccontextmanager
-    async def streams(_url, http_client):
-        seen["authorization"] = http_client.headers.get("authorization")
+    async def streams(_url, headers, *_, **__):
+        seen["authorization"] = (headers or {}).get("Authorization")
         yield None
-    monkeypatch.setattr(tc, "streamable_http_client", streams)
+    monkeypatch.setattr(tc, "http_streams", streams)
     async with tc._connect(url, []):  # pylint: disable=protected-access
         pass
     assert (seen["authorization"] == "Bearer secret-value") is sent
@@ -262,12 +262,12 @@ async def test_claude_cut_off_runs_nothing(tracker):
 
 
 class FailingAnthropic:
-    """An Anthropic client that fails as a bad key or a missing one does."""
+    """An Anthropic client whose every reply fails, as a wrong key or a rate limit does."""
 
     def __init__(self, error):
         self.error, self.messages = error, self
 
-    def stream(self, **_request):
+    def stream(self, **_):
         raise self.error
 
 
@@ -276,4 +276,38 @@ async def test_a_claude_failure_is_its_error_and_the_chat_goes_on(tracker):
     for error in (TypeError("Could not resolve authentication method"), ValueError("Error code: 401")):
         model = tc.ClaudeModel(FailingAnthropic(error))
         history = model.start()
-        assert str(error) in await ask(tracker, model, history=history) and history == []
+        assert str(error) in await ask(tracker, model, history=history) and not history
+
+
+@pytest.mark.anyio
+async def test_a_claude_failure_is_shown_and_the_question_taken_back_out(tracker):
+    history: list[dict] = []
+    shown = await ask(tracker, tc.ClaudeModel(FailingAnthropic(Exception("invalid x-api-key"))), history=history)
+    assert "[error: the Anthropic API failed: invalid x-api-key]" in shown and not history
+
+
+@pytest.mark.anyio
+async def test_a_reply_that_is_not_a_chat_completion_is_shown_and_the_question_taken_back_out(tracker):
+    for body in ("<html>sign in</html>", json.dumps({"object": "error"}), json.dumps({"choices": []}), "[1]"):
+        history = [{"role": "system", "content": "x"}]
+        shown = await ask(tracker, scripted([httpx.Response(200, text=body)]), history=history)
+        assert "is not a chat completion" in shown and len(history) == 1, body
+
+
+class FailingTools:
+    """A client whose every call fails with these content blocks."""
+
+    def __init__(self, *blocks):
+        self.blocks = list(blocks)
+
+    async def call_tool(self, *_):
+        return SimpleNamespace(is_error=True, content=self.blocks, structured_content=None)
+
+
+@pytest.mark.anyio
+async def test_a_tool_error_is_every_text_block_of_it_whatever_comes_first():
+    image = SimpleNamespace(type="image", data="", mime_type="image/png")
+    one, two = SimpleNamespace(type="text", text="one"), SimpleNamespace(type="text", text="two")
+    call, send = tc.Call("c1", "lookup", {}), tc._send  # pylint: disable=protected-access
+    assert await send(FailingTools(image, one, two), call) == ("one\ntwo", True)
+    assert await send(FailingTools(image), call) == ("Error: the server reported an error", True)

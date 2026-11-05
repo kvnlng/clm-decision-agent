@@ -173,8 +173,8 @@ def connect(settings: DocumentSettings) -> DocumentStore:
 class OllamaEmbedder:  # pylint: disable=too-few-public-methods
     """Embeds through Ollama's /api/embed, so text never leaves the machine.
 
-    One client, made on the first call under a lock, serves every call and every thread. Its timeout of 60 seconds covers a search's query, and
-    Ollama loading the model on first use; clm-load-documents gives its batches longer."""
+    One client, made on the first call under a lock, serves every call and every thread. Its timeout of 60 seconds
+    covers a search's query, and Ollama loading the model on first use; clm-load-documents gives its batches longer."""
 
     def __init__(self, url: str, http=None, timeout: float = 60):
         self.url, self.http, self.timeout = url.rstrip("/"), http, timeout

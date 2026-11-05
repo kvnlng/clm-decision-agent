@@ -46,7 +46,7 @@ the collection is not offered, rather than when it was built.
   started](../docs/getting-started.md#looking-inside-the-server)); every rule,
   supplied or derived, with its origin, status, owner, version, DMN rows and links to the passages it cites; the
   information items; the graph's nodes and edges (a graph in Neo4j is named, not shown); the collections and when each
-  was built; and every load error, such as why its server did not start. It is read from the files, not by loading
+  was built; and every load error, such as why its server did not start or stopped. It is read from the files, not by loading
   the environment, so it shows them even when the server does not start.
 - **Ask**: the chat in a page, with the same models and every call and result shown. As in the chat, dry run can
   hold back every tool (a tick) or only the tools you name, and **Full results** shows results whole rather than

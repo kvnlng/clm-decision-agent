@@ -497,7 +497,7 @@ def _check(environment: str, folder: Path, on: date) -> int:
 def _command(args) -> int:
     folder = Path(args.environment).resolve().parent
     if args.command == "status":
-        reader = second_reader_of(args.environment)
+        reader = second_reader_of(args.environment) if args.status == "approved" else None
         entry = derived.set_status(folder, args.kind, args.name, args.status, by=args.by, note=args.note,
                                    second_reader=reader["model"] if reader else None)
         print(f"{args.kind} {args.name}: {entry['status']}, by {entry['decided_by']}")

@@ -190,3 +190,47 @@ def test_with_a_second_reader_an_entry_is_approved_only_after_its_reading(client
     response = post(client, "/review/decisions/carryover_limit/approve", token)
     assert response.status_code == 409 and "second reading by qwen3:14b" in response.text
     assert layer_of(environment)["decisions"]["carryover_limit"]["status"] == "checked"
+
+
+def test_a_conflict_over_a_node_whose_id_holds_a_dot_shows_that_nodes_row(environment):
+    nodes = environment.parent / "graph" / "nodes.csv"
+    nodes.write_text(nodes.read_text() + "site.a,site,Site A,\nsite,site,Not this one,\n")
+    file = environment.parent / "derived" / "derived.json"
+    found = json.loads(file.read_text())
+    found["facts"]["site.a.rent"] = {**found["facts"][FACT], "node": "site.a", "property": "rent"}
+    found["conflicts"]["site.a.rent"] = {**found["conflicts"][FACT], "name": "site.a.rent"}
+    file.write_text(json.dumps(found))
+    items = [item for _, group in layer.review(environment)["groups"] for item in group]
+    conflict = next(item for item in items if item["kind"] == "conflicts" and item["name"] == "site.a.rent")
+    assert conflict["graph_row"]["name"] == "Site A"
+
+
+def test_a_correction_is_one_write_that_records_who_made_it(environment, monkeypatch):
+    writes = []
+    write = layer.derived.write
+    monkeypatch.setattr(layer.derived, "write", lambda *args: (writes.append(1), write(*args)))
+    layer.correct_fact(environment, FACT, 6000, by="Kevin", note="the cap is 6000")
+    entry = layer_of(environment)["facts"][FACT]
+    assert len(writes) == 1 and entry["value"] == 6000 and entry["status"] == "proposed" and entry["check"] is None
+    assert entry["decided_by"] == "Kevin" and entry["decided_at"] and entry["note"] == "the cap is 6000"
+
+
+def test_a_correction_with_a_bad_second_reader_table_still_needs_no_second_reader(environment):
+    with environment.open("a") as file:
+        file.write('\n[derived]\nsecond_reader = "oops"\n')
+    layer.correct_decision(environment, "carryover_limit", GOOD_DMN, by="Kevin", note=None)
+    entry = layer_of(environment)["decisions"]["carryover_limit"]
+    assert entry["status"] == "proposed" and entry["check"] is None and entry["decided_by"] == "Kevin"
+    assert "10" in (environment.parent / "derived" / "rules" / "carryover_limit.dmn").read_text()
+    with pytest.raises(layer.Refused):
+        layer.decide(environment, "decisions", "carryover_limit", "approved", by="Kevin", note=None)
+
+
+@pytest.mark.parametrize("text", ["[]", "null", '"x"', "3"])
+def test_a_derived_layer_that_is_not_an_object_is_a_load_error(environment, text):
+    (environment.parent / "derived" / "derived.json").write_text(text)
+    found = layer.configuration(environment, None, None)
+    assert any("not a derived layer of version 1" in error for error in found["errors"])
+    assert any("not a derived layer" in error for error in layer.review(environment)["errors"])
+    with pytest.raises(layer.Refused):
+        layer.correct_fact(environment, FACT, 1, by="Kevin", note=None)

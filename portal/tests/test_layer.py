@@ -68,3 +68,10 @@ def test_a_derived_dmn_outside_derived_is_not_read(environment):
     found = layer.configuration(environment, None, None)
     assert by_name(found["rules"])["carryover_limit"]["table"] is None
     assert any("outside derived/" in error for error in found["errors"])
+
+
+def test_a_derived_layer_that_is_not_an_object_is_a_load_error(environment):
+    (environment.parent / "derived" / "derived.json").write_text("[]")
+    found = layer.configuration(environment, None, None)
+    assert any("derived layer:" in error and "not a derived layer of version 1" in error for error in found["errors"])
+    assert "vesting" in by_name(found["rules"]) and layer.review(environment)["errors"]

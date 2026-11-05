@@ -1,8 +1,11 @@
 """Tests for the portal's own server and its jobs: the command and environment it builds, never a real process."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import asyncio
+import contextlib
 import os
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -126,6 +129,63 @@ async def test_a_server_that_exits_at_start_reports_its_error(tmp_path):
     assert "cannot import 'x'" in server.error and not server.running
 
 
+@pytest.mark.anyio
+async def test_a_failed_testing_start_leaves_the_next_restart_out_of_testing(tmp_path):
+    popen = FakePopen(code=2, stderr="error: unrecognized arguments: --admit-derived\n")
+    server = managed_server(popen, tmp_path)
+    await server.start(testing=True)
+    popen.code = None
+    await server.restart()
+    assert "--admit-derived" not in popen.started[1].args and server.running and not server.testing
+
+
+@pytest.mark.anyio
+async def test_a_server_that_dies_after_starting_says_why(tmp_path):
+    popen = FakePopen()
+    server = managed_server(popen, tmp_path)
+    await server.start()
+    server._stderr.write(b"error: the database connection was lost\n")  # pylint: disable=protected-access
+    popen.started[0].code = 1
+    assert not server.running and "database connection was lost" in server.error
+    await server.restart()
+    assert server.running and server.error is None
+
+
+class SlowProcess(FakeProcess):
+    """A process that takes a while to stop once told to."""
+
+    def wait(self, timeout=None):
+        time.sleep(0.5)
+        return super().wait(timeout)
+
+
+@pytest.mark.anyio
+async def test_a_page_that_reads_running_while_the_server_stops_sees_no_error(tmp_path):
+    popen = FakePopen()
+    server = managed_server(popen, tmp_path)
+    await server.start()
+    seen = []
+    popen.started[0].wait = lambda timeout=None: seen.append(server.running)
+    server.stop()
+    assert seen == [False] and server.error is None and not server.running
+
+
+@pytest.mark.anyio
+async def test_a_restart_waits_for_the_old_server_without_blocking_other_requests(tmp_path):
+    server = managed_server(lambda argv, *, env, stderr, **_: SlowProcess(argv, env, stderr), tmp_path)
+    await server.start()
+    ticks = []
+
+    async def tick():
+        while True:
+            ticks.append(time.monotonic())
+            await asyncio.sleep(0.05)
+    task = asyncio.create_task(tick())
+    await server.restart()
+    task.cancel()
+    assert len(ticks) >= 5 and server.running
+
+
 def recorder(release=None, code=0, output="done\n"):
     """A runner that records each command, waiting for `release` when given one."""
     seen = []
@@ -246,3 +306,51 @@ async def test_a_job_is_running_until_the_server_has_restarted():
     await jobs.start("load", ["clm-load-documents", "a"], on_success=restart)
     await jobs.wait()
     assert seen == [True] and jobs.current() is None
+
+
+NEW_SITE = Path(__file__).parents[2] / "examples" / "new_site" / "environment.toml"
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(managed.script("clm-server") is None or not NEW_SITE.is_file(),
+                    reason="needs clm-server and examples/new_site")
+async def test_the_portal_and_the_chat_reach_a_real_server_through_the_sdks_own_http_client(monkeypatch):
+    from mcp import Client  # pylint: disable=import-outside-toplevel
+    from clm_portal import chat  # pylint: disable=import-outside-toplevel
+    server = managed.ManagedServer(NEW_SITE, wait=60)
+    await server.start()
+    try:
+        assert server.running, server.error
+        assert "describe" in [tool.name for tool in await server.tools()]
+        monkeypatch.setenv(chat.KEY_ENV, server._key)  # pylint: disable=protected-access
+        async with Client(chat._connect(server.url, [])) as client:  # pylint: disable=protected-access
+            assert (await client.list_tools()).tools
+        refused: list[int] = []
+        monkeypatch.setenv(chat.KEY_ENV, "not-the-key")
+        with pytest.raises(Exception):
+            async with Client(chat._connect(server.url, refused)) as client:  # pylint: disable=protected-access
+                await client.list_tools()
+        assert refused and refused[0] == 401
+    finally:
+        server.stop()
+
+
+@pytest.mark.anyio
+async def test_the_portal_and_the_chat_give_the_sdk_its_own_http_client(monkeypatch):
+    import httpx2  # pylint: disable=import-outside-toplevel
+    from clm_decision import connection  # pylint: disable=import-outside-toplevel
+    from clm_portal import chat  # pylint: disable=import-outside-toplevel
+    seen = []
+
+    @contextlib.asynccontextmanager
+    async def streams(url, http_client):
+        seen.append((url, http_client))
+        yield "streams"
+    monkeypatch.setattr(connection, "streamable_http_client", streams)
+    async with managed.connect("http://127.0.0.1:1/mcp", "k") as found:
+        assert found == "streams"
+    async with chat._connect("http://127.0.0.1:1/mcp", []) as found:  # pylint: disable=protected-access
+        assert found == "streams"
+    assert len(seen) == 2 and all(isinstance(http, httpx2.AsyncClient) for _, http in seen)
+    assert seen[0][1].timeout.read == 600 and seen[0][1].headers["Authorization"] == "Bearer k"
+    assert not seen[1][1].follow_redirects

@@ -10,6 +10,7 @@ import os
 import sys
 from urllib.parse import urlsplit
 
+import httpx2
 from mcp import StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
@@ -49,17 +50,25 @@ def key_for(url: str) -> str | None:
 
 
 @contextlib.asynccontextmanager
-async def _http(url: str, refused: list[int]):
-    key = key_for(url)
-    headers = {"Authorization": f"Bearer {key}"} if key else None
-    async with create_mcp_http_client(headers=headers) as http, \
+async def http_streams(url: str, headers: dict | None, refused: list[int] | None = None,
+                       read: float | None = None):
+    """Streams to a server over HTTP through the SDK's own HTTP client, sending these headers and waiting up to
+    `read` seconds for a reply (the SDK's default when None). A list given as `refused` collects the status of any
+    response refusing them."""
+    timeout = httpx2.Timeout(30, read=read) if read else None
+    async with create_mcp_http_client(headers=headers, timeout=timeout) as http, \
             streamable_http_client(url, http_client=http) as streams:
         # The SDK reports a refusal only as "an error response"; keep its status to say why
         async def note(response) -> None:
-            if response.status_code in (401, 403):
+            if refused is not None and response.status_code in (401, 403):
                 refused.append(response.status_code)
         http.event_hooks["response"].append(note)
         yield streams
+
+
+def _http(url: str, refused: list[int]):
+    key = key_for(url)
+    return http_streams(url, {"Authorization": f"Bearer {key}"} if key else None, refused)
 
 
 def connect(target: str, refused: list[int] | None = None):

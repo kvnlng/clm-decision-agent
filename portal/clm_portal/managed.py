@@ -21,11 +21,12 @@ from pathlib import Path
 from typing import Awaitable, Callable
 
 import anyio.to_thread
-import httpx
 from mcp import Client
-from mcp.client.streamable_http import streamable_http_client
+
+from clm_decision.connection import http_streams
 
 SERVER_KEY_ENV = "CLM_PORTAL_SERVER_KEY"
+READ_TIMEOUT = 600      # seconds to wait for a tool's reply, which a local model can take a while to give
 PORTAL_KEY_ENV = "CLM_PORTAL_KEY"
 ADMIT_ALL = ["--admit-derived", "proposed,checked,approved"]
 ERROR_TAIL = 2000
@@ -59,13 +60,9 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
-@contextlib.asynccontextmanager
-async def connect(url: str, key: str):
-    """Streams to an MCP server over HTTP, sending the key."""
-    async with httpx.AsyncClient(headers={"Authorization": f"Bearer {key}"},
-                                 timeout=httpx.Timeout(30, read=600)) as http:
-        async with streamable_http_client(url, http_client=http) as streams:
-            yield streams
+def connect(url: str, key: str):
+    """Streams to an MCP server over HTTP, sending the key, through the SDK's own HTTP client as clm-agent does."""
+    return http_streams(url, {"Authorization": f"Bearer {key}"}, read=READ_TIMEOUT)
 
 
 class ToolFailed(RuntimeError):
@@ -110,8 +107,15 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
 
     @property
     def running(self) -> bool:
-        """Whether the server started and is still running."""
-        return self.process is not None and self.process.poll() is None and self.error is None
+        """Whether the server started and is still running. One that exited after starting gets its stderr, or its
+        exit code, as `error`."""
+        process = self.process
+        if process is None or self.error is not None:
+            return False
+        code = process.poll()
+        if code is not None:
+            self.error = f"clm-server stopped after starting: {self._tail() or f'it exited with code {code}'}"
+        return code is None
 
     def command(self, server: Path, port: int, testing: bool) -> list[str]:
         """The server's command line."""
@@ -120,15 +124,9 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
 
     async def start(self, testing: bool = False) -> None:
         """Start the server, and wait until it lists its tools or exits; `error` says why it did not start, and
-        `testing` is true only once a server in testing mode has started. A testing start that fails is not wanted
-        again, so the next restart after a change starts the server without it."""
-        self.wanted = testing
-        await self._start(testing)
-        if self.error is not None:
-            self.wanted = False
-
-    async def _start(self, testing: bool) -> None:
-        self.testing, self.error = False, None
+        `testing` is true only once a server in testing mode has started. A start that fails leaves later restarts
+        out of testing mode."""
+        self.testing, self.wanted, self.error = False, False, None
         server = self.find("clm-server")
         if server is None:
             self.process, self.error = None, "clm-server is not installed in the portal's environment"
@@ -152,29 +150,32 @@ class ManagedServer:  # pylint: disable=too-many-instance-attributes
                 return
             try:
                 await self.tools()
-                self.testing = testing
+                self.testing = self.wanted = testing
                 return
             except Exception:  # pylint: disable=broad-exception-caught
                 if time.monotonic() > deadline:
                     self.error = self._tail() or f"clm-server did not answer within {self.wait:.0f} seconds"
-                    self.stop()
+                    await anyio.to_thread.run_sync(self.stop)
                     return
                 await asyncio.sleep(0.2)
 
     async def restart(self, testing: bool | None = None) -> None:
-        """Stop the server and start it again, in testing mode or not (unchanged when None)."""
-        self.stop()
-        await self.start(self.wanted if testing is None else testing)
+        """Stop the server and start it again, in testing mode or not (unchanged when None). The wait for the old
+        server to stop runs in a thread, so other pages are served meanwhile."""
+        wanted = self.wanted if testing is None else testing
+        await anyio.to_thread.run_sync(self.stop)
+        await self.start(wanted)
 
     def stop(self) -> None:
-        """Stop the server, if it is running."""
-        if self.process is not None and self.process.poll() is None:
-            self.process.terminate()
+        """Stop the server, if it is running; this waits up to 10 seconds for it to stop. The process is let go
+        first, so a page that reads `running` meanwhile sees it stopped, not stopped with an error."""
+        process, self.process = self.process, None
+        if process is not None and process.poll() is None:
+            process.terminate()
             try:
-                self.process.wait(timeout=10)
+                process.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                self.process.kill()
-        self.process = None
+                process.kill()
 
     def _tail(self) -> str:
         self._stderr.seek(0)
