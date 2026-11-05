@@ -25,7 +25,9 @@ much, and every result is reported per answer ("4 of 5"): otherwise "never urgen
   `{"text": "<a message>", "route": "<a route's name>"}`
 - Correct decisions in review mode: start the server with `--review` in the MCP Inspector
   (`npx -y @modelcontextprotocol/inspector@2.13.0 uv run clm-server <scenario> --review`), call `decide` with a
-  message, then `correct` with the same text and the right route. Every corrected route is a real example.
+  message, then `correct` with the same text and the right route. Every corrected route is a real example. If the
+  scenario changed since, a corrected answer or option it can no longer take is left out on its own, and `clm-train`
+  says how many.
 
 **Labelling the questions and options.** A line can also give each question's right answer and, on a route with
 options, the right option. Only what a line labels is trained from it:

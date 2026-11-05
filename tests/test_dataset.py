@@ -146,6 +146,22 @@ def test_reviewed_rows_carry_corrected_answers(questions):
     assert second["answers"] == {}
 
 
+def test_a_corrected_value_the_scenario_no_longer_takes_is_left_out_alone(questions, capsys):
+    # level has 3 levels now, so 5 is out of range; the rest of the correction still fits
+    record = {"kind": "route", "state_text": "my card was charged twice", "human": "Billing",
+              "clm": {"route": "Tech", "confidence": 0.4}, "answers": {"urgent": True, "level": 5},
+              "facts": ["The queue is A."], "options": REFUNDS, "option": "credit"}
+    _, [row], _ = training_rows(questions, [], [record])
+    assert (row["answers"], row["facts"], row["options"], row["option"]) == \
+        ({"urgent": 1}, ["The queue is A."], REFUNDS, 1)
+    # an option that is not among the options loses the options only
+    _, [row], _ = training_rows(questions, [], [{**record, "answers": {"urgent": True}, "option": "voucher"}])
+    assert (row["answers"], row["facts"], row["options"]) == ({"urgent": 1}, ["The queue is A."], None)
+    assert capsys.readouterr().err.splitlines() == [
+        "1 corrected value no longer fits the scenario and was left out",
+        "1 corrected value no longer fits the scenario and was left out"]
+
+
 def test_each_question_hears_only_the_facts_it_hears_when_deciding(questions):
     # lookup informs only urgent ([tools.inform.lookup] questions = ["urgent"])
     record = {"kind": "route", "state_text": "my card was charged twice", "human": "Billing",
