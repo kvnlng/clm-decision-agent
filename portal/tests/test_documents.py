@@ -1,6 +1,7 @@
 """Tests for Documents: loading a collection from a file in the folder or an upload, and deriving from it."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import os
 import time
 
 import pytest
@@ -39,6 +40,11 @@ def upload(client, token, name, content, **fields):
                 files={"upload": (name, content, "application/jsonl")})
 
 
+def partials(folder) -> list[str]:
+    """Upload files left half saved in the folder."""
+    return sorted(path.name for path in folder.iterdir() if path.name.endswith(".partial"))
+
+
 def test_an_upload_is_saved_in_the_folder_under_a_safe_name(client, environment, runner, tmp_path):
     token = sign_in(client)
     assert upload(client, token, "../../my handbook!.jsonl", b'{"id": "hb-1"}\n').status_code == 200
@@ -58,7 +64,21 @@ def test_an_upload_does_not_overwrite_without_the_tick(client, environment, runn
     assert response.status_code == 409 and "overwrite" in response.text
     assert existing.read_text() == "old\n" and not runner.seen
     assert upload(client, token, "handbook.jsonl", b"new\n", overwrite="on").status_code == 200
-    assert existing.read_text() == "new\n"
+    assert existing.read_text() == "new\n" and not partials(environment.parent)
+
+
+def test_an_upload_that_cannot_be_saved_leaves_the_file_it_would_replace_as_it_was(client, environment, runner,
+                                                                                   monkeypatch):
+    existing = environment.parent / "handbook.jsonl"
+    existing.write_text("old\n")
+
+    def disk_full(*_):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(os, "replace", disk_full)
+    token = sign_in(client)
+    response = upload(client, token, "handbook.jsonl", b"new\n", overwrite="on")
+    assert response.status_code == 500 and "cannot be saved" in response.text
+    assert existing.read_text() == "old\n" and not partials(environment.parent) and not runner.seen
 
 
 @pytest.mark.parametrize("installed", [{"clm-server", "clm-derive"}])
@@ -67,6 +87,7 @@ def test_an_upload_is_not_saved_when_clm_load_documents_is_not_installed(client,
     response = upload(client, token, "handbook.jsonl", b'{"id": "hb-1"}\n')
     assert response.status_code == 409 and "clm-load-documents is not installed" in response.text
     assert not (environment.parent / "handbook.jsonl").exists() and not runner.seen
+    assert not partials(environment.parent)
 
 
 def test_an_upload_is_not_saved_when_a_job_starts_while_it_arrives(client, environment, portal, monkeypatch):
@@ -79,7 +100,7 @@ def test_an_upload_is_not_saved_when_a_job_starts_while_it_arrives(client, envir
     token = sign_in(client)
     response = upload(client, token, "handbook.jsonl", b'{"id": "hb-1"}\n')
     assert response.status_code == 409 and "wait" in response.text
-    assert not (environment.parent / "handbook.jsonl").exists()
+    assert not (environment.parent / "handbook.jsonl").exists() and not partials(environment.parent)
 
 
 def test_derive_runs_clm_derive_run(client, environment, runner):

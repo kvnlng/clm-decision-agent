@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import anyio.to_thread
 import httpx
 from starlette.applications import Starlette
 from starlette.datastructures import UploadFile
@@ -691,6 +692,42 @@ async def _start(request: Request, name: str, argv: list[str], prepare=None) -> 
     return await documents_page(request, f"Started {name}.")
 
 
+def save_aside(folder: Path, name: str, content: bytes) -> Path:
+    """An upload written to a hidden .partial file of its own beside where it goes, so a failed write leaves the
+    file it would replace as it was; nothing is left when the write fails."""
+    partial = folder / f".{name}.{secrets.token_hex(4)}.partial"
+    try:
+        with partial.open("xb") as file:
+            file.write(content)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+    return partial
+
+
+async def _load_upload(request: Request, collection: str, upload: UploadFile, overwrite: bool) -> Response:
+    """Save an upload in the environment's folder and load the collection from it."""
+    portal = request.app.state.portal
+    name = safe_name(upload.filename)
+    if name is None:
+        return await documents_page(request, "only a .jsonl file can be uploaded", 400)
+    folder = portal.environment.parent
+    target = folder / name
+    if target.exists() and not overwrite:
+        return await documents_page(request, f"{name} is already in the folder; tick overwrite to replace it", 409)
+    content = await upload.read()
+    try:    # off the event loop, so a large upload stops no other page while it is written
+        partial = await anyio.to_thread.run_sync(save_aside, folder, name, content)
+    except OSError as error:
+        return await documents_page(request, f"the file cannot be saved: {error}", 500)
+    try:    # the rename, once the job holds the lock, replaces the file in one step
+        return await _start(request, f"clm-load-documents {collection}",
+                            ["clm-load-documents", str(portal.environment), collection, str(target)],
+                            lambda: os.replace(partial, target))
+    finally:
+        partial.unlink(missing_ok=True)
+
+
 async def documents_load(request: Request) -> Response:
     """POST /documents/load: clm-load-documents ENVIRONMENT COLLECTION FILE, from a file in the folder or an
     upload saved there."""
@@ -701,24 +738,12 @@ async def documents_load(request: Request) -> Response:
         return await documents_page(request, f"no collection {collection!r}", 400)
     upload = form.get("upload")
     if isinstance(upload, UploadFile) and upload.filename:
-        name = safe_name(upload.filename)
-        if name is None:
-            return await documents_page(request, "only a .jsonl file can be uploaded", 400)
-        target = folder / name
-        if target.exists() and not form.get("overwrite"):
-            return await documents_page(request, f"{name} is already in the folder; tick overwrite to replace it",
-                                        409)
-        content = await upload.read()
-
-        def prepare() -> None:
-            target.write_bytes(content)
-    else:
-        name = str(form.get("file", ""))
-        if name not in jsonl_files(portal):
-            return await documents_page(request, "choose a .jsonl file in the folder, or upload one", 400)
-        target, prepare = folder / name, None
+        return await _load_upload(request, collection, upload, bool(form.get("overwrite")))
+    name = str(form.get("file", ""))
+    if name not in jsonl_files(portal):
+        return await documents_page(request, "choose a .jsonl file in the folder, or upload one", 400)
     return await _start(request, f"clm-load-documents {collection}",
-                        ["clm-load-documents", str(portal.environment), collection, str(target)], prepare)
+                        ["clm-load-documents", str(portal.environment), collection, str(folder / name)])
 
 
 async def documents_derive(request: Request) -> Response:
