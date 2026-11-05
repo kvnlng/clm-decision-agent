@@ -96,13 +96,14 @@ def _checked(response: httpx.Response, action: str, expected: int = 200):
 
 
 def _labels() -> dict[str, int]:
-    """Every label the tracker has, name -> id, read a page at a time until a page comes back short."""
+    """Every label the tracker has, name -> id, read a page at a time until a page comes back empty."""
     existing, page = {}, 1
     while True:
         found = _checked(_request("GET", "/labels", params={"page": page, "limit": LABEL_PAGE}), "list its labels")
-        existing.update({label["name"]: label["id"] for label in found})
-        if len(found) < LABEL_PAGE:
+        # Not a short page: a tracker can be set to send fewer than LABEL_PAGE on every page
+        if not found:
             return existing
+        existing.update({label["name"]: label["id"] for label in found})
         page += 1
 
 

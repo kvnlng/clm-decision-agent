@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+import mock_tracker
 import service_desk_tools as desk
 
 from clm_decision.scenario import load_scenario
@@ -57,6 +58,17 @@ def test_create_ticket_priority_and_label(configured, tracker_server):
 
 
 def test_create_ticket_finds_a_label_past_the_first_page(configured, tracker_server):
+    tracker = tracker_server.tracker
+    for n in range(60):
+        tracker.create_label({"name": f"area-{n}"})
+    tracker.labels = dict(sorted(tracker.labels.items(), key=lambda item: item[1]["name"].startswith("priority")))
+    desk.create_ticket(request(urgency=1.7))
+    assert [label["name"] for label in tracker.labels.values()].count("priority-high") == 1
+
+
+def test_create_ticket_finds_a_label_when_the_tracker_pages_fewer_than_asked(configured, tracker_server, monkeypatch):
+    # A Forgejo admin can set MAX_RESPONSE_ITEMS below the 50 asked for, so every page comes back short
+    monkeypatch.setattr(mock_tracker, "MAX_PAGE", 30)
     tracker = tracker_server.tracker
     for n in range(60):
         tracker.create_label({"name": f"area-{n}"})
