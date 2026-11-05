@@ -713,7 +713,7 @@ def sign_in_page(portal: Portal, message: str = "", status: int = 200) -> HTMLRe
 
 
 async def sign_in(request: Request) -> Response:
-    """GET and POST /sign-in."""
+    """GET and POST /sign-in; signing in also drops the sessions that have expired."""
     portal = request.app.state.portal
     if request.method == "GET":
         return sign_in_page(portal)
@@ -724,11 +724,12 @@ async def sign_in(request: Request) -> Response:
         return sign_in_page(portal, "Wrong key.", 401)
     if not name:
         return sign_in_page(portal, "Give your name: it is recorded with every change you make.", 400)
+    now = time.time()
+    portal.sessions = {found: held for found, held in portal.sessions.items() if held.expires >= now}
     ident = secrets.token_urlsafe(32)
-    session = Session(name, secrets.token_urlsafe(32), time.time() + SESSION_SECONDS)
-    portal.sessions[ident] = session
-    request.state.session = session
-    response = await configuration_page(request)
+    portal.sessions[ident] = Session(name, secrets.token_urlsafe(32), now + SESSION_SECONDS)
+    # A redirect, so reloading the page that follows does not post the key again
+    response = RedirectResponse("/", status_code=303)
     response.set_cookie(COOKIE, ident, max_age=SESSION_SECONDS, path="/", httponly=True, samesite="strict",
                         secure=request.app.state.secure)
     return response
