@@ -2,9 +2,10 @@
 
 A figure in the answer matches a tool's number when the tool's number, in the answer's unit and rounded to the
 answer's decimals, is the figure: "$1.2 million" matches 1234567, "18.4%" matches 0.1843 or 18.43. Halves round
-up, and signs are not compared ("fell by 12%" matches -0.12). A lowercase "m" is millions or metres, so "$3m"
-matches 3000000 and "400 m" matches 400. Not checked: digits inside a word (Q3, A100, 12.5kg), dates and times,
-years from 1900 to 2100 written without a comma, and bare whole numbers from 0 to 10 ("3 branches").
+up, and signs are not compared ("fell by 12%" matches -0.12). A lowercase "m" is millions or metres, in the answer
+or in a tool's text, so "$3m" matches 3000000 and "400 m" matches 400. Not checked: digits inside a word (Q3,
+A100, 12.5kg), dates and times, years from 1900 to 2100 written without a comma, and bare whole numbers from 0 to 10
+("3 branches").
 """
 from __future__ import annotations
 
@@ -65,7 +66,7 @@ def _values(result) -> list[float]:
     if isinstance(result, (int, float)):
         return [float(result)]
     if isinstance(result, str):
-        return [number.value * number.scales[0] for number in figures(result)]
+        return [number.value * scale for number in figures(result) for scale in number.scales]
     return []
 
 

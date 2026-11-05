@@ -46,7 +46,12 @@ def test_digits_before_a_unit_are_not_cut_and_m_may_be_metres():
     assert unsupported("It weighs 12.5 kg", [{"w": 12.5}]) == []
     assert unsupported("a 400 m runway", [{"length": 400}]) == []
     assert unsupported("$3m of savings", [3000000]) == []
-    assert _values(["12.5kg", "400 m"]) == [4e8]
+    assert _values(["12.5kg", "400 m"]) == [4e8, 400]
+
+
+def test_a_tool_figure_in_m_may_be_metres_too():
+    assert unsupported("a 400 metre runway", ["400 m"]) == []
+    assert unsupported("$3 million", ["$3m"]) == []
 
 
 def test_a_number_with_a_comma_is_not_a_year():

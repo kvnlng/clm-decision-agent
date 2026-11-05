@@ -664,8 +664,8 @@ The question, answer, every call, the model and the time taken go as JSON to the
 The number check then lists any figure in the answer that no tool returned. A figure matches a tool's number when that
 number, in the answer's unit and rounded to its decimals, is the figure: "$1.2 million" matches 1234567, and "18.4%"
 matches 0.1843 or 18.43. Halves round up and signs are ignored, so "fell by 12%" matches -0.12. A lowercase "m" is
-millions or metres. It skips digits inside a word (Q3, 12.5kg), dates and times, years written without a comma, and
-whole numbers from 0 to 10. A flagged figure is reported, not blocked.
+millions or metres, in the answer or in a tool's text. It skips digits inside a word (Q3, 12.5kg), dates and times,
+years written without a comma, and whole numbers from 0 to 10. A flagged figure is reported, not blocked.
 
 The citation check does the same for citations, so an answer cannot cite a case or section no tool returned:
 
