@@ -3,6 +3,7 @@
 # The fake mirrors the Anthropic client's interface, so some arguments go unused.
 # pylint: disable=missing-function-docstring,missing-class-docstring,redefined-outer-name,too-few-public-methods
 import json
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -403,3 +404,18 @@ async def test_a_tool_call_with_no_tools_goes_back_as_an_error():
         result = await answer(None, QUESTION, OllamaChat(http, "gemma4:26b", system=NO_TOOLS_SYSTEM))
     assert result["calls"] == [{"tool": "describe", "arguments": {}, "result": None, "error": "no tools are offered"}]
     assert result["answer"] == "I don't know."
+
+
+def test_two_runs_in_the_same_second_keep_both_answers(tmp_path, monkeypatch):
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 4, 12, 0, 0, tzinfo=tz)
+    monkeypatch.setattr("clm_decision.decision_agent.datetime", Frozen)
+    claude = FakeClaude(message(text("First.")), message(text("Second.")))
+    monkeypatch.setattr("anthropic.AsyncAnthropic", lambda: claude)
+    for _ in range(2):
+        assert main([str(tmp_path / "nowhere.toml"), "What is my match?", "--no-tools"]) == 0
+    answers = (tmp_path / "runs").glob("*.answer.json")
+    assert sorted(json.loads(path.read_text())["answer"] for path in answers) == ["First.", "Second."]
+    assert len(list((tmp_path / "runs").glob("*.record.md"))) == 2

@@ -224,6 +224,8 @@ def write(folder: Path) -> Path:
         name="budget", input="total_cost", refused="&gt; 9000", no="Over the offsite budget of 9,000 pounds",
         yes="Within the offsite budget"), encoding="utf-8")
     (folder / f"{module}.py").write_text(FUNCTIONS.format(), encoding="utf-8")
+    # clm-agent writes questions, answers and decision records to runs/ beside the environment
+    (folder / ".gitignore").write_text("runs/\n", encoding="utf-8")
     return environment
 
 

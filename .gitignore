@@ -16,4 +16,6 @@ examples/tariff/runs/
 .postgres-local.env
 examples/*/runs/
 /runs/
+# clm-agent's runs beside any environment, such as one clm-new-environment made
+runs/
 examples/noncompete/data/

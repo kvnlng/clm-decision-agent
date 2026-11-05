@@ -233,6 +233,15 @@ async def answer(session: Client | None, question: str, chat: Chat) -> dict:
             "citations": citation_check.check(text, returned), "stopped": stopped, "model": chat.model}
 
 
+def _new(runs: Path, stamp: str) -> Path:
+    """runs/<stamp>.answer.json, or <stamp>-2 and on when a run in the same second has that name."""
+    out, count = runs / f"{stamp}.answer.json", 1
+    while out.exists():
+        count += 1
+        out = runs / f"{stamp}-{count}.answer.json"
+    return out
+
+
 async def _main(args, refused: list[int]) -> int:
     system = NO_TOOLS_SYSTEM if args.no_tools else SYSTEM
     async with contextlib.AsyncExitStack() as stack:
@@ -267,7 +276,7 @@ async def _main(args, refused: list[int]) -> int:
     if result["citations"]["unchecked"]:
         print(f"\nCase names without a citation, not checked: {', '.join(result['citations']['unchecked'])}")
     runs = Path("runs") if is_url(args.environment) else Path(args.environment).resolve().parent / "runs"
-    out = Path(args.out) if args.out else runs / f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.answer.json"
+    out = Path(args.out) if args.out else _new(runs, f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2), encoding="utf-8")
     record = decision_record.build(result["question"], result["calls"])
