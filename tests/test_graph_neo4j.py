@@ -143,7 +143,7 @@ def test_a_load_that_fails_partway_changes_nothing():
     driver = FakeDriver(fail_in_transaction=3)
     with pytest.raises(RuntimeError, match="out of memory"):
         load_graph.load(load_environment(EXAMPLE).graph, driver, "neo4j")
-    assert len(driver.pending) == 3 and driver.committed == []
+    assert len(driver.pending) == 3 and not driver.committed
 
 
 def test_kinds_or_relations_differing_only_in_case_are_refused(tmp_path):

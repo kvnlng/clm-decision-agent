@@ -4,7 +4,8 @@ Those marked postgres need a local PostgreSQL with pgvector, a role `clm` and a 
 can be wiped, with the password in CLM_TEST_POSTGRES_PASSWORD: `uv run pytest -m postgres tests/test_documents_pg.py`.
 """
 # Test names say what they check, and pytest fixtures are used by repeating their names.
-# pylint: disable=missing-function-docstring,redefined-outer-name
+# Fakes mirror psycopg's interface, so some arguments go unused.
+# pylint: disable=missing-function-docstring,redefined-outer-name,unused-argument
 import contextlib
 import json
 import os
@@ -156,6 +157,26 @@ def test_a_failed_load_is_one_line():
         "PostgreSQL text fields cannot contain NUL (0x00) bytes"))), "127.0.0.1:1/nowhere")
     with pytest.raises(StepError, match=r"^documents at 127.0.0.1:1/nowhere: PostgreSQL text fields cannot"):
         store.replace("cases", DOCUMENTS, vectors(), built())
+
+
+def test_a_lost_connection_is_opened_again(opens):
+    """PostgreSQL restarted, or the laptop slept: the next statement reconnects once rather than failing forever."""
+    lost, fresh = FakeConnection(fail=("SELECT id", psycopg.OperationalError("the connection is lost"))), \
+        FakeConnection(rows=[("case-a",)])
+    opens += [lost, fresh]
+    store = documents_pg.connect_postgres(NEVER, "x")
+    assert store.ids("cases", 3) == ["case-a"] and not opens
+    assert store.ids("cases", 3) == ["case-a"] and store.connection is fresh
+
+
+def test_a_failing_statement_is_not_run_again(opens):
+    connection = FakeConnection(fail=("SELECT id", psycopg.errors.UndefinedTable('relation "documents" does not '
+                                                                                 'exist')))
+    opens += [connection, FakeConnection()]
+    store = documents_pg.connect_postgres(NEVER, "x")
+    with pytest.raises(StepError, match=r'^documents at 127.0.0.1:1/nowhere: relation "documents" does not exist$'):
+        store.ids("cases", 3)
+    assert store.connection is connection and connection.ran.count(connection.ran[-1]) == 1
 
 
 def test_no_driver_names_the_documents_extra(monkeypatch):

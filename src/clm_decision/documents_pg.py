@@ -48,9 +48,15 @@ def connect_postgres(settings, password: str) -> PostgresStore:
     except ImportError as error:
         raise ScenarioError(_NO_DRIVER) from error
     where = f"{settings.host}:{settings.port}/{settings.database}"
+    options = {"host": settings.host, "port": settings.port, "dbname": settings.database, "user": settings.user,
+               "password": password, "connect_timeout": 5, "autocommit": True}
+
+    def reconnect():
+        fresh = psycopg.connect(**options)
+        register_vector(fresh)
+        return fresh
     try:
-        connection = psycopg.connect(host=settings.host, port=settings.port, dbname=settings.database,
-                                     user=settings.user, password=password, connect_timeout=5, autocommit=True)
+        connection = psycopg.connect(**options)
     except psycopg.Error as error:
         raise ScenarioError(f"documents: cannot connect to {where}: {_first_line(error)}") from error
     try:
@@ -65,7 +71,7 @@ def connect_postgres(settings, password: str) -> PostgresStore:
     except psycopg.Error as error:
         connection.close()
         raise ScenarioError(f"documents: {where}: cannot prepare the tables: {_first_line(error)}") from error
-    return PostgresStore(connection, where)
+    return PostgresStore(connection, where, reconnect)
 
 
 def _filter_sql(filters: dict) -> tuple[str, list]:
@@ -89,15 +95,27 @@ def _filter_sql(filters: dict) -> tuple[str, list]:
 
 
 class PostgresStore:
-    """A DocumentStore on one PostgreSQL connection."""
+    """A DocumentStore on one PostgreSQL connection, opened again through `reconnect` when it is lost."""
 
-    def __init__(self, connection, where: str):
-        self.connection, self.where = connection, where
+    def __init__(self, connection, where: str, reconnect=None):
+        self.connection, self.where, self.reconnect = connection, where, reconnect
+
+    def _connection(self):
+        """The connection, opened again first when a restart, a sleep or a timeout has lost it."""
+        if self.reconnect is not None and (self.connection.closed or self.connection.broken):
+            self.connection = self.reconnect()
+        return self.connection
 
     def _rows(self, sql: str, params) -> list[tuple]:
         import psycopg  # pylint: disable=import-outside-toplevel
         try:
-            return self.connection.execute(sql, params).fetchall()
+            try:
+                return self._connection().execute(sql, params).fetchall()
+            except psycopg.OperationalError:
+                if self.reconnect is None or not (self.connection.closed or self.connection.broken):
+                    raise
+                # Lost while idle: these are reads, so run the statement once more on a new connection
+                return self._connection().execute(sql, params).fetchall()
         except psycopg.Error as error:
             raise StepError(f"documents at {self.where}: {_first_line(error)}") from error
 
@@ -106,7 +124,8 @@ class PostgresStore:
         in one line when the database refuses them, having rolled back."""
         import psycopg  # pylint: disable=import-outside-toplevel
         try:
-            with self.connection.transaction():
+            # Opened again before the transaction if it was lost, never part of the way through it
+            with self._connection().transaction():
                 self._write(collection, documents, vectors, built)
         except psycopg.Error as error:
             raise StepError(f"documents at {self.where}: {_first_line(error)}") from error

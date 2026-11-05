@@ -179,7 +179,9 @@ filters = { state = "string", court_level = "string", year = "integer", decided 
 - **Passages** are found by meaning (pgvector) and by words (PostgreSQL full-text search), the two rankings combined.
   Each comes with its document id, citation, title, metadata, passage label and score.
 - **The server connects at start-up.** An unreachable database, or one without the `vector` extension, stops it with
-  one line. The driver is the `documents` extra: `pip install 'clm-decision-agent[documents]'`.
+  one line, as does a role that cannot create the four tables. A connection lost later, when PostgreSQL restarts or
+  the machine sleeps, is opened again on the next call. The driver is the `documents` extra:
+  `pip install 'clm-decision-agent[documents]'`.
 
 `clm-load-documents` loads a collection from JSON lines, **replacing what it holds**:
 
