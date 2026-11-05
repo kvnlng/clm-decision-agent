@@ -181,7 +181,12 @@ def test_heads_are_used_only_when_they_match_the_scenario(write_scenario):
     assert folder is None and "different CLM build" in note
 
     (scenario.clm_heads / "training.json").write_text("[]")
-    assert resolve_heads(scenario)[0] is None
+    folder, note = resolve_heads(scenario)
+    assert folder is None and "training.json in my.heads cannot be read" in note and "clm-synthesize" not in note
+
+    (scenario.clm_heads / "training.json").write_text('{"routing_sha": ')
+    folder, note = resolve_heads(scenario)
+    assert folder is None and "training.json in my.heads cannot be read" in note and "run clm-train again" in note
 
 
 def test_no_heads_setting_means_the_released_heads(scenario):

@@ -162,11 +162,17 @@ def resolve_heads(scenario: Scenario):
         return None, "released heads"
     try:
         facts = json.loads((folder / "training.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        facts = None
-    if not isinstance(facts, dict):
+        why = None if isinstance(facts, dict) else "not a JSON object"
+    except FileNotFoundError:
         return None, (f"released heads ({folder.name} has no trained heads yet; "
                       f"create them with clm-synthesize and clm-train)")
+    except OSError as error:
+        why = error.strerror
+    except ValueError as error:
+        why = str(error)
+    if why:
+        # A folder that was trained once should not look like one that never was
+        return None, f"released heads (training.json in {folder.name} cannot be read: {why}; run clm-train again)"
     reason = _stale(folder, facts, scenario)
     return (None, f"released heads ({reason})") if reason else (folder, f"trained heads from {folder.name}")
 
