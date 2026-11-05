@@ -159,6 +159,14 @@ async def test_a_missing_model_says_how_to_get_it_and_the_chat_goes_on(tracker):
     assert history == model.start()
 
 
+@pytest.mark.anyio
+async def test_a_model_reply_that_is_not_a_chat_reply_is_its_error_and_the_chat_goes_on(tracker):
+    model = scripted([{"error": "out of memory"}, httpx.Response(200, text="not json")])
+    history = model.start()
+    assert "[error: " in await ask(tracker, model, history=history) and history == model.start()
+    assert "[error: " in await ask(tracker, model, history=history) and history == model.start()
+
+
 def test_a_long_result_is_shortened_unless_full_is_asked_for():
     assert "more characters; --full" in tc.shown("x" * 5000, full=False)
     assert tc.shown("x" * 5000, full=True) == "x" * 5000
@@ -232,3 +240,21 @@ async def test_claude_cut_off_runs_nothing(tracker):
     fake = FakeAnthropic([claude_reply("max_tokens", SimpleNamespace(type="tool_use", id="t1", name="open_ticket",
                                                                      input={"summary": "y"}))])
     assert "cut off" in await ask(tracker, tc.ClaudeModel(fake)) and tracker.tickets == 0
+
+
+class FailingAnthropic:
+    """An Anthropic client that fails as a bad key or a missing one does."""
+
+    def __init__(self, error):
+        self.error, self.messages = error, self
+
+    def stream(self, **_request):
+        raise self.error
+
+
+@pytest.mark.anyio
+async def test_a_claude_failure_is_its_error_and_the_chat_goes_on(tracker):
+    for error in (TypeError("Could not resolve authentication method"), ValueError("Error code: 401")):
+        model = tc.ClaudeModel(FailingAnthropic(error))
+        history = model.start()
+        assert str(error) in await ask(tracker, model, history=history) and history == []
