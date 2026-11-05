@@ -123,5 +123,7 @@ orders each weighty case's citing passages, the most critical first.
 
 A case counts as **similar** (`rules/similar_case.dmn`) when its facts are known, its court is binding or strong
 (a federal court is only persuasive), and its role is in the same line of work: the asked role's first word,
-"sales" of "sales manager", appears in the role the opinion names. That is a crude rule over free text; an
-"account executive" who sells is missed. The label sets are small, eleven and thirteen passages.
+"sales" of "sales manager", starts a word in the role the opinion names. Words like "senior" and "general" are
+skipped, so "senior sales engineer" looks for "sales". That is a crude rule over free text; an "account
+executive" who sells is missed. A case's area counts as nationwide when it names the country as a whole, not a
+radius or a region of it ("Southeastern United States"). The label sets are small, eleven and thirteen passages.
