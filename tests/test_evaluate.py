@@ -102,6 +102,17 @@ def test_agreement_counts(scenario):
     assert agreement(records, scenario, router) == {"n": 2, "agree": 1}
 
 
+def test_a_correction_that_a_later_one_replaced_is_not_counted(scenario):
+    records = [route_record("crash", "Billing", "Billing"), route_record("crash", "Billing", "Tech"),
+               route_record("parcel", "Tech", "Shipping"), route_record("parcel", "Tech", "Shipping")]
+    router = FakeRouter({"crash": decision("Tech")}, vectors={"crash": [1.0, 0.0]})
+    assert agreement(records, scenario, router) == {"n": 1, "agree": 1}
+    result = evaluate(records, scenario, router)
+    assert (result["routing"]["n"], result["routing"]["skipped"], result["routing"]["confusion"]) == \
+        (1, 1, {("Tech", "Tech"): 1})
+    assert result["matching"]["n"] == 1
+
+
 def test_main_when_clm_cannot_load_is_one_line(write_scenario, monkeypatch, capsys):
     path = write_scenario()
     save_correction(load_scenario(path), "charged twice", "Billing", {"route": "Tech", "confidence": 0.7})
