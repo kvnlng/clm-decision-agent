@@ -92,6 +92,7 @@ def test_the_embedder_keeps_one_client_with_a_timeout_for_searches(monkeypatch):
             lambda request: httpx.Response(200, json={"embeddings": [[0.1, 0.2]]})))
     monkeypatch.setattr(documents.httpx, "Client", client)
     embedder = OllamaEmbedder("http://ollama")
+    assert not made, "an environment whose search never runs makes no client"
     embedder.embed("toy-embed", ["one"])
     embedder.embed("toy-embed", ["two"])
     assert made == [60]
