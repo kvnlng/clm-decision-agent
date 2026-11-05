@@ -23,6 +23,9 @@ except ModuleNotFoundError as missing:
     raise not_installed(missing) from missing
 
 ROUTE_QID = "__route__"
+# The MLX builds ship their own Python (clm_mlx), which runs in this process, so each is taken at a known commit
+MLX_REVISIONS = {"mlx-community/CLM-v0.1-8B-MLX-8bit": "eb39b6c777c579720f7a1458f2614be4508a4e15",
+                 "mlx-community/CLM-v0.1-8B-MLX-4bit": "489b421bafc007e3ae409528d77006d26d362689"}
 
 
 class MlxEngine:
@@ -64,7 +67,7 @@ class MlxEngine:
             tracing.add("texts_encoded", len({(which, text) for which, found in texts.items() for text in found
                                               if (which, text) not in self.engine.cache}))
         before = self.engine.tokens_spent
-        # _vectors is the build's own; the model revision pins the build, so it does not change under us
+        # _vectors is the build's own; MLX_REVISIONS pins the build, so it does not change under us
         with tracing.timed("encode_ms"):
             for which, found in texts.items():
                 self.engine._vectors(found, which)  # pylint: disable=protected-access
@@ -121,10 +124,15 @@ def load_mlx_engine(model_id: str, heads_dir=None) -> MlxEngine:
 
     `heads_dir` swaps the build's own heads for ones trained with train.py; the encoder is the same."""
     logging.getLogger("transformers").setLevel(logging.ERROR)
-    model_dir = snapshot_download(repo_id=model_id)
-    # The clm_mlx package ships inside the model repo rather than on PyPI
+    revision = MLX_REVISIONS.get(model_id)
+    if revision is None:
+        print(f"warning: {model_id} has no pinned commit, so its clm_mlx code is taken as the repo has it now",
+              file=sys.stderr)
+    model_dir = snapshot_download(repo_id=model_id, revision=revision)
+    # The clm_mlx package ships inside the model repo rather than on PyPI. At the end of the path, nothing in the
+    # model folder can stand in for a module installed here
     if model_dir not in sys.path:
-        sys.path.insert(0, model_dir)
+        sys.path.append(model_dir)
     from clm_mlx.engine import Engine  # pylint: disable=import-outside-toplevel,import-error
     # truncation="tail" keeps the most recent tokens when a state exceeds 2048 tokens
     heads = str(heads_dir) if heads_dir else os.path.join(model_dir, "heads")
