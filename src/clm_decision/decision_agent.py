@@ -291,13 +291,16 @@ async def _main(args, refused: list[int]) -> int:
     out = Path(args.out) if args.out else _new(runs, f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2), encoding="utf-8")
-    record = decision_record.build(result["question"], result["calls"])
+    # With no tools offered, a call the model asks for is made up: the answer keeps it, the record and count do not
+    ran = result["calls"] if result["tools"] else []
+    record = decision_record.build(result["question"], ran)
     stem = out.name.removesuffix(".json").removesuffix(".answer")
     (out.parent / f"{stem}.record.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
     (out.parent / f"{stem}.record.md").write_text(
         decision_record.markdown(record, result["answer"], result["unsupported"], result["citations"]),
         encoding="utf-8")
-    print(f"\n{len(result['calls'])} tool calls in {result['seconds']} s; written to {out}, with the decision "
+    counted = f"{len(ran)} tool calls" if result["tools"] else "no tools offered"
+    print(f"\n{counted} in {result['seconds']} s; written to {out}, with the decision "
           f"record in {out.parent / (stem + '.record.md')}", file=sys.stderr)
     return 0
 

@@ -347,6 +347,15 @@ def test_no_tools_sends_no_tools_and_its_own_prompt(tmp_path, monkeypatch):
     assert result["calls"] == [] and result["tools"] is False
 
 
+def test_no_tools_counts_and_records_no_calls_the_model_made_up(tmp_path, monkeypatch, capsys):
+    claude = FakeClaude(message(tool_use("describe", {})), message(text("I don't know.")))
+    monkeypatch.setattr("anthropic.AsyncAnthropic", lambda: claude)
+    out = tmp_path / "run.answer.json"
+    assert main([str(tmp_path / "nowhere.toml"), "What is my match?", "--no-tools", "--out", str(out)]) == 0
+    assert "no tools offered" in capsys.readouterr().err
+    assert json.loads((tmp_path / "run.record.json").read_text())["failed_calls"] == []
+
+
 def test_no_tools_flags_every_figure_not_in_the_question(tmp_path, monkeypatch):
     claude = FakeClaude(message(text("Meridian adds $3,400 a year.")))
     monkeypatch.setattr("anthropic.AsyncAnthropic", lambda: claude)
