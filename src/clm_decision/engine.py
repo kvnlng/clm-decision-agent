@@ -214,14 +214,17 @@ class Steps:
                     outputs, fired = getattr(self.env.functions, decision.function)(**inputs), []
             if decision.table is None and not isinstance(outputs, dict):
                 raise StepError(f"decision {name}: its function must return a dict")
+            step = {"kind": "decision", "name": name, "inputs": inputs, "result": outputs, "fired": fired, **origin}
+            # A COLLECT table gives a row per rule fired, each with its own citation cell
+            cells = [row.get("citation") for row in (outputs if isinstance(outputs, list) else [outputs])]
+            ids = dict.fromkeys(part.strip() for cell in cells if isinstance(cell, str) for part in cell.split(";"))
+            if decision.collection and ids:
+                step["citations"] = _resolved(self.env, decision.collection, ";".join(ids))
         except Exception as error:
             # Recorded even if the owner's code catches it, so a limit that failed cannot pass unnoticed
             self.steps.append({"kind": "decision", "name": name, "inputs": inputs, "result": None, "fired": [],
                                **origin, "error": _message(error)})
             raise
-        step = {"kind": "decision", "name": name, "inputs": inputs, "result": outputs, "fired": fired, **origin}
-        if decision.collection and isinstance(outputs.get("citation"), str):
-            step["citations"] = _resolved(self.env, decision.collection, outputs["citation"])
         self.steps.append(step)
         return outputs
 
