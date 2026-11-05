@@ -134,6 +134,17 @@ async def test_a_figure_from_a_tool_error_is_not_flagged(mcp_server):
 
 
 @pytest.mark.anyio
+async def test_a_citation_echoed_in_a_tool_error_is_not_found(mcp_server):
+    claude = FakeClaude(message(tool_use("scenario_sourcing", {"product": "PX",
+                                                              "branches": [{"region_b_share": "§ 15.50(b)"}]}),
+                                stop="tool_use"),
+                        message(text("Under § 15.50(b) the covenant fails.")))
+    result = await ask(mcp_server, claude)
+    assert "§ 15.50(b)" in result["calls"][0]["error"]
+    assert result["citations"]["found"] == [] and result["citations"]["not_found"] == ["§ 15.50(b)"]
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("stop", ["max_tokens", "model_context_window_exceeded"])
 async def test_a_cut_off_reply_stops_without_running_its_tools(mcp_server, stop):
     claude = FakeClaude(message(tool_use("scenario_sourcing", {"product": "PX"}), stop=stop))
