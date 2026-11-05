@@ -14,6 +14,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import time
 import urllib.parse
 from dataclasses import dataclass, field
@@ -194,7 +195,7 @@ def configuration_body(found: dict, environment: Path) -> str:
         parts.append(f'<section class="errors"><h2>Load errors</h2><ul>{items}</ul></section>')
     parts.append('<h2>Tools, resources and prompts</h2><p>The MCP Inspector shows what this server offers and calls '
                  'one tool at a time (docs/getting-started.md, "Looking inside the server"):</p>'
-                 f'<pre>npx -y {INSPECTOR} uv run clm-server {esc(str(environment))}</pre>')
+                 f'<pre>npx -y {INSPECTOR} uv run clm-server {esc(shlex.quote(str(environment)))}</pre>')
     parts.append("<h2>Rules</h2>" + ("".join(_rule(rule) for rule in found["rules"]) or "<p>No rules.</p>"))
     if found["information"]:
         parts.append("<h2>Information</h2>" + table(
