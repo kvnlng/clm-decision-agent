@@ -94,7 +94,11 @@ class OpenAIGenerator:
 def make_generator(scenario: Scenario):
     """The generator backend named in the scenario."""
     if scenario.generator_backend == "openai":
-        key = os.environ.get(scenario.generator_key_env or "", "") or None
+        key = None
+        if scenario.generator_key_env:
+            key = os.environ.get(scenario.generator_key_env, "").strip()
+            if not key:
+                raise GeneratorError(f"generator.api_key_env: the variable {scenario.generator_key_env} is not set")
         return OpenAIGenerator(scenario.generator_model, scenario.max_tokens, scenario.generator_base_url, key)
     if scenario.generator_backend == "ollama":
         return OllamaGenerator(scenario.generator_model, scenario.max_tokens)

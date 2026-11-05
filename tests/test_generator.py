@@ -89,6 +89,14 @@ def test_openai_backend_is_made_with_the_address_and_key(write_scenario, monkeyp
     assert (made.llm.model_name, made.llm.max_tokens) == ("test/gen", 50)
 
 
+def test_openai_backend_with_its_key_variable_unset_says_so(write_scenario, monkeypatch):
+    text = BASE_TOML.replace('backend = "mlx"', 'backend = "openai"\nbase_url = "http://localhost:9/v1"\n'
+                                                'api_key_env = "DEMO_GEN_KEY"')
+    monkeypatch.delenv("DEMO_GEN_KEY", raising=False)
+    with pytest.raises(GeneratorError, match="generator.api_key_env: the variable DEMO_GEN_KEY is not set"):
+        make_generator(load_scenario(write_scenario(text)))
+
+
 def test_openai_backend_returns_stripped_text():
     llm = FakeLLM(reply=AIMessage(content=" a list \n"))
     assert OpenAIGenerator("m", 50, "http://x/v1", llm=llm).generate("s", "hi") == "a list"

@@ -101,7 +101,7 @@ model = "gemma4:26b"
 backend = "openai"                                    # any server with the OpenAI chat interface
 base_url = "http://localhost:11434/v1"                # Ollama, vLLM, LM Studio, llama.cpp ...
 model = "gemma4:26b"
-api_key_env = "MODEL_API_KEY"                         # optional
+api_key_env = "MODEL_API_KEY"                         # optional; if set, the variable must be too
 ```
 
 All three have written the example's training messages. A larger model writes more varied examples but takes longer; the
