@@ -131,6 +131,9 @@ ORDER BY s.id"""
 - each edge becomes a relationship typed by the relation in capitals, carrying the edge's other columns;
 - `Node.id` is made unique.
 
+The delete and the copy are one transaction, so a load that fails leaves the graph that was there. A very large graph
+may need a higher `db.memory.transaction.max`.
+
 ```bash
 brew install neo4j                        # natively; it brings Java 21
 neo4j-admin dbms set-initial-password "$NEO4J_PASSWORD"      # before the first start

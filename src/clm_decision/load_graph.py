@@ -34,8 +34,7 @@ def load(graph: Graph, driver, database: str) -> dict:
     """Replace the database's contents with the graph -> {"nodes": n, "edges": n}."""
     nodes = sorted(graph.nodes(), key=lambda node: node["kind"])
     edges = sorted(graph.edges(), key=lambda edge: edge["relation"])
-    statements = [("MATCH (n) DETACH DELETE n", {}),
-                  ("CREATE CONSTRAINT node_id IF NOT EXISTS FOR (n:Node) REQUIRE n.id IS UNIQUE", {})]
+    statements = [("MATCH (n) DETACH DELETE n", {})]
     for kind, group in groupby(nodes, key=lambda node: node["kind"]):
         label = _label(kind, "kind")
         label = label[:1].upper() + label[1:]
@@ -53,8 +52,12 @@ def load(graph: Graph, driver, database: str) -> dict:
                                f"CREATE (a)-[r:{kind}]->(b) SET r = row.properties",
                                {"rows": rows[start:start + BATCH]}))
     with driver.session(database=database) as session:
-        for cypher, parameters in statements:
-            session.run(cypher, parameters)
+        # A schema change cannot share a transaction with data; the rest is one, so a failure leaves the old graph
+        session.run("CREATE CONSTRAINT node_id IF NOT EXISTS FOR (n:Node) REQUIRE n.id IS UNIQUE", {})
+        with session.begin_transaction() as transaction:
+            for cypher, parameters in statements:
+                transaction.run(cypher, parameters)
+            transaction.commit()
     return {"nodes": len(nodes), "edges": len(edges)}
 
 
