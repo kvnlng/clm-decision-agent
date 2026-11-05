@@ -26,11 +26,13 @@ uv run clm-server my_scenario.toml --http [--host 127.0.0.1] [--port 8000] [--re
 ```
 
 - Address: `http://<host>:<port>/mcp`, MCP's Streamable HTTP, without sessions.
-- **Every request must send `Authorization: Bearer <key>`**; anything else gets `401 {"error": "missing or wrong key"}`.
-  The server will not start without the key variable. `--key-env` names a different one.
+- **Every request must send `Authorization: Bearer <key>`** (the scheme in any case); anything else gets
+  `401 {"error": "missing or wrong key"}`. The server will not start without the key variable. `--key-env` names a
+  different one.
 - It listens on this computer only by default. For callers elsewhere, set `--host`, name the address they use with
-  `--allowed-host` (for example `--allowed-host decisions.example.org:443`), and put HTTPS in front: the key travels in
-  every request.
+  `--allowed-host` (for example `--allowed-host decisions.example.org`), and put HTTPS in front: the key travels in
+  every request. An allowed host is taken on any port, and so is a page served over https from it; calls from the
+  server's own computer (`127.0.0.1`, `localhost`) are still taken too.
 - Leave out `--review` for real callers: any caller with the key could save corrections, which become training data.
 
 ### With tokens from your identity provider (OAuth)

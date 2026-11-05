@@ -142,6 +142,45 @@ def test_http_without_the_right_key_is_401(http_url, headers):
     assert (response.status_code, response.json()) == (401, {"error": "missing or wrong key"})
 
 
+@pytest.mark.parametrize("scheme", ["bearer", "BEARER", "Bearer"])
+def test_http_takes_the_bearer_scheme_in_any_case(http_url, scheme):
+    response = httpx2.post(http_url, headers={"Authorization": f"{scheme} k1"}, json={})
+    assert response.status_code != 401
+
+
+def test_http_refusing_a_key_names_the_scheme(http_url):
+    response = httpx2.post(http_url, json={})
+    assert response.status_code == 401 and response.headers["www-authenticate"].startswith("Bearer")
+
+
+INITIALIZE = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+              "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                         "clientInfo": {"name": "probe", "version": "0"}}}
+
+
+@pytest.fixture
+def allowed_url(parts):
+    """A server on a free port, behind the key "k1", accepting the host decisions.example.org; -> its address."""
+    port = free_port()
+    app = server.http_app(server.build_server(*parts, review=False), "k1", allowed_hosts=["decisions.example.org"])
+    with serving(app, port):
+        yield f"http://127.0.0.1:{port}/mcp"
+
+
+@pytest.mark.parametrize("headers, status", [
+    ({"Host": "decisions.example.org"}, 200),                   # as an HTTPS client sends it, with no port
+    ({"Host": "decisions.example.org:443"}, 200),
+    ({"Host": "decisions.example.org", "Origin": "https://decisions.example.org"}, 200),
+    ({}, 200),                                                   # 127.0.0.1:PORT, as on the server's own computer
+    ({"Host": "elsewhere.example.org"}, 421),
+    ({"Host": "decisions.example.org", "Origin": "https://elsewhere.example.org"}, 403)])
+def test_an_allowed_host_is_taken_with_or_without_a_port(allowed_url, headers, status):
+    response = httpx2.post(allowed_url, json=INITIALIZE,
+                           headers={"Authorization": "Bearer k1", "Accept": "application/json, text/event-stream",
+                                    **headers})
+    assert response.status_code == status
+
+
 def test_http_without_key_env_refuses_to_start(write_scenario, monkeypatch, capsys):
     monkeypatch.delenv("DECISION_SERVER_KEY", raising=False)
     assert server.main([str(write_scenario()), "--http"]) == 2

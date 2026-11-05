@@ -38,6 +38,8 @@ CHANGES = ToolAnnotations(read_only_hint=False)
 TOOLS = ("decide", "decide_many", "check_call", "describe")
 REVIEW_TOOLS = ("correct", "agreement")
 NO_REVIEW = "a read-only server cannot offer review mode: correct writes the record"
+# With --allowed-host, still taken: a call from the server's own computer
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 
 
 def tool_names(review: bool) -> list[str]:
@@ -218,20 +220,41 @@ def _add_review(server: MCPServer, scenario: Scenario, router, tools: dict[str, 
             return clm(lambda: replay_agreement(records, plain, router))
 
 
+def _without_port(host: str) -> str:
+    """decisions.example.org:443, decisions.example.org:* and [::1]:8000 without their ports."""
+    name, colon, port = host.rpartition(":")
+    if colon and (port == "*" or port.isdigit()) and (":" not in name or name.endswith("]")):
+        return name
+    return host
+
+
+def _security(allowed_hosts: list[str]) -> TransportSecuritySettings:
+    """The Host and Origin headers to accept: each allowed host on any port or none (an HTTPS client leaves out
+    443), a page served over https from it, and this computer's own addresses, as the SDK takes them by default."""
+    names = list(dict.fromkeys([*map(_without_port, allowed_hosts), *LOCAL_HOSTS]))
+    origins = []
+    for name in names:
+        for scheme in ("https", "http") if name in LOCAL_HOSTS else ("https",):
+            origins += [f"{scheme}://{name}", f"{scheme}://{name}:*"]
+    return TransportSecuritySettings(allowed_hosts=[form for name in names for form in (name, f"{name}:*")],
+                                     allowed_origins=origins)
+
+
 def http_app(server: MCPServer, key: str | None, host: str = "127.0.0.1", allowed_hosts: list[str] | None = None):
-    """The server over Streamable HTTP at /mcp, answering only requests that send `Authorization: Bearer <key>`.
-    With no key, the server was built with OAuth and checks tokens itself."""
-    security = TransportSecuritySettings(allowed_hosts=allowed_hosts) if allowed_hosts else None
+    """The server over Streamable HTTP at /mcp, answering only requests that send `Authorization: Bearer <key>`
+    (the scheme in any case). With no key, the server was built with OAuth and checks tokens itself."""
+    security = _security(allowed_hosts) if allowed_hosts else None
     app = server.streamable_http_app(stateless_http=True, host=host, transport_security=security)
     if key is None:
         return app
-    expected = f"Bearer {key}".encode()
+    expected = key.encode()
 
     async def guarded(scope, receive, send):
         if scope["type"] == "http":
-            sent = dict(scope["headers"]).get(b"authorization", b"")
-            if not hmac.compare_digest(sent, expected):
-                await JSONResponse({"error": "missing or wrong key"}, status_code=401)(scope, receive, send)
+            scheme, _, sent = dict(scope["headers"]).get(b"authorization", b"").partition(b" ")
+            if scheme.lower() != b"bearer" or not hmac.compare_digest(sent.strip(), expected):
+                await JSONResponse({"error": "missing or wrong key"}, status_code=401,
+                                   headers={"WWW-Authenticate": 'Bearer realm="decision-server"'})(scope, receive, send)
                 return
         await app(scope, receive, send)
     return guarded
@@ -281,7 +304,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--resource-url", help="with --auth oauth: this server's public MCP address (default: "
                                                "http://HOST:PORT/mcp)")
     parser.add_argument("--allowed-host", action="append", dest="allowed_hosts",
-                        help="a Host header to accept, such as decisions.example.org:443 (repeatable)")
+                        help="a host callers name, such as decisions.example.org, taken on any port (repeatable)")
     parser.add_argument("--trace", metavar="FILE", help="write one line per call to FILE, saying where the time went")
     parser.add_argument("--trace-text", action="store_true", help="include each request's text in the trace")
     parser.add_argument("--tools", metavar="NAMES",
