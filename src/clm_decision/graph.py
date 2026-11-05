@@ -48,6 +48,12 @@ class Graph:
     def __init__(self, nodes: dict[str, dict], edges: list[dict]):
         self._nodes = nodes
         self._edges = edges
+        # Each node's edges out and in, so a walk looks only at the edges of the nodes it reaches
+        self._out: dict[str, list[dict]] = {}
+        self._in: dict[str, list[dict]] = {}
+        for edge in edges:
+            self._out.setdefault(edge["source"], []).append(edge)
+            self._in.setdefault(edge["target"], []).append(edge)
 
     @classmethod
     def from_csv(cls, nodes: Path, edges: Path) -> Graph:
@@ -80,7 +86,9 @@ class Graph:
 
     def edges(self, source: str | None = None, relation: str | None = None, target: str | None = None) -> list[dict]:
         """The edges matching whichever of source, relation and target are given."""
-        return [dict(edge) for edge in self._edges
+        candidates = self._out.get(source, []) if source is not None else \
+            self._in.get(target, []) if target is not None else self._edges
+        return [dict(edge) for edge in candidates
                 if (source is None or edge["source"] == source) and (relation is None or edge["relation"] == relation)
                 and (target is None or edge["target"] == target)]
 
@@ -103,8 +111,8 @@ class Graph:
             current = queue.popleft()
             if len(paths[current]) > depth:
                 continue
-            for edge in self._edges:
-                if edge["source"] == current and edge["relation"] in relations and edge["target"] not in paths:
+            for edge in self._out.get(current, []):
+                if edge["relation"] in relations and edge["target"] not in paths:
                     paths[edge["target"]] = paths[current] + [edge["target"]]
                     queue.append(edge["target"])
         del paths[node_id]
@@ -118,7 +126,11 @@ class Graph:
         """The nodes every one of ids reaches, each with "via": {id: path}. Losing one would cut off all of them."""
         if not ids:
             return []
-        reached = {node_id: self._paths(node_id, relations, depth) for node_id in ids}
-        shared = set.intersection(*(set(paths) for paths in reached.values()))
+        reached, shared = {}, None
+        for node_id in dict.fromkeys(ids):
+            reached[node_id] = self._paths(node_id, relations, depth)
+            shared = set(reached[node_id]) if shared is None else shared & set(reached[node_id])
+            if not shared:
+                return []
         return [{**self.node(other), "via": {node_id: reached[node_id][other] for node_id in ids}}
                 for other in sorted(shared)]
