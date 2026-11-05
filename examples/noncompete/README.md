@@ -40,6 +40,10 @@ a passage can contain the words and still be misread. Checking the labels found 
 read as the covenant's length, post-judgment interest read as a covenant reformed, a contractor read as an
 employee. Of the 626 opinions with an outcome, 395 also have a length.
 
+`build` keeps what it reads in `data/facts-MODEL.jsonl` and skips an opinion already there, even one read as no
+facts. An older run logged an Ollama error as no facts. Delete an opinion's line, or the whole file, and `build`
+reads it again.
+
 ## Running it
 
 PostgreSQL (18 here) with pgvector (Homebrew, no Docker) and Ollama with `embeddinggemma` and `gemma4:26b`.
@@ -123,5 +127,7 @@ orders each weighty case's citing passages, the most critical first.
 
 A case counts as **similar** (`rules/similar_case.dmn`) when its facts are known, its court is binding or strong
 (a federal court is only persuasive), and its role is in the same line of work: the asked role's first word,
-"sales" of "sales manager", appears in the role the opinion names. That is a crude rule over free text; an
-"account executive" who sells is missed. The label sets are small, eleven and thirteen passages.
+"sales" of "sales manager", starts a word in the role the opinion names. Words like "senior" and "general" are
+skipped, so "senior sales engineer" looks for "sales". That is a crude rule over free text; an "account
+executive" who sells is missed. A case's area counts as nationwide when it names the country as a whole, not a
+radius or a region of it ("Southeastern United States"). The label sets are small, eleven and thirteen passages.

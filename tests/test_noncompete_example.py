@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 import judge_labels
 import measure
+import noncompete_functions
 from fake_documents import FakeEmbedder, FakeStore
 from mcp import Client
 
@@ -110,6 +111,33 @@ def test_a_similar_case_is_the_same_line_of_work_in_a_court_of_weight(env):
     assert {case["document"] for case in best["cases"]} == {"made-1", "made-2", "made-4", "made-5", "made-6",
                                                             "made-7"}
     assert best["broader_than_needed"] == 0.1
+
+
+@pytest.mark.parametrize("area", [
+    "within a radius of 250 miles of any office of the Company or Huntingdon International Holdings",
+    "within fifty miles of the location where he was employed, or within ten miles of any other AutoNation dealer",
+    "within a fifty-mile radius of the dealership", "Southeastern United States",
+    "the entire western half of the country", "in Texas", "anywhere within the State of Texas",
+    "anywhere in Harris County", "the Midwestern United States", "the Northwest United States", "New England",
+    "within 100 kilometers of the United States office", None])
+def test_a_regional_area_is_not_nationwide(area):
+    assert not noncompete_functions._nationwide(area)  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("area", [
+    "nationwide", "anywhere in the United States", "continental United States", "the entire United States",
+    "anywhere in the country where IBS conducts business", "THE ENTIRE UNITED STATES OF AMERICA"])
+def test_a_nationwide_area_is_nationwide(area):
+    assert noncompete_functions._nationwide(area)  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("asked, found, same", [
+    ("sales manager", "regional sales manager", True), ("sales manager", "salesman", True),
+    ("senior sales engineer", "regional sales manager", True), ("senior sales engineer", "senior accountant", False),
+    ("general manager", "general partner", False), ("vice president", "customer service manager", False),
+    ("", "sales manager", False), ("senior", "senior accountant", False), ("sales manager", None, False)])
+def test_the_line_of_work_skips_generic_first_words(asked, found, same):
+    assert noncompete_functions._same_line_of_work(asked, found) is same  # pylint: disable=protected-access
 
 
 def test_still_good_law_reads_the_citing_passages(env):

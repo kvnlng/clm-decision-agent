@@ -3,6 +3,8 @@
 The company, Meridian Logistics, is made up. Retrieval finds evidence; only the decision tables decide: no rule here
 takes a search score as an input. Not legal advice.
 """
+import re
+
 NOTICE = ("Not legal advice: a starting point for counsel, from the statutes and court opinions cited. Check each "
           "citation before relying on it.")
 CANNOT_TELL = ("This cannot tell you how a particular judge will rule, facts outside the agreement, law after the "
@@ -91,14 +93,27 @@ def by_state(steps, params, levers):
             "what_must_change": verdict["reason"], "citation": verdict["citation"], "notice": NOTICE}
 
 
+# Whole words only: "International" and "AutoNation" are not "nation", and "anywhere in Texas" is not the country
+_COUNTRY = re.compile(r"\b(nationwide|united states|the country)\b")
+# A radius or a part of the country is regional: "Southeastern United States", "western half of the country"
+_REGIONAL = re.compile(r"\b(miles?|kilomet(er|re)s?|radius|(north|south|mid)?(east|west)(ern)?|northern|southern|"
+                       r"half of)\b")
+# Words that say how senior a role is, not what it does: "senior" of "senior accountant"
+_GENERIC = {"senior", "junior", "general", "vice", "regional", "assistant", "associate", "chief", "independent",
+            "lead", "head", "deputy"}
+
+
 def _nationwide(area):
-    return any(word in (area or "").lower() for word in ("nation", "united states", "country", "anywhere"))
+    area = (area or "").lower()
+    return bool(_COUNTRY.search(area)) and not _REGIONAL.search(area)
 
 
 def _same_line_of_work(asked, found):
-    """Whether a case's role is in the asker's line of work: the asked role's first word is in it ("sales" of
-    "sales manager" is in "regional sales manager" and "salesman")."""
-    return bool(found) and asked.split()[0].lower() in found.lower()
+    """Whether a case's role is in the asker's line of work: a word in it starts with the asked role's first word
+    that is not a generic one like "senior" ("sales" of "senior sales manager" is in "regional sales manager" and
+    "salesman")."""
+    words = [word for word in re.findall(r"[a-z]+", asked.lower()) if word not in _GENERIC]
+    return bool(found and words) and bool(re.search(rf"\b{words[0]}", found.lower()))
 
 
 def _still_good_law(steps, cases):

@@ -33,7 +33,8 @@ search_ and document_ tools. score reads them against answer_key.toml:
   counted as superseded when it is a 2024 value), not given when absent. A hedged value is counted on its own line,
   neither right nor wrong. Wrong as fact, the headline, is the wrong items. Further figures stated as fact are not
   graded, since the key does not hold them: they are counted as from a tool when a tool returned them
-  (number_check.py), and as unsourced otherwise.
+  (number_check.py, or the same value for a small whole number or year, which the check skips), and as unsourced
+  otherwise.
 - verdict: read by Claude from a fixed list for each question, as in noncompete.
 - policy cited: how many of the key's handbook sections the answer names by section number ("§ 4").
 
@@ -52,7 +53,8 @@ from pathlib import Path
 from clm_decision import decision_agent, derive, derive_check, derived
 from clm_decision.dmn import DmnError, load_table
 from clm_decision.environment import load_environment
-from clm_decision.number_check import unsupported
+from clm_decision import number_check
+from clm_decision.number_check import numbers_in, unsupported
 
 HERE = Path(__file__).resolve().parent
 RUNS = HERE / "runs" / "measure"
@@ -91,6 +93,15 @@ def _close(value: float, wanted: float) -> bool:
     return abs(value - wanted) <= CLOSE * max(abs(wanted), 1)
 
 
+def _from_tools(value: float, returned: list) -> bool:
+    """Whether a tool returned this figure, as number_check reads it, or the same value for one the check skips."""
+    written = f"{value:f}".rstrip("0").rstrip(".")  # in full, never as 1.25e+06
+    if numbers_in(written):
+        return not unsupported(written, returned)
+    # The check skips small whole numbers and years, like 6 and 2030, so these are compared as values
+    return value in number_check._values(returned)  # pylint: disable=protected-access
+
+
 def score_figures(read: dict, keyed: dict, returned: list | None = None) -> dict:
     """The answer's figures, as read, counted against the key's; further figures by whether a tool returned them."""
     counts = dict.fromkeys(("right", "wrong", "superseded", "not_given", "hedged", "other_from_tools",
@@ -110,7 +121,7 @@ def score_figures(read: dict, keyed: dict, returned: list | None = None) -> dict
     for other in read["other"]:
         if other.get("hedged"):
             counts["hedged"] += 1
-        elif returned and not unsupported(f"{other['value']:g}", returned):
+        elif returned and _from_tools(other["value"], returned):
             counts["other_from_tools"] += 1
         else:
             counts["other_unsourced"] += 1

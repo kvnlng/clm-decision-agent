@@ -62,14 +62,24 @@ def supplier_news(graph, suppliers):
 
 
 def _weights(offers: list, region_b_share: float) -> dict[str, list[tuple[dict, float]]]:
-    """Component -> its offers, each with the share of the component's volume it carries."""
+    """Component -> its offers, each with the share of the component's volume it carries. A supplier outside Region
+    A and Region B, or a region the share buys from where a component has no offer, is an error, so no volume is
+    lost."""
     regions = {"Region A": 1 - region_b_share, "Region B": region_b_share}
-    by_component: dict[str, list[tuple[dict, float]]] = {}
+    by_component: dict[str, list[dict]] = {}
     for offer in offers:
-        same = [other for other in offers if other["component"] == offer["component"]
-                and other["region"] == offer["region"]]
-        by_component.setdefault(offer["component"], []).append((offer, regions[offer["region"]] / len(same)))
-    return by_component
+        if offer["region"] not in regions:
+            raise ValueError(f"{offer['supplier']} supplies {offer['component']} from {offer['region']}; this "
+                             f"example buys only in Region A and Region B")
+        by_component.setdefault(offer["component"], []).append(offer)
+    weights = {}
+    for component, its in by_component.items():
+        for region, share in regions.items():
+            if share > 0 and not any(offer["region"] == region for offer in its):
+                raise ValueError(f"{component} has no offer in {region}, which this branch buys {share:.0%} from")
+        weights[component] = [(offer, regions[offer["region"]] / sum(other["region"] == offer["region"]
+                                                                       for other in its)) for offer in its]
+    return weights
 
 
 def branch_figures(q3_units, unit_price, offers, region_b_share):  # pylint: disable=too-many-locals
@@ -84,8 +94,10 @@ def branch_figures(q3_units, unit_price, offers, region_b_share):  # pylint: dis
             cost += units * (offer["unit_price"] * (1 + offer["tariff_rate"]) + offer["freight_per_unit"])
         lead_times.append(sum(offer["lead_time_days"] * weight for offer, weight in weighted))
         defects.append(sum(offer["defect_rate"] * weight for offer, weight in weighted))
-        baseline.append(max(offer["lead_time_days"] for offer in offers
-                            if offer["component"] == component and offer["region"] == "Region A"))
+        in_a = [offer["lead_time_days"] for offer, _ in weighted if offer["region"] == "Region A"]
+        if not in_a:
+            raise ValueError(f"{component} has no offer in Region A to measure the delivery extension against")
+        baseline.append(max(in_a))
     revenue = q3_units * unit_price
     margin = revenue - cost
     lead_time = max(lead_times)

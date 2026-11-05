@@ -7,7 +7,8 @@ Each language model reads the policy's route descriptions, the passenger's messa
 and the journeys every rebooking route could book, fetched beforehand; it answers with a route and, where
 it applies, a journey. It calls no tools. CLM decides the same cases through the server's own steps, without
 actions. Scores are per route, as clm-evaluate --cases gives them, plus an accuracy weighted by each route's share of
-the day; time and cost are scaled to the day's 99,806 decisions. Results go to runs/, which git ignores.
+the day, over the routes the cases hold; --limit takes its cases from each route in turn. Time and cost are scaled
+to the day's 99,806 decisions. Results go to runs/, which git ignores.
 """
 import argparse
 import json
@@ -15,6 +16,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from itertools import zip_longest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -137,7 +139,10 @@ def summary(name: str, cases: list[dict], replies: list[dict], usage: list[dict]
     count = len(cases)
     price = PRICES.get(name)
     cost = (sum(sum(one[kind] * price[kind] for kind in price) for one in usage) / 1e6 / count) if price else 0.0
-    weighted = sum(SHARES[route] * right / of for route, (right, of) in found["route"].items())
+    # Over the shares of the routes the cases hold, so a run with --limit is weighted as a full one is
+    present = sum(SHARES[route] for route in found["route"])
+    weighted = sum(SHARES[route] * right / of for route, (right, of) in found["route"].items()) / present \
+        if present else 0.0
     tokens = {kind: round(sum(one[kind] for one in usage) / count) for kind in ("input", "output", "cache_read",
                                                                                  "cache_write")} if usage else {}
     return {"model": name, "cases": count, "route": found["route"], "option": found["option"],
@@ -146,6 +151,18 @@ def summary(name: str, cases: list[dict], replies: list[dict], usage: list[dict]
             "wrong_uncertain": found["wrong_uncertain"], "tokens_per_decision": tokens,
             "seconds_per_decision": seconds / count, "day_hours": seconds / count * day / 3600,
             "cost_per_decision": cost, "day_cost": cost * day}
+
+
+def take(cases: list[dict], limit: int | None) -> list[dict]:
+    """Up to `limit` cases, one from each route in turn, since the cases file holds them grouped by route; all of
+    them with no limit."""
+    if not limit:
+        return cases
+    by_route: dict[str, list[dict]] = {}
+    for case in cases:
+        by_route.setdefault(case["route"], []).append(case)
+    turns = [case for row in zip_longest(*by_route.values()) for case in row if case is not None]
+    return turns[:limit]
 
 
 def _ask(model, cases: list[dict], workers: int) -> tuple[list[dict], list[dict], float]:
@@ -191,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-loca
     parser.add_argument("scenario", help="path to the scenario file")
     parser.add_argument("--models", default="clm,local,sonnet,haiku")
     parser.add_argument("--cases", type=Path, default=HERE / "check.cases.jsonl")
-    parser.add_argument("--limit", type=int)
+    parser.add_argument("--limit", type=int, help="this many cases, taken from each route in turn")
     parser.add_argument("--workers", type=int, default=8, help="Claude calls at once")
     parser.add_argument("--local-model", default=LOCAL)
     parser.add_argument("--name", default=time.strftime("compare-%Y%m%d-%H%M%S"))
@@ -201,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-loca
     scenario = load_scenario(args.scenario)
     crowdstrike_tools.configure(dict(scenario.tool_settings), HERE)
     cases = [json.loads(line) for line in args.cases.read_text(encoding="utf-8").splitlines() if line]
-    cases = cases[:args.limit] if args.limit else cases
+    cases = take(cases, args.limit)
     results = []
     for name in args.models.split(","):
         if name == "clm":

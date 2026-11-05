@@ -190,11 +190,13 @@ def _relevant(passages: list[dict], limit: int = 8000) -> str:
 
 
 def read_facts(http: httpx.Client, case: dict, model: str) -> dict:
-    """The facts a local model reads in the opinion; {} when it gives no usable answer."""
+    """The facts a local model reads in the opinion; {} when it answers with no usable facts. An Ollama error, such as
+    a model that is not pulled, stops the run, so it is not logged as an opinion with no facts and never read again."""
     passages = split(opinion_text(case))
     response = http.post(f"{OLLAMA}/api/generate", json={"model": model, "prompt": PROMPT + _relevant(passages),
                                                          "format": "json", "stream": False, "think": False,
                                                          "options": {"temperature": 0, "num_ctx": CONTEXT}})
+    response.raise_for_status()
     try:
         facts = json.loads(response.json()["response"])
     except (KeyError, ValueError):
