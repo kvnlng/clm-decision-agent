@@ -412,7 +412,8 @@ def run(path: str | Path, collection: str, extractor: Extractor, on: date, *, fr
     """Derive every slot in the collection that is not approved or rejected on an unchanged edition, or every slot
     in it with `fresh`, which also drops the entries of slots no longer declared, and write the layer with its
     conflicts; other collections' entries are kept. The tables are written aside and replace the old ones only once
-    every slot is derived, so a run that stops leaves the tables and the layer as they were. Raises DeriveError, writing nothing, when no slot is in the collection.
+    every slot is derived, so a run that stops leaves the tables and the layer as they were.
+    Raises DeriveError, writing nothing, when no slot is in the collection.
     -> {slot: status}, for the collection's slots."""
     env = load_environment(path, today=on)
     if not any(slot.collection == collection for slot in env.slots.values()):
