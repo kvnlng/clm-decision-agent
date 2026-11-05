@@ -4,12 +4,13 @@
                                                         [--out FILE]
 
 It starts server.py for the environment, or connects to a running server at a URL (with the key in
-DECISION_SERVER_KEY), offers the model the server's tools and nothing else, and lets it call them
-until it answers. The model is Claude through the Anthropic API (the default, claude-opus-5-5) or a local model
-through Ollama (gemma4:26b by default); both get the same instructions and tools. Every figure in the answer is then
-checked against what the tools returned (number_check.py), and the question, the answer, every call and the check
-are written as JSON, by default to the environment's runs/ folder (for a URL, runs/ here). Claude's credentials are
-the Anthropic SDK's usual ones (ANTHROPIC_API_KEY or `ant auth login`); none are stored.
+DECISION_SERVER_KEY, sent only over https or to this computer), offers the model the server's tools and nothing
+else, and lets it call them until it answers. The model is Claude through the Anthropic API (the default,
+claude-opus-5-5) or a local model through Ollama (gemma4:26b by default); both get the same instructions and tools.
+Every figure in the answer is then checked against what the tools returned (number_check.py), and the question, the
+answer, every call and the check are written as JSON, by default to the environment's runs/ folder (for a URL, runs/
+here). Claude's credentials are the Anthropic SDK's usual ones (ANTHROPIC_API_KEY or `ant auth login`); none are
+stored.
 """
 from __future__ import annotations
 
