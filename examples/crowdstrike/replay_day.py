@@ -114,8 +114,12 @@ def _client(args, trace: Path):
     if args.url:
         import httpx2  # pylint: disable=import-outside-toplevel
         from mcp.client.streamable_http import streamable_http_client  # pylint: disable=import-outside-toplevel
-        http = httpx2.AsyncClient(headers={"Authorization": f"Bearer {os.environ.get(args.key_env, '')}"},
-                                  timeout=600)
+        from clm_decision.connection import withheld  # pylint: disable=import-outside-toplevel
+        why = withheld(args.url, args.key_env)   # never in the clear to another computer
+        if why:
+            print(f"warning: {why}", file=sys.stderr)
+        key = None if why else os.environ.get(args.key_env)
+        http = httpx2.AsyncClient(headers={"Authorization": f"Bearer {key}"} if key else None, timeout=600)
         return Client(streamable_http_client(args.url, http_client=http))
     return Client(StdioServerParameters(command=sys.executable, cwd=str(ROOT),
                                         args=["-m", "clm_decision.server", str(Path(args.scenario).resolve()),

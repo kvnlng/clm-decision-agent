@@ -220,15 +220,17 @@ class PostgresStore:
         every path between two documents."""
         near, far = ("source", "target") if forward else ("target", "source")
         sql = f"""
-            SELECT DISTINCT ON (c.{far}) c.{far}, d.citation, c.source_passage
+            SELECT DISTINCT ON (c.{far}) c.{far}, d.citation, c.source_passage, c.{near}
             FROM citations c LEFT JOIN documents d ON d.collection = c.collection AND d.id = c.{far}
             WHERE c.collection = %s AND c.{near} = ANY(%s) AND NOT c.{far} = ANY(%s)
             ORDER BY c.{far}, c.source_passage"""
         found, frontier, seen = [], [id], [id]
         for step in range(1, depth + 1):
             rows = self._rows(sql, (collection, frontier, seen)) if frontier else []
+            # A cites row's passage is in the document it was reached from, which it names
             found += [{"document": document, "citation": citation, "depth": step, "passage": passage}
-                      for document, citation, passage in rows]
+                      | ({"citing_document": via} if forward else {})
+                      for document, citation, passage, via in rows]
             frontier = [row[0] for row in rows]
             seen += frontier
         return found

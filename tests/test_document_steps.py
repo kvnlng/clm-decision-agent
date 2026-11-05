@@ -165,6 +165,22 @@ def test_a_cites_row_names_the_passage_of_the_citing_document(env):
     env.store.replace("cases", [{**CASES[0], "cites": [{"id": "tx-15.50", "passage": "(b)"}]}, CASES[1]], [], BUILT)
     result = engine.run_citations(env, "cases", {"id": "case-a"}, "cites")
     assert result["rows"] == [{"document": "tx-15.50", "citation": "Tex. Bus. & Com. Code § 15.50", "depth": 1,
-                               "citing_passage": "(b)"}]
+                               "citing_passage": "(b)", "citing_document": "case-a"}]
     # (b) is case-a's passage, not a subsection of § 15.50
     assert citation_check.check("Under § 15.50(b) it is void.", [result])["not_found"] == ["§ 15.50(b)"]
+
+
+def test_a_cites_row_two_steps_away_names_the_document_its_passage_is_in(env):
+    citer = {"id": "case-b", "citation": "200 S.W.3d 1", "title": "Case B", "metadata": {},
+             "passages": [{"label": "4", "text": "We follow Case A."}], "cites": [{"id": "case-a", "passage": "4"}]}
+    env.store.replace("cases", CASES + [citer], [], BUILT)
+    rows = engine.run_citations(env, "cases", {"id": "case-b", "depth": 2}, "cites")["rows"]
+    assert [(row["document"], row["citing_document"], row["citing_passage"]) for row in rows] == [
+        ("case-a", "case-b", "4"), ("tx-15.50", "case-a", "1")]
+
+
+def test_a_document_citing_from_several_passages_gives_its_lowest_label_as_postgres_does(env):
+    env.store.replace("cases", [{**CASES[0], "cites": [{"id": "tx-15.50", "passage": "3"},
+                                                       {"id": "tx-15.50", "passage": "1"}]}, CASES[1]], [], BUILT)
+    assert [row["citing_passage"] for row in engine.run_citations(env, "cases", {"id": "case-a"}, "cites")["rows"]] \
+        == ["1"]

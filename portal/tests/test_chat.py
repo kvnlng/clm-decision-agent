@@ -311,3 +311,15 @@ async def test_a_tool_error_is_every_text_block_of_it_whatever_comes_first():
     call, send = tc.Call("c1", "lookup", {}), tc._send  # pylint: disable=protected-access
     assert await send(FailingTools(image, one, two), call) == ("one\ntwo", True)
     assert await send(FailingTools(image), call) == ("Error: the server reported an error", True)
+
+
+def test_a_refusal_after_the_key_was_withheld_says_it_was_not_sent(monkeypatch, capsys):
+    monkeypatch.setenv("DECISION_SERVER_KEY", "secret-value")
+
+    async def refused_run(_args, refused):
+        refused.append(401)
+        raise RuntimeError("refused")
+    monkeypatch.setattr(tc, "_run", refused_run)
+    assert tc.run(SimpleNamespace(url="http://10.0.0.5:8000/mcp")) == 2
+    error = capsys.readouterr().err
+    assert "not sent over plain http to 10.0.0.5; use https" in error and "secret-value" not in error

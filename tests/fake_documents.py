@@ -59,6 +59,8 @@ class FakeStore:
         links = [(source["id"], cite["id"] if isinstance(cite, dict) else cite,
                   cite.get("passage") if isinstance(cite, dict) else None)
                  for source in documents.values() for cite in source.get("cites", [])]
+        # As PostgreSQL's ORDER BY source_passage: a document citing from several passages gives the lowest label
+        links.sort(key=lambda link: (link[2] is None, link[2] or ""))
         found, frontier = [], [id]
         seen = {id}
         for step in range(1, depth + 1):
@@ -70,7 +72,8 @@ class FakeStore:
                         seen.add(far)
                         following.append(far)
                         citation = documents.get(far, {}).get("citation")
-                        found.append({"document": far, "citation": citation, "depth": step, "passage": passage})
+                        found.append({"document": far, "citation": citation, "depth": step, "passage": passage}
+                                     | ({"citing_document": near} if forward else {}))
             frontier = following
         return found
 

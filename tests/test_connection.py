@@ -9,7 +9,7 @@ from conftest import free_port, serving
 from mcp import Client
 
 from clm_decision import server
-from clm_decision.connection import connect, is_url, key_for, refusal
+from clm_decision.connection import connect, is_url, key_for, refusal, withheld
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
 
@@ -58,3 +58,17 @@ def test_the_key_goes_only_over_https_or_to_this_computer(target, sent, monkeypa
     warned = capsys.readouterr().err
     assert ("not sending the key in DECISION_SERVER_KEY over plain http" in warned) is not sent
     assert "k1" not in warned
+
+
+def test_a_refusal_after_the_key_was_withheld_says_it_was_not_sent(monkeypatch):
+    monkeypatch.setenv("DECISION_SERVER_KEY", "k1")
+    assert refusal([401], "http://10.0.0.5:8000/mcp") == (
+        "the server refused the call (401): the key in DECISION_SERVER_KEY is not sent over plain http to "
+        "10.0.0.5; use https")
+    assert refusal([401], "https://decisions.example.org/mcp").endswith("with the key or token in DECISION_SERVER_KEY")
+
+
+def test_a_key_in_another_variable_is_withheld_the_same_way(monkeypatch):
+    monkeypatch.setenv("OTHER_KEY", "k2")
+    assert "the key in OTHER_KEY is not sent" in withheld("http://10.0.0.5/mcp", "OTHER_KEY")
+    assert withheld("https://decisions.example.org/mcp", "OTHER_KEY") is None

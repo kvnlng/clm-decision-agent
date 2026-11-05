@@ -726,7 +726,7 @@ def _fill(slots: dict[str, Slot], context: tuple, graph: Graph | None, collectio
         return found        # without a [derived] table the layer is not read
     try:
         layer = derived.read(folder)
-    except (ValueError, OSError) as error:     # a DerivedError or JSONDecodeError is a ValueError
+    except (ValueError, OSError) as error:     # a DerivedError, a bad layer or bad JSON, is a ValueError
         raise ScenarioError(f"derived: {error}") from error
     for name, slot in slots.items():
         entry = layer[slot.kind].get(name)

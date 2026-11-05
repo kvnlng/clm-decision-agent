@@ -13,7 +13,7 @@ The text a caller sends with `decide`, `decide_many`, `check_call` or `correct` 
 | Your informing and acting tools, and whatever they call | When the decision runs them | Your tools module and `[tools.settings]` |
 | The corrections record, on disk | `correct`, in review mode only | `[record]` |
 | The examples file and trained heads, on disk | If you train from corrections | Where you keep those files |
-| A trace file, on disk | Only with `--trace FILE --trace-text`, for all four tools; without `--trace-text` the trace leaves the text out | `--trace-text` |
+| A trace file, on disk | Only with `--trace FILE --trace-text`: a scenario's `decide`, `decide_many`, `check_call` and `correct` text, and an environment's tool-call arguments; without `--trace-text` the trace leaves the text out | `--trace-text` |
 
 CLM runs inside the server's process, so nothing leaves the machine except what your tools send. The first start
 downloads CLM from Hugging Face; requests are never sent there. The server keeps no log of requests: outside review mode

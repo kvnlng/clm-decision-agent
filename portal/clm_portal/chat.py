@@ -22,7 +22,7 @@ import anyio.to_thread
 import httpx
 from mcp import Client, MCPError
 
-from clm_decision.connection import http_streams, key_for
+from clm_decision.connection import http_streams, key_for, withheld
 
 from .managed import READ_TIMEOUT
 
@@ -342,6 +342,8 @@ def run(args: argparse.Namespace) -> int:
         known = _user_error(error)
         if known:
             print(f"error: {known}", file=sys.stderr)
+        elif refused and withheld(args.url):
+            print(f"error: {args.url} refused the call ({refused[0]}): {withheld(args.url)}", file=sys.stderr)
         elif refused:
             print(f"error: {args.url} refused the call ({refused[0]}); set the key or token in {KEY_ENV}",
                   file=sys.stderr)

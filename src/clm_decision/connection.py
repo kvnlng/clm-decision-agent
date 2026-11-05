@@ -30,21 +30,28 @@ def server_params(path: str) -> StdioServerParameters:
                                  env=dict(os.environ))
 
 
-def _is_local(host: str) -> bool:
+def is_local(host: str) -> bool:
+    """Whether a URL's host is this computer."""
     try:
         return host == "localhost" or ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
 
 
+def withheld(url: str, env: str = KEY_ENV) -> str | None:
+    """Why the key in the variable `env` is not sent to `url`, or None when it is (or there is none to send)."""
+    parts = urlsplit(url)
+    if not os.environ.get(env) or parts.scheme == "https" or is_local(parts.hostname or ""):
+        return None
+    return f"the key in {env} is not sent over plain http to {parts.hostname}; use https"
+
+
 def key_for(url: str) -> str | None:
     """The key to send to `url`: the one in DECISION_SERVER_KEY, but never in the clear to another computer, where
     anyone on the way could read it. Withholding it says so on stderr."""
-    key = os.environ.get(KEY_ENV)
-    parts = urlsplit(url)
-    if not key or parts.scheme == "https" or _is_local(parts.hostname or ""):
-        return key
-    print(f"warning: not sending the key in {KEY_ENV} over plain http to {parts.hostname}; use https",
+    if withheld(url) is None:
+        return os.environ.get(KEY_ENV)
+    print(f"warning: not sending the key in {KEY_ENV} over plain http to {urlsplit(url).hostname}; use https",
           file=sys.stderr)
     return None
 
@@ -77,10 +84,13 @@ def connect(target: str, refused: list[int] | None = None):
     return _http(target, refused if refused is not None else []) if is_url(target) else server_params(target)
 
 
-def refusal(refused: list[int]) -> str | None:
-    """Why the server refused the caller, if it did."""
+def refusal(refused: list[int], url: str | None = None) -> str | None:
+    """Why the server refused the caller at `url`, if it did."""
     if not refused:
         return None
+    why = withheld(url) if url else None
+    if why:
+        return f"the server refused the call ({refused[0]}): {why}"
     # The variable may hold an OAuth token as well as a shared key: either is sent as a bearer token
     sent = "with no key" if not os.environ.get(KEY_ENV) else f"with the key or token in {KEY_ENV}"
     return f"the server refused the call ({refused[0]}), {sent}"

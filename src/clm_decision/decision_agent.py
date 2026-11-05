@@ -327,7 +327,8 @@ def main(argv: list[str] | None = None) -> int:
         return anyio.run(_main, args, refused)
     except (MCPError, ExceptionGroup) as error:
         if is_url(args.environment):
-            print(f"error: cannot connect to {args.environment}: {refusal(refused) or error}", file=sys.stderr)
+            print(f"error: cannot connect to {args.environment}: {refusal(refused, args.environment) or error}",
+                  file=sys.stderr)
             return 2
         # The server stopped, as when its environment does not load; its own message is printed above
         print("error: the decision server stopped; see its message above", file=sys.stderr)

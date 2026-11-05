@@ -301,6 +301,8 @@ def test_cited_by_walks_two_steps(store):
     assert [(row["document"], row["depth"]) for row in store.cited_by("cases", "tx-15.50", 2)] == [
         ("case-a", 1), ("case-b", 2)]
     assert [row["document"] for row in store.cites("cases", "case-b", 2)] == ["case-a", "tx-15.50"]
+    # A cites row says which document its passage is in: two steps away, the one between
+    assert [row["citing_document"] for row in store.cites("cases", "case-b", 2)] == ["case-b", "case-a"]
 
 
 @pytest.mark.postgres

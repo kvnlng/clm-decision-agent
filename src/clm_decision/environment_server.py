@@ -190,7 +190,8 @@ def _add_document_tools(add: Callable, env: Environment, name: str, collection) 
         "`passage`: to check what a citation says before relying on it.",
         lambda args: engine.run_document(env, name, args),
         inspect.Signature([ident, _optional("passage", str | None, None)], return_annotation=_RESULT))
-    for direction, what in (("cites", "The documents this one cites, each with citing_passage, the passage citing it"),
+    for direction, what in (("cites", "The documents this one cites, each with citing_passage, the passage citing it, "
+                                      "in citing_document"),
                             ("cited_by", "The documents that cite this one, with the citing passage")):
         add(f"{direction}_{name}", f"{what}, and theirs to `depth` steps (1 to {engine.MAX_DEPTH}), nearest first.",
             lambda args, direction=direction: engine.run_citations(env, name, args, direction),
