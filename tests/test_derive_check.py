@@ -413,6 +413,18 @@ def test_a_stale_entry_is_not_sent_back_again_while_it_is_still_stale(env):
     assert derived.read(folder)["decisions"]["carryover_limit"] == once
 
 
+def test_an_entry_whose_document_is_out_of_force_is_sent_back_once_over_several_days(env):
+    # The reason names no date, so a check on a later day finds it still stale for the same reason
+    entry = {**fact(23000, "which for 2024 is $23,000", ("(2)",), document="hb-401k-2024", edition="2024-01-01"),
+             "status": "approved", "decided_by": "kevin", "note": "matches"}
+    folder = layer_with(env, k401_2026__match_cap=("facts", entry))
+    derive_check.recheck(folder, env, on=ON)
+    once = derived.read(folder)["facts"]["k401_2026.match_cap"]
+    assert once["note"].count("back to proposed") == 1 and "no longer in force" in once["note"]
+    derive_check.recheck(folder, env, on=date(2026, 12, 2))
+    assert derived.read(folder)["facts"]["k401_2026.match_cap"] == once
+
+
 def test_a_second_reading_is_made_on_an_entry_the_mechanical_check_fails_too(env):
     folder = layer_with(env, k401_2026__match_cap=("facts", fact(quote="The match is capped at $6,300")))
     derive_check.recheck(folder, env, on=ON, second=reading(False))
