@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
+from collections import Counter
 from pathlib import Path
 
 from . import clm_schema
@@ -99,20 +101,31 @@ def _row(scenario: Scenario, example: dict, text: str | None = None) -> dict:
     return row
 
 
-def training_rows(scenario: Scenario, examples: list[dict], records: list[dict]) -> tuple[list, list, list]:
+def _warn(line: str) -> None:
+    print(line, file=sys.stderr)
+
+
+def training_rows(scenario: Scenario, examples: list[dict], records: list[dict],
+                  write=_warn) -> tuple[list, list, list]:
     """-> (train, reviewed, test) lists of rows: {"text", "route", "answers" ({question: candidate index}),
     "facts", "options" (or None), "option" (the right option's index, or None)}.
 
     `reviewed` are the routes the owner chose in review mode. They are real, so all of them are trained on,
-    except one that repeats a held-back example. Raises ValueError naming the examples line that is wrong."""
-    train, test = [], []
+    except one that repeats a held-back example. Examples of a route the scenario no longer has are left out, and
+    `write` says how many. Raises ValueError naming the examples line that is wrong."""
+    train, test, gone = [], [], Counter()
     for number, example in enumerate(examples, start=1):
-        if example["route"] in scenario.routes:
-            try:
-                row = _row(scenario, example)
-            except ValueError as error:
-                raise ValueError(f"line {number}: {error}") from error
-            (test if split_of(example["text"]) == "test" else train).append(row)
+        if example["route"] not in scenario.routes:
+            gone[example["route"]] += 1
+            continue
+        try:
+            row = _row(scenario, example)
+        except ValueError as error:
+            raise ValueError(f"line {number}: {error}") from error
+        (test if split_of(example["text"]) == "test" else train).append(row)
+    for route, n in gone.items():
+        write(f"{n} example{'' if n == 1 else 's'} of route '{route}', which the scenario no longer has, "
+              f"{'was' if n == 1 else 'were'} left out")
     held_back = {row.get("message", row["text"]) for row in test}
     # A reviewed route's text may carry routing's facts after the message; the message is what repeats an example
     reviewed = [reviewed_row(scenario, verdict) for verdict in route_verdicts(records, scenario)

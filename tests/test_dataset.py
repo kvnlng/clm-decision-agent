@@ -44,6 +44,16 @@ def test_training_rows_use_examples_and_reviewed_routes(scenario):
     assert not {row["text"] for row in train} & {row["text"] for row in test}
 
 
+def test_examples_of_a_route_the_scenario_no_longer_has_are_left_out_with_a_count(scenario, capsys):
+    examples = [{"text": "one", "route": "Billing"}, {"text": "two", "route": "Data_Access"},
+                {"text": "three", "route": "Data_Access"}, {"text": "four", "route": "Gone"}]
+    train, _, test = training_rows(scenario, examples, [])
+    assert [row["text"] for row in train + test] == ["one"]
+    assert capsys.readouterr().err.splitlines() == [
+        "2 examples of route 'Data_Access', which the scenario no longer has, were left out",
+        "1 example of route 'Gone', which the scenario no longer has, was left out"]
+
+
 def test_a_reviewed_route_that_repeats_a_held_back_example_is_not_trained_on(scenario):
     texts = [f"message number {i}" for i in range(40)]
     held = next(t for t in texts if split_of(t) == "test")

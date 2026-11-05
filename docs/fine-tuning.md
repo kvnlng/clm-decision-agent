@@ -46,6 +46,7 @@ options, the right option. Only what a line labels is trained from it:
   the facts its `[tools.inform]` settings give it, and the facts of `[routing] inform` tools are added to the text the
   route is trained on, as when deciding.
 - A line naming a question the scenario lacks, or an answer it cannot take, stops `clm-train` with the line's number.
+  Lines of a route the scenario no longer has are left out, and `clm-train` says how many for each route.
 
 **2. Say where to save the result**, in the scenario:
 
