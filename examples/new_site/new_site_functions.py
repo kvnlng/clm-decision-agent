@@ -52,12 +52,16 @@ def neighbourhood_facts(graph, neighbourhood):
 
 
 def household_income(graph, neighbourhood):
-    """The census estimate of median household income, with its 90% margin of error as low and high."""
-    tract = str(_node(graph, neighbourhood, "neighbourhood")["census_tract"]).zfill(6)
+    """The census estimate of median household income, with its 90% margin of error as low and high. The tract is
+    found by its full GEOID, state, county and tract, since a tract number is unique only within its county."""
+    geoid = str(_node(graph, neighbourhood, "neighbourhood")["geoid"]).zfill(11)
     with CENSUS.open(encoding="utf-8") as file:
-        row = next((row for row in csv.DictReader(file) if row["tract"] == tract), None)
-    if row is None:
-        raise LookupError(f"no census figures for tract {tract}")
+        rows = [row for row in csv.DictReader(file) if row["geoid"] == geoid]
+    if not rows:
+        raise LookupError(f"no census figures for tract {geoid}")
+    if len(rows) > 1:
+        raise ValueError(f"{len(rows)} rows of census figures for tract {geoid}")
+    [row] = rows
     estimate, margin = int(row["median_income"]), int(row["margin_of_error"])
     return [{"neighbourhood": neighbourhood, "low": estimate - margin, "central": estimate,
              "high": estimate + margin, "source": f"{row['survey']}, table {row['table']}, {row['name']}",

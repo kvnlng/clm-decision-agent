@@ -68,7 +68,9 @@ Claude was not tried on this example. Two runs of one model are a small test.
 
 - `data/acs_income.csv`: median household income (table B19013) for four census tracts in Seattle, King County,
   Washington, from the U.S. Census Bureau's American Community Survey 2023 5-year estimates, with the 90% margin of
-  error. Taken from the Census Bureau's API on 2026-10-30. U.S. government work, in the public domain.
+  error. Taken from the Census Bureau's API on 2026-10-30. U.S. government work, in the public domain. Each tract
+  is keyed by its full GEOID (state 53, county 033, then the tract), since a tract number is unique only within
+  its county; each neighbourhood in `graph/nodes.csv` names its tract the same way.
 - Everything else (the company, its finances, rents, households and site costs) is made up.
 - The tracts are named by their census numbers, not by neighbourhood names, so as not to suggest local knowledge the
   example does not have.

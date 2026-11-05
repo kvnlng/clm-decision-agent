@@ -1,6 +1,7 @@
 """Tests for examples/new_site: a made-up bakery chain asking whether it can open a site in an expensive area."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -62,3 +63,38 @@ def test_an_unknown_neighbourhood_fails_naming_it(env):
     result, _ = sites(env, "tract_0001")
     assert {branch["status"] for branch in result["branches"]} == {"failed"}
     assert "no neighbourhood tract_0001" in result["branches"][0]["error"]
+
+
+def _functions():
+    spec = importlib.util.spec_from_file_location("new_site_functions", EXAMPLE.parent / "new_site_functions.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class Graph:  # pylint: disable=too-few-public-methods
+    """One neighbourhood, Pierce County's tract 39."""
+
+    def nodes(self, kind):
+        return [{"id": "pierce_3900", "kind": kind, "geoid": 53053003900}]
+
+
+CENSUS_HEADER = "geoid,name,median_income,margin_of_error,survey,table\n"
+KING_39 = '53033003900,"Census Tract 39, King County, Washington",211406,20879,ACS 2023 5-year,B19013\n'
+PIERCE_39 = '53053003900,"Census Tract 39, Pierce County, Washington",70000,9000,ACS 2023 5-year,B19013\n'
+
+
+def test_a_tract_is_found_by_its_state_and_county_too(tmp_path, monkeypatch):
+    functions = _functions()
+    monkeypatch.setattr(functions, "CENSUS", tmp_path / "acs_income.csv")
+    functions.CENSUS.write_text(CENSUS_HEADER + KING_39 + PIERCE_39, encoding="utf-8")
+    [income] = functions.household_income(Graph(), "pierce_3900")
+    assert income["central"] == 70000 and "Pierce County" in income["source"]
+
+
+def test_a_tract_with_two_rows_is_an_error(tmp_path, monkeypatch):
+    functions = _functions()
+    monkeypatch.setattr(functions, "CENSUS", tmp_path / "acs_income.csv")
+    functions.CENSUS.write_text(CENSUS_HEADER + PIERCE_39 + PIERCE_39, encoding="utf-8")
+    with pytest.raises(ValueError, match="53053003900"):
+        functions.household_income(Graph(), "pierce_3900")
