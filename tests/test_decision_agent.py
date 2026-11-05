@@ -17,6 +17,7 @@ from clm_decision.connection import connect
 from clm_decision.decision_agent import NO_TOOLS_SYSTEM, AgentError, ClaudeChat, OllamaChat, answer, main, server_params
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
+from clm_decision.serving import Serve
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "tariff" / "environment.toml"
 QUESTION = "Should we move Product Line X's sourcing to Region B?"
@@ -370,3 +371,16 @@ def test_system_is_the_shared_instructions_byte_for_byte():
     assert len(SYSTEM) == 1532
     assert hashlib.sha256(SYSTEM.encode()).hexdigest() == \
         "d8c0b5e088f551f09c2fa1d40f2660c082793a18b3dff3c2875641ec7e67c881"
+
+
+@pytest.mark.anyio
+async def test_system_names_only_tools_the_server_offers():
+    # The tariff example has no rules tool; without its scenario tools, neither line has a tool to name
+    fewer = build_environment_server(load_environment(EXAMPLE), serve=Serve(exclude_tools=("scenario_*",)))
+    claude = FakeClaude(message(text("Nothing to add.")))
+    await ask(fewer, claude)
+    ollama = FakeOllama(said("Nothing to add."))
+    await ask_ollama(fewer, ollama)
+    for system in (claude.requests[0]["system"], ollama.requests[0]["messages"][0]["content"]):
+        assert "never calculate" in system.lower()
+        assert "run the scenario tool" not in system and "call rules" not in system

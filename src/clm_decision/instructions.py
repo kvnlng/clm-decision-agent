@@ -23,9 +23,10 @@ and the approvals it needs.
 written by the owner: say so, name its source, and say when it is not approved."""
 
 
-def agent_system() -> str:
-    """The instructions the reference agent gives its model."""
-    return _SYSTEM
+def agent_system(offered: list[str] | None = None) -> str:
+    """The instructions the reference agent gives its model. With `offered`, the tools the server offers, lines
+    naming any other tool are left out."""
+    return _SYSTEM if offered is None else _naming_only(offered)
 
 
 # The lines that name a tool, by what must be offered for them to stay: a scenario tool, or rules
@@ -45,5 +46,4 @@ def answer_question(name: str, description: str, question: str, offered: list[st
     """The agent's instructions, the environment's name and description, and the question, as one message: an MCP
     prompt has no system role. With `offered`, the tools the server offers, lines naming any other tool are left
     out."""
-    system = _SYSTEM if offered is None else _naming_only(offered)
-    return f"{system}\n\nThe environment is '{name}': {description}\n\nThe question: {question}"
+    return f"{agent_system(offered)}\n\nThe environment is '{name}': {description}\n\nThe question: {question}"

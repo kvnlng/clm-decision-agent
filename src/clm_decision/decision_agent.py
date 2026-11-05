@@ -68,6 +68,7 @@ class Turn:
 class Chat(Protocol):
     """A model the loop can talk to; each keeps its own message format."""
     model: str
+    system: str
 
     def tools(self, listed) -> list[dict]:
         """The server's tools in this model's format."""
@@ -194,7 +195,11 @@ async def answer(session: Client | None, question: str, chat: Chat) -> dict:
     """Ask the model the question with the session's tools, or none without a session -> {"question", "answer",
     "calls", "unsupported", "stopped", "model"}. A reply cut off (max_tokens, or the context window full) or refused
     stops the loop without running the tools it asked for."""
-    tools = chat.tools((await session.list_tools()).tools) if session else []
+    listed = (await session.list_tools()).tools if session else []
+    if session and chat.system == SYSTEM:
+        # As the server's answer_question prompt does: no line names a tool the server does not offer
+        chat.system = instructions.agent_system([tool.name for tool in listed])
+    tools = chat.tools(listed) if session else []
     messages = chat.start(question)
     calls: list[dict] = []
     stopped, text = None, ""
