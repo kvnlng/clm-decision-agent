@@ -3,6 +3,7 @@
 # The fake mirrors the Anthropic client's interface, so some arguments go unused.
 # pylint: disable=missing-function-docstring,missing-class-docstring,redefined-outer-name,too-few-public-methods
 import json
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,9 +15,11 @@ from mcp import Client
 
 from clm_decision import server
 from clm_decision.connection import connect
-from clm_decision.decision_agent import NO_TOOLS_SYSTEM, AgentError, ClaudeChat, OllamaChat, answer, main, server_params
+from clm_decision.decision_agent import (MAX_TURNS, NO_TOOLS_SYSTEM, AgentError, ClaudeChat, OllamaChat, answer, main,
+                                         server_params)
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
+from clm_decision.serving import Serve
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "tariff" / "environment.toml"
 QUESTION = "Should we move Product Line X's sourcing to Region B?"
@@ -301,6 +304,51 @@ def test_the_agent_writes_the_record_beside_the_answer(tmp_path, monkeypatch):
     assert "## The agent's explanation (not checked)" in (tmp_path / "run.record.md").read_text()
 
 
+def unreachable():
+    import anthropic  # pylint: disable=import-outside-toplevel
+    return anthropic.APIConnectionError(request=httpx.Request("POST", "http://127.0.0.1:9/v1/messages"))
+
+
+def no_credentials():
+    # What SDK 2.1.0 raises as it builds the request with no key and no `ant auth login`
+    return TypeError('"Could not resolve authentication method. Expected one of api_key, auth_token, or credentials '
+                     'to be set. Or for the `Authorization` header to be explicitly omitted"')
+
+
+class FailingClaude:
+    """The Anthropic client when the request cannot be made: it fails as the stream opens."""
+
+    def __init__(self, failure):
+        self.failure = failure
+        self.messages = self
+
+    def stream(self, **_request):
+        return _FailingStream(self.failure)
+
+
+class _FailingStream:
+    def __init__(self, failure):
+        self.failure = failure
+
+    async def __aenter__(self):
+        raise self.failure()
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+@pytest.mark.parametrize("failure", [unreachable, no_credentials])
+@pytest.mark.parametrize("no_tools", [False, True])
+def test_a_claude_failure_is_one_line_about_claude(tmp_path, monkeypatch, capsys, no_tools, failure):
+    monkeypatch.setattr("anthropic.AsyncAnthropic", lambda: FailingClaude(failure))
+    target = str(tmp_path / "nowhere.toml") if no_tools else str(EXAMPLE)
+    assert main([target, "Should we?", "--out", str(tmp_path / "run.answer.json"),
+                 *(["--no-tools"] if no_tools else [])]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("error: Claude (claude-opus-5-5): ") and "ANTHROPIC_API_KEY" in err
+    assert "server stopped" not in err and "Traceback" not in err
+
+
 def test_no_tools_sends_no_tools_and_its_own_prompt(tmp_path, monkeypatch):
     claude = FakeClaude(message(text("I don't know Meridian's plan.")))
     monkeypatch.setattr("anthropic.AsyncAnthropic", lambda: claude)
@@ -309,6 +357,15 @@ def test_no_tools_sends_no_tools_and_its_own_prompt(tmp_path, monkeypatch):
     assert "tools" not in claude.requests[0] and claude.requests[0]["system"] == NO_TOOLS_SYSTEM
     result = json.loads(out.read_text())
     assert result["calls"] == [] and result["tools"] is False
+
+
+def test_no_tools_counts_and_records_no_calls_the_model_made_up(tmp_path, monkeypatch, capsys):
+    claude = FakeClaude(message(tool_use("describe", {})), message(text("I don't know.")))
+    monkeypatch.setattr("anthropic.AsyncAnthropic", lambda: claude)
+    out = tmp_path / "run.answer.json"
+    assert main([str(tmp_path / "nowhere.toml"), "What is my match?", "--no-tools", "--out", str(out)]) == 0
+    assert "no tools offered" in capsys.readouterr().err
+    assert json.loads((tmp_path / "run.record.json").read_text())["failed_calls"] == []
 
 
 def test_no_tools_flags_every_figure_not_in_the_question(tmp_path, monkeypatch):
@@ -352,3 +409,61 @@ def test_system_is_the_shared_instructions_byte_for_byte():
     assert len(SYSTEM) == 1532
     assert hashlib.sha256(SYSTEM.encode()).hexdigest() == \
         "d8c0b5e088f551f09c2fa1d40f2660c082793a18b3dff3c2875641ec7e67c881"
+
+
+@pytest.mark.anyio
+async def test_system_names_only_tools_the_server_offers():
+    # The tariff example has no rules tool; without its scenario tools, neither line has a tool to name
+    fewer = build_environment_server(load_environment(EXAMPLE), serve=Serve(exclude_tools=("scenario_*",)))
+    claude = FakeClaude(message(text("Nothing to add.")))
+    await ask(fewer, claude)
+    ollama = FakeOllama(said("Nothing to add."))
+    await ask_ollama(fewer, ollama)
+    for system in (claude.requests[0]["system"], ollama.requests[0]["messages"][0]["content"]):
+        assert "never calculate" in system.lower()
+        assert "run the scenario tool" not in system and "call rules" not in system
+
+
+@pytest.mark.anyio
+async def test_a_chat_used_again_is_filtered_for_each_server(mcp_server):
+    fewer = build_environment_server(load_environment(EXAMPLE), serve=Serve(exclude_tools=("scenario_*",)))
+    claude = FakeClaude(message(text("Nothing to add.")), message(text("Nothing to add.")))
+    chat = ClaudeChat(claude, "claude-opus-5-5")
+    for each in (fewer, mcp_server):
+        async with Client(each) as session:
+            await answer(session, QUESTION, chat)
+    assert "run the scenario tool" not in claude.requests[0]["system"]
+    assert "run the scenario tool" in claude.requests[1]["system"]
+
+
+@pytest.mark.anyio
+async def test_the_last_turn_runs_no_tools_the_model_would_never_see(mcp_server):
+    claude = FakeClaude(*[message(text("Let me look."), tool_use("describe", {}, f"call_{index}"))
+                          for index in range(MAX_TURNS)])
+    result = await ask(mcp_server, claude)
+    assert len(claude.requests) == MAX_TURNS and len(result["calls"]) == MAX_TURNS - 1
+    assert result["stopped"] == "turn limit" and result["answer"] == "Let me look."
+
+
+@pytest.mark.anyio
+async def test_a_tool_call_with_no_tools_goes_back_as_an_error():
+    ollama = FakeOllama(said(calls=[call("describe", {})]), said("I don't know."))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(ollama)) as http:
+        result = await answer(None, QUESTION, OllamaChat(http, "gemma4:26b", system=NO_TOOLS_SYSTEM))
+    assert result["calls"] == [{"tool": "describe", "arguments": {}, "result": None, "error": "no tools are offered"}]
+    assert result["answer"] == "I don't know."
+
+
+def test_two_runs_in_the_same_second_keep_both_answers(tmp_path, monkeypatch):
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 4, 12, 0, 0, tzinfo=tz)
+    monkeypatch.setattr("clm_decision.decision_agent.datetime", Frozen)
+    claude = FakeClaude(message(text("First.")), message(text("Second.")))
+    monkeypatch.setattr("anthropic.AsyncAnthropic", lambda: claude)
+    for _ in range(2):
+        assert main([str(tmp_path / "nowhere.toml"), "What is my match?", "--no-tools"]) == 0
+    answers = (tmp_path / "runs").glob("*.answer.json")
+    assert sorted(json.loads(path.read_text())["answer"] for path in answers) == ["First.", "Second."]
+    assert len(list((tmp_path / "runs").glob("*.record.md"))) == 2

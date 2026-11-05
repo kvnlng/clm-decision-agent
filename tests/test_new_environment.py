@@ -17,6 +17,8 @@ def test_the_new_environment_loads_and_decides(tmp_path, capsys):
     assert branches["V2"]["status"] == "rejected"
     assert branches["V2"]["rejected_by"][0]["reason"] == "The venue is too small for everyone"
     assert (folder / "team_offsite_functions.py").exists()
+    # clm-agent writes its runs beside the environment; they stay out of git wherever the folder is
+    assert (folder / ".gitignore").read_text(encoding="utf-8") == "runs/\n"
 
 
 def test_an_unknown_team_fails_rather_than_counting_nobody(tmp_path):

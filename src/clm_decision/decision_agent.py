@@ -69,6 +69,7 @@ class Turn:
 class Chat(Protocol):
     """A model the loop can talk to; each keeps its own message format."""
     model: str
+    system: str
 
     def tools(self, listed) -> list[dict]:
         """The server's tools in this model's format."""
@@ -103,11 +104,19 @@ class ClaudeChat:
         return [{"role": "user", "content": question}]
 
     async def turn(self, messages: list[dict], tools: list[dict]) -> Turn:
-        """One streamed reply."""
-        async with self.client.messages.stream(model=self.model, max_tokens=16000, system=self.system,
-                                               **({"tools": tools} if tools else {}),
-                                               thinking={"type": "adaptive"}, messages=messages) as stream:
-            reply = await stream.get_final_message()
+        """One streamed reply; raises AgentError when the API cannot be reached or refuses the request."""
+        import anthropic  # pylint: disable=import-outside-toplevel
+        try:
+            async with self.client.messages.stream(model=self.model, max_tokens=16000, system=self.system,
+                                                   **({"tools": tools} if tools else {}),
+                                                   thinking={"type": "adaptive"}, messages=messages) as stream:
+                reply = await stream.get_final_message()
+        except (anthropic.APIError, TypeError) as error:
+            # With no key and no `ant auth login`, the SDK raises a TypeError as it builds the request
+            if isinstance(error, TypeError) and "authentication method" not in str(error):
+                raise
+            raise AgentError(f"Claude ({self.model}): {error}; check ANTHROPIC_API_KEY or `ant auth login`, "
+                             "and the network") from error
         text = "\n".join(block.text for block in reply.content if block.type == "text").strip()
         uses = [Use(block.id, block.name, dict(block.input or {})) for block in reply.content
                 if block.type == "tool_use"]
@@ -174,8 +183,10 @@ def _ollama_use(index: int, function: dict) -> Use:
     return Use(f"call_{index}", name, arguments)
 
 
-async def _run(session: Client, use: Use) -> dict:
-    """One MCP call -> {"tool", "arguments", "result", "error"}."""
+async def _run(session: Client | None, use: Use) -> dict:
+    """One MCP call -> {"tool", "arguments", "result", "error"}; with no session, an error the model is sent."""
+    if session is None:
+        return {"tool": use.name, "arguments": use.input, "result": None, "error": "no tools are offered"}
     if use.invalid is not None:
         return {"tool": use.name, "arguments": use.invalid, "result": None,
                 "error": "the arguments were not valid JSON for a tool call; send an object"}
@@ -189,12 +200,25 @@ async def _run(session: Client, use: Use) -> dict:
 async def answer(session: Client | None, question: str, chat: Chat) -> dict:
     """Ask the model the question with the session's tools, or none without a session -> {"question", "answer",
     "calls", "unsupported", "stopped", "model"}. A reply cut off (max_tokens, or the context window full) or refused
-    stops the loop without running the tools it asked for."""
-    tools = chat.tools((await session.list_tools()).tools) if session else []
+    stops the loop without running the tools it asked for, as does the last turn the limit allows."""
+    listed = (await session.list_tools()).tools if session else []
+    given = chat.system
+    if session and given == SYSTEM:
+        # As the server's answer_question prompt does: no line names a tool the server does not offer.
+        # The chat keeps its own text, so the next call is filtered for its own server.
+        chat.system = instructions.agent_system([tool.name for tool in listed])
+    try:
+        return await _loop(session, question, chat, listed)
+    finally:
+        chat.system = given
+
+
+async def _loop(session: Client | None, question: str, chat: Chat, listed) -> dict:
+    tools = chat.tools(listed) if session else []
     messages = chat.start(question)
     calls: list[dict] = []
     stopped, text = None, ""
-    for _ in range(MAX_TURNS):
+    for index in range(MAX_TURNS):
         turn = await chat.turn(messages, tools)
         messages.append(turn.message)
         text = turn.text
@@ -204,6 +228,10 @@ async def answer(session: Client | None, question: str, chat: Chat) -> dict:
         if turn.again:
             continue
         if not turn.uses:
+            break
+        if index == MAX_TURNS - 1:
+            # The model would never see these tools' results, so they are not run
+            stopped = "turn limit"
             break
         pairs = [(use, await _run(session, use)) for use in turn.uses]
         calls += [call for _, call in pairs]
@@ -218,6 +246,15 @@ async def answer(session: Client | None, question: str, chat: Chat) -> dict:
     return {"question": question, "answer": text, "calls": calls, "unsupported": unsupported(text, returned),
             "citations": citation_check.check(text, [call["result"] for call in calls], question),
             "stopped": stopped, "model": chat.model}
+
+
+def _new(runs: Path, stamp: str) -> Path:
+    """runs/<stamp>.answer.json, or <stamp>-2 and on when a run in the same second has that name."""
+    out, count = runs / f"{stamp}.answer.json", 1
+    while out.exists():
+        count += 1
+        out = runs / f"{stamp}-{count}.answer.json"
+    return out
 
 
 async def _main(args, refused: list[int]) -> int:
@@ -254,16 +291,19 @@ async def _main(args, refused: list[int]) -> int:
     if result["citations"]["unchecked"]:
         print(f"\nCase names without a citation, not checked: {', '.join(result['citations']['unchecked'])}")
     runs = Path("runs") if is_url(args.environment) else Path(args.environment).resolve().parent / "runs"
-    out = Path(args.out) if args.out else runs / f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.answer.json"
+    out = Path(args.out) if args.out else _new(runs, f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2), encoding="utf-8")
-    record = decision_record.build(result["question"], result["calls"])
+    # With no tools offered, a call the model asks for is made up: the answer keeps it, the record and count do not
+    ran = result["calls"] if result["tools"] else []
+    record = decision_record.build(result["question"], ran)
     stem = out.name.removesuffix(".json").removesuffix(".answer")
     (out.parent / f"{stem}.record.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
     (out.parent / f"{stem}.record.md").write_text(
         decision_record.markdown(record, result["answer"], result["unsupported"], result["citations"]),
         encoding="utf-8")
-    print(f"\n{len(result['calls'])} tool calls in {result['seconds']} s; written to {out}, with the decision "
+    counted = f"{len(ran)} tool calls" if result["tools"] else "no tools offered"
+    print(f"\n{counted} in {result['seconds']} s; written to {out}, with the decision "
           f"record in {out.parent / (stem + '.record.md')}", file=sys.stderr)
     return 0
 
