@@ -130,6 +130,23 @@ def test_a_model_name_kept_from_one_backend_is_not_sent_to_the_other(client, por
                       ("claude", "claude-x")]
 
 
+def test_the_started_model_name_shown_on_a_new_conversation_is_not_sent_to_the_other_backend(client, portal):
+    models = []
+
+    def make_model(backend, model, _url, _http):
+        models.append((backend, model))
+        return scripted([reply("Yes.")])
+    portal.make_model = make_model
+    portal.options = {"backend": "openai", "model": "granite4:micro"}
+    token = sign_in(client)
+    assert 'name="model" value="granite4:micro"' in client.get("/ask").text
+    post(client, "/ask", token, {"question": "First?", "backend": "claude", "model": "granite4:micro"})
+    post(client, "/ask", token, {"question": "Second?", "backend": "openai", "model": ""})
+    post(client, "/ask/clear", token)
+    post(client, "/ask", token, {"question": "Third?", "backend": "claude", "model": "granite4:micro"})
+    assert models == [("claude", ""), ("openai", "granite4:micro"), ("claude", "")]
+
+
 @pytest.mark.anyio
 async def test_a_second_question_while_one_is_answered_is_refused_and_the_conversation_stays_whole(portal):
     seen: list[dict] = []

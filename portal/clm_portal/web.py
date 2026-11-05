@@ -483,7 +483,7 @@ class _OwnErrors:  # pylint: disable=too-few-public-methods
 
 def _ask_settings(portal: Portal, form, before: tuple | None = None) -> tuple[str, str, str]:
     """The backend, model and URL a question goes to. The started --model is the default only for the started
-    --backend, and a model name the page kept from the `before` backend is dropped when the backend changes."""
+    --backend, and a model name the page kept from the `before` settings is dropped when the backend changes."""
     started = portal.options.get("backend") or "openai"
     backend = str(form.get("backend") or started)
     if backend not in BACKENDS:
@@ -556,7 +556,8 @@ async def ask_page(request: Request) -> Response:
 
 async def _ask(portal: Portal, session: Session, form, question: str) -> Response:  # pylint: disable=too-many-locals
     """One question answered into the session's conversation, while it holds `session.asking`."""
-    settings = _ask_settings(portal, form, session.ask.get("settings"))
+    # With no conversation yet, the page showed the defaults, so a model name kept from them is judged the same way
+    settings = _ask_settings(portal, form, session.ask.get("settings") or _ask_settings(portal, {}))
     if session.ask.get("settings") != settings:
         session.ask = {"settings": settings, "messages": None, "turns": []}
     lines: list[str] = []
