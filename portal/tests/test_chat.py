@@ -1,6 +1,7 @@
 """Tests for the portal's chat, against a stand-in MCP server and a stand-in model; neither needs a network or a key."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import contextlib
 import json
 from types import SimpleNamespace
 
@@ -174,6 +175,24 @@ def test_the_banner_names_the_model_and_whether_tools_run():
 def test_the_key_is_never_in_the_banner(monkeypatch):
     monkeypatch.setenv("DECISION_SERVER_KEY", "secret-value")
     assert "secret-value" not in tc.banner("http://server/mcp", "small", tc.DryRun(frozenset()))
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("url, sent", [("https://decisions.example.org/mcp", True), ("http://127.0.0.1:8000/mcp", True),
+                                       ("http://10.0.0.5:8000/mcp", False)])
+async def test_the_key_goes_only_over_https_or_to_this_computer(monkeypatch, capsys, url, sent):
+    monkeypatch.setenv("DECISION_SERVER_KEY", "secret-value")
+    seen = {}
+
+    @contextlib.asynccontextmanager
+    async def streams(_url, http_client):
+        seen["authorization"] = http_client.headers.get("authorization")
+        yield None
+    monkeypatch.setattr(tc, "streamable_http_client", streams)
+    async with tc._connect(url, []):  # pylint: disable=protected-access
+        pass
+    assert (seen["authorization"] == "Bearer secret-value") is sent
+    assert ("not sending the key" in capsys.readouterr().err) is not sent
 
 
 def test_chat_subcommand_takes_the_old_arguments():

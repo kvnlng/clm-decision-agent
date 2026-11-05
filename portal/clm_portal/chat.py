@@ -6,7 +6,8 @@ It connects to a running server, offers a model the server's tools, and prints e
 where an answer came from and judge it yourself. Tools run for real unless --dry-run holds them back.
 
 The model is anything that speaks the OpenAI chat API, Ollama by default, or Claude with --backend claude. The
-server's key or token is read from DECISION_SERVER_KEY, and the model's from LLM_API_KEY; neither is printed.
+server's key or token is read from DECISION_SERVER_KEY and sent only over https or to this computer; the model's is
+read from LLM_API_KEY. Neither is printed.
 """
 from __future__ import annotations
 
@@ -22,6 +23,8 @@ import anyio.to_thread
 import httpx
 from mcp import Client, MCPError
 from mcp.client.streamable_http import streamable_http_client
+
+from clm_decision.connection import key_for
 
 KEY_ENV = "DECISION_SERVER_KEY"
 LLM_KEY_ENV = "LLM_API_KEY"
@@ -250,7 +253,7 @@ def banner(url: str, model: str, dry_run: DryRun) -> str:
 
 @contextlib.asynccontextmanager
 async def _connect(url: str, refused: list[int]):
-    key = os.environ.get(KEY_ENV)
+    key = key_for(url)      # never in the clear to another computer
     headers = {"Authorization": f"Bearer {key}"} if key else None
     async with httpx.AsyncClient(headers=headers, follow_redirects=True,
                                  timeout=httpx.Timeout(30, read=600)) as http:
