@@ -162,7 +162,7 @@ def _citations(record: dict, citations: dict) -> list[str]:
                       if citation_check.matches(written, item["citation"], item["passage"])]
             out += [f"- {written}: {item['citation']} {item['passage']}, {item['collection']} built "
                     f"{item['built_at']}: \"{item['text']}\"" for item in stored] or [
-                f"- {written}: returned by a rule or decision; no passage was read"]
+                f"- {written}: returned by a rule or decision, or given in the question; no passage was read"]
         out.append("")
     if citations["not_found"]:
         out += ["## Citations no tool returned", "", ", ".join(citations["not_found"]), ""]

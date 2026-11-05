@@ -675,8 +675,8 @@ The citation check does the same for citations, so an answer cannot cite a case 
 - **A reporter citation**, "100 S.W.3d 1", matches by volume, reporter and page.
 - **A case name with no citation after it**, "Smith v. Jones", cannot be checked: it is listed, never passed.
 
-The decision record lists each citation found with the stored passage it matches, then those no tool returned and
-those not checked. A decision table's `citation` ids are given with each document's citation and title in its step.
+A citation in the question counts as given, as its figures do. The decision record lists each citation found with
+the stored passage it matches, then those no tool returned and those not checked. A decision table's `citation` ids are given with each document's citation and title in its step.
 
 ## What comes later
 

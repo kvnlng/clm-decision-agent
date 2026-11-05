@@ -90,9 +90,15 @@ def _found(item: tuple, returned: set[tuple]) -> bool:
 
 
 def check(answer: str, results: list) -> dict:
-    """The citations in the answer: found in the results, not found, and case names that cannot be checked."""
+    """The citations in the answer: found in the results, not found, and case names that cannot be checked. A plain
+    string among the results (the question, a tool's error) counts as given, as number_check counts its figures; text
+    inside a tool's result, such as a passage, does not."""
     returned: set[tuple] = set()
-    _returned(results, returned)
+    for result in results:
+        if isinstance(result, str):
+            returned |= keys(result)
+        else:
+            _returned(result, returned)
     cited = sorted([(position, written, ("statute", section, label))
                     for written, section, label, position in _statutes(answer)]
                    + [(position, written, ("reporter", key)) for written, key, position in _reporters(answer)])
