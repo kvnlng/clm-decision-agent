@@ -100,9 +100,13 @@ class OpenAIModel:
             raise ClientError(f"no model {self.model} at {self.url}; with Ollama, run `ollama pull {self.model}`")
         if response.status_code != 200:
             raise ClientError(f"the model at {self.url} answered {response.status_code}: {response.text[:200]}")
-        choice = response.json()["choices"][0]
-        message = choice.get("message") or {}
-        raw = message.get("tool_calls") or []
+        try:
+            choice = response.json()["choices"][0]
+            message = choice.get("message") or {}
+            raw = message.get("tool_calls") or []
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError) as error:
+            raise ClientError(f"the model at {self.url} sent a reply that is not a chat completion: "
+                              f"{response.text[:200]}") from error
         kept = {"role": "assistant", "content": message.get("content") or ""}
         if raw:
             kept["tool_calls"] = raw
@@ -146,10 +150,13 @@ class ClaudeModel:
                 for tool in listed]
 
     async def turn(self, messages: list[dict], tools: list[dict]) -> Turn:
-        """One streamed reply."""
-        async with self.client.messages.stream(model=self.model, max_tokens=16000, system=SYSTEM, tools=tools,
-                                               thinking={"type": "adaptive"}, messages=messages) as stream:
-            reply = await stream.get_final_message()
+        """One streamed reply; ClientError when the API fails, as with a wrong or missing key or a rate limit."""
+        try:
+            async with self.client.messages.stream(model=self.model, max_tokens=16000, system=SYSTEM, tools=tools,
+                                                   thinking={"type": "adaptive"}, messages=messages) as stream:
+                reply = await stream.get_final_message()
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            raise ClientError(f"the Anthropic API failed: {error or type(error).__name__}") from error
         text = "\n".join(block.text for block in reply.content if block.type == "text").strip()
         calls = [Call(block.id, block.name, dict(block.input or {})) for block in reply.content
                  if block.type == "tool_use"]
@@ -176,11 +183,12 @@ async def _send(client: Client, call: Call) -> tuple[str, bool]:
         result = await client.call_tool(call.name, call.arguments)
     except MCPError as error:
         return f"Error: {error}", True
+    text = "\n".join(block.text for block in result.content if block.type == "text")
     if result.is_error:
-        return (result.content[0].text if result.content else "Error: the server reported an error"), True
+        return text or "Error: the server reported an error", True
     if result.structured_content is not None:
         return json.dumps(result.structured_content, indent=2), False
-    return "\n".join(block.text for block in result.content if block.type == "text"), False
+    return text, False
 
 
 async def _handle(client: Client, call: Call, dry_run: DryRun, show, full: bool) -> str:
