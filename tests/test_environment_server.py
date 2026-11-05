@@ -112,6 +112,23 @@ async def test_a_traced_call_writes_its_tool_and_outcome(write_environment, tmp_
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("text", [False, True])
+async def test_trace_text_adds_each_calls_arguments(write_environment, tmp_path, text):
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl", text=text)
+    traced = build_environment_server(load_environment(write_environment()), trace=writer)
+    async with Client(traced) as client:
+        await client.call_tool("query_suppliers", {"product": "P1"})
+        await client.call_tool("scenario_sourcing", {"product": "P1", "branches": [{"share": 0.7}]})
+    writer.close()
+    query, scenario = [json.loads(line) for line in (tmp_path / "trace.jsonl").read_text().splitlines()]
+    if not text:
+        assert "text" not in query and "text" not in scenario
+    else:
+        assert json.loads(query["text"]) == {"product": "P1"}
+        assert json.loads(scenario["text"]) == {"product": "P1", "branches": [{"share": 0.7}]}
+
+
+@pytest.mark.anyio
 async def test_an_owner_error_reaches_the_agent(mcp_server):
     async with Client(mcp_server) as client:
         result = await client.call_tool("query_product_facts", {"product": "nope"})

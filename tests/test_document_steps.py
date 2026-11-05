@@ -11,6 +11,7 @@ from clm_decision import engine
 from clm_decision.engine import StepError, Steps
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server, describe
+from clm_decision.serving import Serve
 
 DOCUMENTS = '''
 [documents]
@@ -136,6 +137,19 @@ async def test_tools_false_offers_no_document_tools(write_environment):
         names = {tool.name for tool in (await client.list_tools()).tools}
     assert not {name for name in names if name.endswith("_cases")}
     assert Steps(env).search("cases", "covenant")       # the owner's functions still search
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("serve", [Serve(), Serve(exclude_tools=("query_suppliers",))])
+async def test_tools_false_describes_no_collection(write_environment, serve):
+    store = FakeStore()
+    store.replace("cases", CASES, [], BUILT)
+    toml = ENV_TOML + DOCUMENTS.replace('password_env = "TOY_DOCUMENTS_PASSWORD"',
+                                        'password_env = "TOY_DOCUMENTS_PASSWORD"\ntools = false')
+    env = load_environment(write_environment(toml), store=store, embedder=FakeEmbedder())
+    async with Client(build_environment_server(env, serve=serve)) as client:
+        described = (await client.call_tool("describe", {})).structured_content
+    assert "collections" not in described and "collections" not in describe(env)
 
 
 def test_a_citation_walk_returns_at_most_the_cap_and_says_how_many_more(env):

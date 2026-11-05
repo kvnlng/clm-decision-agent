@@ -205,7 +205,7 @@ async def test_no_document_tools_means_no_document_resources():
         templates = {template.uri_template for template in (await client.list_resource_templates()).resource_templates}
         described = await read(client, "environment://describe")
     assert not any(uri.startswith("document://") for uri in listed | templates)
-    assert "resources" not in described["collections"]["handbook"]
+    assert "collections" not in described
 
 
 @pytest.mark.anyio

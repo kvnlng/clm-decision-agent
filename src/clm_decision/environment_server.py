@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import json
 from urllib.parse import quote
 from typing import Any, Callable
 
@@ -56,7 +57,9 @@ def _branch_counts(result: dict) -> dict:
 def _tool(run: Callable[[dict], dict], signature: inspect.Signature, trace, name: str) -> Callable[..., dict]:
     """A function with the given signature, which the SDK reads for the tool's schema, calling run(arguments)."""
     def tool(**arguments) -> dict[str, Any]:
-        with trace.call(name) if trace else contextlib.nullcontext({}) as record:
+        # The arguments are the request's text: written only with --trace-text
+        text = json.dumps(arguments, default=str) if trace and trace.text else None
+        with trace.call(name, text) if trace else contextlib.nullcontext({}) as record:
             try:
                 result = run(arguments)
                 record["outcome"] = {"ok": True, **_branch_counts(result)}
@@ -77,8 +80,8 @@ def describe(env: Environment, offered: list[str] | None = None, left_out: list[
     offered, and in left_out the tools the operator left out; read_only says the server is read-only."""
     def shown(tool: str) -> bool:
         return offered is None or tool in offered
-    collections = {name: collection for name, collection in env.collections.items()
-                   if any(shown(f"{kind}_{name}") for kind in ("search", "document", "cites", "cited_by"))}
+    collections = {name: collection for name, collection in env.collections.items() if env.document_tools
+                   and any(shown(f"{kind}_{name}") for kind in ("search", "document", "cites", "cited_by"))}
     return {"name": env.name, "description": env.description,
             "queries": {name: {"description": query.description, "params": query.params}
                         for name, query in env.queries.items() if shown(f"query_{name}")},
@@ -302,7 +305,7 @@ class _QuestionPrompt(Prompt):
         return await super().render(arguments, context)
 
 
-def _add_prompt(server: MCPServer, env: Environment, offered: list[str] | None) -> None:
+def _add_prompt(server: MCPServer, env: Environment, offered: list[str]) -> None:
     """answer_question: the reference agent's instructions with this environment and a question."""
     def answer_question(question: str) -> str:
         return instructions.answer_question(env.name, env.description, question, offered)
@@ -311,9 +314,9 @@ def _add_prompt(server: MCPServer, env: Environment, offered: list[str] | None) 
         "instructions, this environment's name and description, and the question, in one message."))
 
 
-def _instructions(env: Environment, offered: list[str] | None) -> str:
-    """The server's instructions; with a selection (`offered`), naming a scenario only when one is offered."""
-    comparing = offered is None or any(name.startswith("scenario_") for name in offered)
+def _instructions(env: Environment, offered: list[str]) -> str:
+    """The server's instructions, naming a scenario only when one is offered."""
+    comparing = any(name.startswith("scenario_") for name in offered)
     return (f"Decisions for '{env.name}'. Call describe first. Every figure and verdict comes from these tools"
             + (": run a scenario to compare alternatives rather than combining queries and decisions yourself."
                if comparing else "."))
@@ -326,29 +329,30 @@ def build_environment_server(env: Environment, trace: tracing.TraceWriter | None
     tool here only reads, so read-only changes nothing but describe. A tool that writes, if one is ever added, must
     not run when serve.read_only is set."""
     found: list[tuple[str, str, Callable[[dict], dict], inspect.Signature]] = []
+    chosen: dict[str, list[str]] = {}       # what serve offers and leaves out, known once every tool is found
 
     def add(name: str, description: str, run: Callable[[dict], dict], signature: inspect.Signature) -> None:
         found.append((name, description, run, signature))
 
-    _all_tools(env, add)
-    offered, left_out = serving.choose(serve, [name for name, *_ in found])
-    chosen = offered if left_out else None      # None: every tool, and everything as before
-    server = MCPServer("decision-server", instructions=_instructions(env, chosen), log_level="WARNING",
-                       **oauth.server_options(auth))
-
     def described(_: dict | None = None) -> dict:
-        return describe(env, chosen, left_out, serve.read_only)
+        return describe(env, chosen["offered"], chosen["left_out"], serve.read_only)
+    _all_tools(env, add, described)
+    offered, left_out = serving.choose(serve, [name for name, *_ in found])
+    chosen.update(offered=offered, left_out=left_out)
+    server = MCPServer("decision-server", instructions=_instructions(env, offered), log_level="WARNING",
+                       **oauth.server_options(auth))
     for name, description, run, signature in found:
         if name in offered:
-            server.add_tool(_tool(described if name == "describe" else run, signature, trace, name), name=name,
-                            description=description, annotations=READ_ONLY)
+            server.add_tool(_tool(run, signature, trace, name), name=name, description=description,
+                            annotations=READ_ONLY)
     _add_resources(server, env, trace, offered, described)
-    _add_prompt(server, env, chosen)
+    _add_prompt(server, env, offered)
     return server
 
 
-def _all_tools(env: Environment, add: Callable) -> None:
-    """Every tool the environment can offer, each given to add(name, description, run, signature)."""
+def _all_tools(env: Environment, add: Callable, described: Callable[[dict], dict]) -> None:
+    """Every tool the environment can offer, each given to add(name, description, run, signature); describe runs
+    `described`."""
 
     for name, query in env.queries.items():
         add(f"query_{name}", query.description, lambda args, name=name: engine.run_query(env, name, args),
@@ -382,4 +386,4 @@ def _all_tools(env: Environment, add: Callable) -> None:
             "needs, its parameters and, for a decision table, its rows.",
             lambda args: explain_rule(env, args["name"]), _signature({"name": "string"}))
     add("describe", "The environment: its queries, decisions, calculations and scenarios, with their parameters.",
-        lambda _: describe(env), _signature({}))
+        described, _signature({}))
