@@ -161,6 +161,21 @@ def test_a_further_figure_is_counted_by_whether_a_tool_returned_it():
     assert scored["wrong_as_fact"] == 0 and scored["right"] == 3
 
 
+def test_a_further_figure_the_check_cannot_see_is_unsourced():
+    # number_check skips small whole numbers and years, and 1250000 was once written as 1.25e+06
+    read = {"items": {"match": item(3400), "cap": item(6), "limit": item(24500)},
+            "other": [{"text": f"figure {value}", "value": value, "hedged": False}
+                      for value in (5, 4.0, 2030, 1250000, 777)]}
+    scored = _measure().score_figures(read, KEYED, ["nothing here"])
+    assert scored["other_from_tools"] == 0 and scored["other_unsourced"] == 5
+
+
+def test_a_large_further_figure_a_tool_returned_is_from_tools():
+    read = {"items": {"match": item(3400), "cap": item(6), "limit": item(24500)},
+            "other": [{"text": "$1,250,000", "value": 1250000, "hedged": False}]}
+    assert _measure().score_figures(read, KEYED, [{"total": 1250000}])["other_from_tools"] == 1
+
+
 class Recorder:
     """A stand-in Anthropic client that keeps the request and answers nothing given."""
 

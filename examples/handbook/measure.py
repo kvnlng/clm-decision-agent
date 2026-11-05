@@ -33,7 +33,7 @@ search_ and document_ tools. score reads them against answer_key.toml:
   counted as superseded when it is a 2024 value), not given when absent. A hedged value is counted on its own line,
   neither right nor wrong. Wrong as fact, the headline, is the wrong items. Further figures stated as fact are not
   graded, since the key does not hold them: they are counted as from a tool when a tool returned them
-  (number_check.py), and as unsourced otherwise.
+  (number_check.py), and as unsourced otherwise, as are small whole numbers and years, which the check skips.
 - verdict: read by Claude from a fixed list for each question, as in noncompete.
 - policy cited: how many of the key's handbook sections the answer names by section number ("§ 4").
 
@@ -52,7 +52,7 @@ from pathlib import Path
 from clm_decision import decision_agent, derive, derive_check, derived
 from clm_decision.dmn import DmnError, load_table
 from clm_decision.environment import load_environment
-from clm_decision.number_check import unsupported
+from clm_decision.number_check import numbers_in, unsupported
 
 HERE = Path(__file__).resolve().parent
 RUNS = HERE / "runs" / "measure"
@@ -108,9 +108,11 @@ def score_figures(read: dict, keyed: dict, returned: list | None = None) -> dict
             counts["wrong"] += 1
             counts["superseded"] += any(_close(value, old) for old in keyed["superseded"])
     for other in read["other"]:
+        # Written out in full, never as 1.25e+06; a figure the check does not look at is not shown to be from a tool
+        written = f"{other['value']:f}".rstrip("0").rstrip(".")
         if other.get("hedged"):
             counts["hedged"] += 1
-        elif returned and not unsupported(f"{other['value']:g}", returned):
+        elif returned and numbers_in(written) and not unsupported(written, returned):
             counts["other_from_tools"] += 1
         else:
             counts["other_unsourced"] += 1
