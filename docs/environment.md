@@ -502,7 +502,7 @@ The check proves every figure is in the quote; it cannot prove a figure is in th
 second_reader = { backend = "ollama", model = "qwen3:14b" }   # or backend = "claude"; absent: no second reading
 ```
 
-With it, `run` and `check` give that model each entry's cited document, whole (not made when it is not in force), and its slot,
+With a second reader, `run` and `check` give that model each entry's cited document, whole (not made when it is not in force), and its slot,
 never the first answer: it needs the document to find the passage, so it knows which document the first reading
 cited, but never the passages, quote, statement or rows it gave. Then they compare what it derives: a decision over
 a grid of inputs, on the slot's outputs, text in any case and without the spaces around it; a fact within 0.5%.
@@ -518,7 +518,8 @@ table does not parse) fails the check too, as `could not be made`: agreement is 
 passes. The record is kept in the entry as `check.second_reading = {model, agreed, differences}` (and `error` when it
 could not be made), and `check` prints how many agreed. It is made on every entry checked, including one the
 mechanical check already fails, and again at every `check`, so it is redone from the new edition when a document
-changes. It is never sent back to the first model as a retry. The second reader must not be the model that derived
+changes. It is never sent back to the first model as a retry. An Ollama second reader is reached at `[documents]`
+`ollama_url`, the Ollama that embeds the passages; `run`'s `--ollama-url` is for the first model only. The second reader must not be the model that derived
 the layer, nor another tag of it (any `gemma4:…` for gemma4) or a dated id of the same Claude model: `run` and
 `check` refuse it, since it would repeat its own reading. Removing `second_reader` does not clear a recorded
 disagreement: `check` keeps failing the entry, as "an earlier second reading by MODEL …", until a later second

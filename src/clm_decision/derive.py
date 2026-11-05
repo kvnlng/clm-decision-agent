@@ -26,6 +26,7 @@ import re
 import shutil
 import sys
 import tempfile
+import tomllib
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -37,6 +38,7 @@ import httpx
 from . import derive_check, derived
 from .decision_agent import LOCAL_MODEL, MODEL, OLLAMA_URL
 from .dmn import DmnError, load_table
+from .documents import document_settings
 from .engine import Steps
 from .environment import Environment, Slot, edition, in_force, load_environment, second_reader_of
 from .scenario import ScenarioError, StepError
@@ -344,9 +346,14 @@ def make_extractor(backend: str, model: str | None = None, ollama_url: str = OLL
 
 
 def reader_for(env: Environment) -> Extractor | None:
-    """The second reader the environment's [derived] second_reader names, or None."""
+    """The second reader the environment's [derived] second_reader names, or None; through Ollama, the one its
+    [documents] ollama_url names, which embeds its passages."""
     reader = env.second_reader
-    return make_extractor(reader["backend"], reader["model"]) if reader else None
+    if not reader:
+        return None
+    with open(env.path, "rb") as file:
+        settings = document_settings(tomllib.load(file))
+    return make_extractor(reader["backend"], reader["model"], settings.ollama_url if settings else OLLAMA_URL)
 
 
 def _family(model: str) -> str:

@@ -487,6 +487,16 @@ def test_the_second_reader_is_the_backend_and_model_the_environment_names(path):
     reader = derive.reader_for(dataclasses.replace(env, second_reader={"backend": "ollama",
                                                                        "model": "granite4:micro"}))
     assert isinstance(reader, derive.OllamaExtractor) and reader.model == "granite4:micro"
+    assert reader.url == derive.OLLAMA_URL
+
+
+def test_an_ollama_second_reader_uses_the_ollama_the_documents_table_names(path):
+    path.write_text(path.read_text(encoding="utf-8").replace("[documents]\n",
+                                                             '[documents]\nollama_url = "http://gpu:11434/"\n'),
+                    encoding="utf-8")
+    env = dataclasses.replace(derive.load_environment(path, today=ON),
+                              second_reader={"backend": "ollama", "model": "granite4:micro"})
+    assert derive.reader_for(env).url == "http://gpu:11434"
 
 
 def test_run_on_a_collection_no_slot_names_is_refused_and_writes_nothing(path):
