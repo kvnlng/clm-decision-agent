@@ -36,6 +36,7 @@ COOKIE = "clm_portal_session"
 SESSION_SECONDS = 12 * 60 * 60
 WRONG_KEY_WAIT = 0.5
 MAX_BODY = 200 * 1024 * 1024
+SIGN_IN_MAX_BODY = 16 * 1024    # a key and a name; read before the key is checked, so kept small
 STATIC = Path(__file__).parent / "static"
 INSPECTOR = "@modelcontextprotocol/inspector@2.13.0"
 OPEN_PATHS = ("/sign-in",)
@@ -752,7 +753,7 @@ def _replay(body: bytes):
     return receive
 
 
-async def _body(receive) -> bytes | None:
+async def _body(receive, limit: int = MAX_BODY) -> bytes | None:
     chunks, size = [], 0
     while True:
         message = await receive()
@@ -760,7 +761,7 @@ async def _body(receive) -> bytes | None:
             return None
         chunk = message.get("body", b"")
         size += len(chunk)
-        if size > MAX_BODY:
+        if size > limit:
             return None
         chunks.append(chunk)
         if not message.get("more_body"):
@@ -793,6 +794,12 @@ class Guard:  # pylint: disable=too-few-public-methods
             return
         path = scope["path"]
         if path in OPEN_PATHS or path.startswith("/static/"):
+            if post:
+                body = await _body(receive, SIGN_IN_MAX_BODY)
+                if body is None:
+                    await PlainTextResponse("The request was too large or did not arrive.", 413)(scope, receive, send)
+                    return
+                receive = _replay(body)
             await self.app(scope, receive, send)
             return
         session = self.portal.session(request.cookies.get(COOKIE))
