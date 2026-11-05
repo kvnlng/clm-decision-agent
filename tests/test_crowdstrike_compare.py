@@ -64,7 +64,22 @@ def test_summary_scales_cost_and_time_to_the_day(monkeypatch):
     # 1000 × $1 + 100 × $5 + 2000 × $0.10, per million tokens
     assert found["cost_per_decision"] == pytest.approx(0.0017)
     assert found["day_cost"] == pytest.approx(1.7)
-    assert found["day_weighted"] == pytest.approx(compare_models.SHARES["Rebook"])
+    # Weighted over the routes the cases hold, so it means the same with --limit as in a full run
+    shares = compare_models.SHARES
+    assert found["day_weighted"] == pytest.approx(shares["Rebook"] / (shares["Rebook"] + shares["Refund"]))
+
+
+def test_a_perfect_run_on_one_route_is_weighted_100_percent():
+    cases = [{"route": "Rebook", "option": "T1", "answers": {}}] * 3
+    replies = [{"route": "Rebook", "uncertain": False, "option": {"id": "T1"}, "answers": {}}] * 3
+    assert summary("clm", cases, replies, [], seconds=1.0)["day_weighted"] == pytest.approx(1.0)
+
+
+def test_a_limited_run_takes_cases_from_every_route_in_turn():
+    cases = [{"route": route, "n": n} for route in ("Rebook", "Refund", "Agent") for n in range(3)]
+    taken = compare_models.take(cases, 5)
+    assert [case["route"] for case in taken] == ["Rebook", "Refund", "Agent", "Rebook", "Refund"]
+    assert compare_models.take(cases, None) == cases
 
 
 def test_missing_credentials_skip_claude(monkeypatch, capsys, tmp_path):
