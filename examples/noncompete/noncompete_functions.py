@@ -93,10 +93,11 @@ def by_state(steps, params, levers):
             "what_must_change": verdict["reason"], "citation": verdict["citation"], "notice": NOTICE}
 
 
-# Whole words only: "International" and "AutoNation" are not "nation"
-_COUNTRY = re.compile(r"\b(nationwide|united states|the country|anywhere)\b")
+# Whole words only: "International" and "AutoNation" are not "nation", and "anywhere in Texas" is not the country
+_COUNTRY = re.compile(r"\b(nationwide|united states|the country)\b")
 # A radius or a part of the country is regional: "Southeastern United States", "western half of the country"
-_REGIONAL = re.compile(r"\b(miles?|radius|(north|south)?(east|west)ern|northern|southern|half of)\b")
+_REGIONAL = re.compile(r"\b(miles?|kilomet(er|re)s?|radius|(north|south|mid)?(east|west)(ern)?|northern|southern|"
+                       r"half of)\b")
 # Words that say how senior a role is, not what it does: "senior" of "senior accountant"
 _GENERIC = {"senior", "junior", "general", "vice", "regional", "assistant", "associate", "chief", "independent",
             "lead", "head", "deputy"}

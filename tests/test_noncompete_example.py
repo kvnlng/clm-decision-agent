@@ -117,7 +117,9 @@ def test_a_similar_case_is_the_same_line_of_work_in_a_court_of_weight(env):
     "within a radius of 250 miles of any office of the Company or Huntingdon International Holdings",
     "within fifty miles of the location where he was employed, or within ten miles of any other AutoNation dealer",
     "within a fifty-mile radius of the dealership", "Southeastern United States",
-    "the entire western half of the country", "in Texas", None])
+    "the entire western half of the country", "in Texas", "anywhere within the State of Texas",
+    "anywhere in Harris County", "the Midwestern United States", "the Northwest United States", "New England",
+    "within 100 kilometers of the United States office", None])
 def test_a_regional_area_is_not_nationwide(area):
     assert not noncompete_functions._nationwide(area)  # pylint: disable=protected-access
 
