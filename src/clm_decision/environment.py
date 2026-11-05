@@ -30,6 +30,7 @@ BACKENDS = ("builtin", "neo4j")
 INFORMATION_KINDS = ("fact", "estimate", "supplied")
 QUERY_KINDS = ("fact", "estimate")
 TYPES = ("string", "number", "integer", "boolean", "list")
+DMN_SLOT_TYPES = ("string", "number", "integer", "boolean")      # a derived decision's inputs and outputs
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
 # The derived statuses environment.toml may admit, and those --admit-derived may, for testing; never rejected
 FILE_ADMITS = ("approved", "checked")
@@ -524,7 +525,15 @@ def _check_citations(decisions: dict[str, Decision], collections: dict, store) -
                 raise ScenarioError(f"{place} cites {ident}, which {decision.collection} does not hold")
 
 
-def _scenario(name: str, table: dict, functions: ModuleType, decisions, queries: dict) -> ScenarioDef:  # pylint: disable=too-many-locals
+def _not_a_decision(name: str, kinds: dict[str, str]) -> str | None:
+    """Why a limit or approval cannot name this: unknown, or a derived fact; None for a decision or decision slot.
+    `kinds` gives each decision and slot its kind, "decisions" or "facts"."""
+    if name not in kinds:
+        return f"unknown decision '{name}'"
+    return f"'{name}' is a derived fact, not a decision" if kinds[name] == "facts" else None
+
+
+def _scenario(name: str, table: dict, functions: ModuleType, kinds: dict[str, str], queries: dict) -> ScenarioDef:  # pylint: disable=too-many-locals
     where = f"scenarios.{name}"
     levers = _table(table, "levers", where)
     if not levers:
@@ -536,8 +545,8 @@ def _scenario(name: str, table: dict, functions: ModuleType, decisions, queries:
     if not isinstance(limits, list) or not all(isinstance(limit, str) for limit in limits):
         raise ScenarioError(f"{where}.limits: must be a list of decision names")
     for limit in limits:
-        if limit not in decisions:
-            raise ScenarioError(f"{where}.limits: unknown decision '{limit}'")
+        if _not_a_decision(limit, kinds):
+            raise ScenarioError(f"{where}.limits: {_not_a_decision(limit, kinds)}")
     branch = _text(table, "branch", where)
     if not callable(getattr(functions, branch, None)):
         raise ScenarioError(f"{where}.branch: '{branch}' is not a function in {functions.__name__}")
@@ -550,8 +559,8 @@ def _scenario(name: str, table: dict, functions: ModuleType, decisions, queries:
             raise ScenarioError(f"{where}.uncertain: '{query}' is not an estimate query")
     approvals = _names(table, "approvals", where)
     for decision in approvals:
-        if decision not in decisions:
-            raise ScenarioError(f"{where}.approvals: unknown decision '{decision}'")
+        if _not_a_decision(decision, kinds):
+            raise ScenarioError(f"{where}.approvals: {_not_a_decision(decision, kinds)}")
     return ScenarioDef(name, _text(table, "description", where), _params(table, where),
                        {lever: tuple(values) for lever, values in levers.items()},
                        branch, _text(table, "objective", where), maximise, tuple(limits), uncertain, approvals)
@@ -572,12 +581,14 @@ def edition(document: dict) -> str | None:
 
 
 def _slot_names(table: dict, where: str) -> dict[str, str]:
+    """A derived decision's inputs or outputs: the types a DMN table can test or give, which a list is not."""
     value = _table(table, where.rsplit(".", 1)[-1], where)
     for name, kind in value.items():
         if _bad_name(name):
             raise ScenarioError(f"{where}.{name}: {_bad_name(name)}")
-        if kind not in TYPES:
-            raise ScenarioError(f"{where}.{name}: type must be {', '.join(TYPES)}, not {kind!r}")
+        if kind not in DMN_SLOT_TYPES:
+            raise ScenarioError(f"{where}.{name}: type must be {', '.join(DMN_SLOT_TYPES)}, not {kind!r}: a "
+                                "derived decision's table cannot test or give a list")
     return dict(value)
 
 
@@ -679,6 +690,9 @@ def _derived_decision(slot: Slot, entry: dict, folder: Path, functions: ModuleTy
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     table = {key: entry[key] for key in ("description", "dmn", "rule") if key in entry}
     table["collection"] = entry.get("collection") or slot.collection
+    if isinstance(table.get("rule"), dict) and table["rule"].get("version") == "":
+        # A rule's version is its source's edition; a document with no effective_from has none
+        table["rule"] = {**table["rule"], "version": UNDATED}
     decision = _decision(slot.name, table, folder / "derived", functions)
     if decision.params != {item: _DMN_TYPES.get(kind, kind) for item, kind in slot.inputs.items()}:
         raise ScenarioError(f"its table's inputs {decision.params} are not the slot's {slot.inputs}")
@@ -699,6 +713,7 @@ class _Derived:
 
 
 NOT_DERIVED = "not derived"     # the status shown for a slot the layer has no entry for
+UNDATED = "undated"             # the version of a rule derived from a document with no effective_from
 
 
 def _fill(slots: dict[str, Slot], context: tuple, graph: Graph | None, collections: dict, store) -> _Derived:
@@ -706,8 +721,13 @@ def _fill(slots: dict[str, Slot], context: tuple, graph: Graph | None, collectio
     value (supplied decides), a decision only when its table loads and its citations resolve."""
     # pylint: disable=too-many-locals
     folder, functions, admit, override, on = context
-    layer = derived.read(folder)
     found = _Derived()
+    if not slots:
+        return found        # without a [derived] table the layer is not read
+    try:
+        layer = derived.read(folder)
+    except (ValueError, OSError) as error:     # a DerivedError or JSONDecodeError is a ValueError
+        raise ScenarioError(f"derived: {error}") from error
     for name, slot in slots.items():
         entry = layer[slot.kind].get(name)
         found.statuses[name] = entry.get("status") if entry is not None else NOT_DERIVED
@@ -717,7 +737,8 @@ def _fill(slots: dict[str, Slot], context: tuple, graph: Graph | None, collectio
             if supplied is None:
                 why = f"the graph has no node {slot.node}"
             elif slot.property in supplied:
-                continue        # the supplied value stands; clm-derive reports a conflict when they differ
+                why = ("the supplied graph has a value for it, which stands (clm-derive reports a conflict when they "
+                       "differ)")
             elif not _CHECK_TYPE[slot.type](entry.get("value")):
                 why = f"its value {entry.get('value')!r} is not of type {slot.type}"
             else:
@@ -760,11 +781,13 @@ def load_environment(path: str | Path, backend: str | None = None,
     graph = load_graph_files(settings) if settings.backend == "builtin" else None
     declared = _slots(data, settings.backend, _parts(data, "decisions"))
     slots, admitted_statuses = declared or ({}, ())
-    if admit is not None and declared is not None:
+    if admit is not None:
         for status in admit:
             if status not in OVERRIDE_ADMITS:
                 raise ScenarioError(f"--admit-derived: {status!r} cannot be admitted: only "
                                     f"{', '.join(OVERRIDE_ADMITS)}; a rejected entry never decides")
+        if declared is None:
+            raise ScenarioError(f"--admit-derived: {path.name} has no [derived] table, so there is nothing to admit")
         admitted_statuses = tuple(admit)
     queries = {name: _query(name, table, functions, settings.backend)
                for name, table in _parts(data, "queries").items()}
@@ -775,7 +798,8 @@ def load_environment(path: str | Path, backend: str | None = None,
                                       _params(table, f"calculations.{name}"),
                                       _function(table, f"calculations.{name}", functions))
                     for name, table in _parts(data, "calculations").items()}
-    scenarios = {name: _scenario(name, table, functions, {*decisions, *slots}, queries)
+    kinds = {**dict.fromkeys(decisions, "decisions"), **{name: slot.kind for name, slot in slots.items()}}
+    scenarios = {name: _scenario(name, table, functions, kinds, queries)
                  for name, table in _parts(data, "scenarios").items()}
     clm = _clm(data)
     judges = {name: _judge(name, table, clm) for name, table in _parts(data, "judges").items()}
@@ -796,5 +820,5 @@ def load_environment(path: str | Path, backend: str | None = None,
                        judges, clm, information, collections, store, embedder,
                        document_settings.tools if document_settings else True,
                        document_settings.cited_text if document_settings else True, slots, filled.unfilled,
-                       tuple(filled.admitted), admitted_statuses, admit is not None and declared is not None,
+                       tuple(filled.admitted), admitted_statuses, admit is not None,
                        filled.facts, _second_reader(data) if declared is not None else None, filled.statuses)

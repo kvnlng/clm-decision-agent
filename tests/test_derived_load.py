@@ -329,3 +329,60 @@ def test_a_query_reading_a_derived_fact_carries_origin(tmp_path):
 def test_an_environment_with_documents_and_no_rules_loads(tmp_path):
     env = load(make(tmp_path, parts="", slots=""))
     assert not env.decisions and not env.scenarios and "hb" in env.collections
+
+
+@pytest.mark.parametrize("text", ['{"version": 2}', "{bad"])
+def test_a_broken_layer_is_ignored_without_a_derived_table(tmp_path, text):
+    path = make(tmp_path, decision=entry(), slots="", parts=PARTS.replace('limits = ["carry"]', ""))
+    derived.path(tmp_path).write_text(text, encoding="utf-8")
+    assert not load(path).slots
+
+
+@pytest.mark.parametrize("text", ['{"version": 2}', "{bad"])
+def test_a_broken_layer_with_a_derived_table_is_one_line(tmp_path, text):
+    path = make(tmp_path, decision=entry())
+    derived.path(tmp_path).write_text(text, encoding="utf-8")
+    with pytest.raises(ScenarioError, match=r"^derived: "):
+        load(path)
+
+
+def test_a_decision_derived_from_an_undated_document_is_admitted(tmp_path):
+    path = make(tmp_path, decision=entry(edition=None))
+    layer = derived.read(tmp_path)
+    layer["decisions"]["carry"]["rule"]["version"] = ""      # what clm-derive run writes for an undated document
+    derived.write(tmp_path, layer)
+    undated = store()
+    undated.replace("hb", [{"id": "hb-leave", "citation": "§ 5", "title": "Leave", "metadata": {},
+                            "passages": [{"label": "(2)", "text": "Up to 7 unused days carry into the next year."}]}],
+                    [], {"built_at": "2026-11-03T12:00:00Z", "source": "test", "model": "m", "dimensions": 26})
+    env = load_environment(path, store=undated, embedder=FakeEmbedder(), today=TODAY)
+    assert "carry" in env.admitted, env.unfilled
+    assert env.decisions["carry"].rule.version == "undated"
+
+
+@pytest.mark.parametrize("side", ["inputs", "outputs"])
+def test_a_derived_decision_cannot_take_or_give_a_list(tmp_path, side):
+    slots = DERIVED.replace('inputs = { years = "number" }', 'inputs = { years = "list" }') if side == "inputs" \
+        else DERIVED.replace('outputs = { carry = "number"', 'outputs = { carry = "list"')
+    with pytest.raises(ScenarioError, match=f"^derived.decisions.carry.{side}.*: .*cannot .* a list"):
+        load(make(tmp_path, slots=slots))
+
+
+def test_a_supplied_property_says_why_its_derived_fact_is_not_used(tmp_path):
+    env = load(make(tmp_path, cap=fact(value=5000), plan_cap="6300"))
+    assert "supplied graph has a value" in env.unfilled["plan_a.cap"]
+    assert "supplied graph has a value" in describe(env)["derived"]["slots"]["plan_a.cap"]["why"]
+
+
+def test_a_limit_or_approval_naming_a_fact_slot_is_refused(tmp_path):
+    with pytest.raises(ScenarioError, match=r"^scenarios.s.limits: 'plan_a.cap' is a derived fact, not a decision"):
+        load(make(tmp_path, parts=PARTS.replace('limits = ["carry"]', 'limits = ["plan_a.cap"]')))
+    with pytest.raises(ScenarioError, match=r"^scenarios.s.approvals: 'plan_a.cap' is a derived fact"):
+        load(make(tmp_path, parts=PARTS + 'approvals = ["plan_a.cap"]\n'))
+
+
+@pytest.mark.parametrize("admit", [["proposed"], ["rejected"]])
+def test_admit_derived_without_a_derived_table_is_refused(tmp_path, admit):
+    path = make(tmp_path, slots="", parts=PARTS.replace('limits = ["carry"]', ""))
+    with pytest.raises(ScenarioError, match=r"^--admit-derived: "):
+        load(path, admit=admit)

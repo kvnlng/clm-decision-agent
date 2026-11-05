@@ -440,8 +440,9 @@ type = "number"
 ```
 
 A slot's description must not hold a figure, or it gives away its own answer. A scenario calls a slot as it calls a
-supplied decision, and a limit may name one. A slot's name must not be a supplied decision's. Fact slots need the
-built-in graph.
+supplied decision, and a limit or approval may name a decision slot, never a fact. A slot's name must not be a
+supplied decision's. A decision slot's inputs and outputs are string, number, integer or boolean: a decision table
+cannot test or give a list. Fact slots need the built-in graph.
 
 ```
 uv run clm-derive run ENVIRONMENT COLLECTION [--backend claude|ollama] [--model NAME] [--as-of DATE] [--fresh]
@@ -528,7 +529,7 @@ flagged 3 of 11. Claude reading gemma4's layer caught both wrong tiers and flagg
 Claude. A person still approves every entry ([examples/handbook](../examples/handbook/README.md#a-second-reading)).
 
 `clm-server --admit-derived proposed,checked,approved` admits unapproved entries too, for testing only; `describe`
-says so. A rejected entry never decides: neither the file nor the flag can admit one. No tool of the decision server changes a status.
+says so. An environment without a `[derived]` table refuses the flag. A rejected entry never decides: neither the file nor the flag can admit one. No tool of the decision server changes a status.
 
 ## The MCP tools
 
