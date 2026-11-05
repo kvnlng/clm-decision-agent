@@ -259,6 +259,7 @@ source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "httpx" },
+    { name = "httpx2" },
     { name = "mcp" },
     { name = "numpy" },
     { name = "pyjwt", extra = ["crypto"] },
@@ -299,6 +300,7 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'agent'", specifier = ">=2.1.0,<3" },
     { name = "cryptography", specifier = ">=50.0.2" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "httpx2", specifier = ">=2.10.0" },
     { name = "huggingface-hub", marker = "extra == 'clm'" },
     { name = "langchain-core", marker = "extra == 'clm'", specifier = ">=1.6.6,<2" },
     { name = "langchain-ollama", marker = "extra == 'clm'", specifier = ">=1.1.0,<2" },
