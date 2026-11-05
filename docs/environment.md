@@ -654,7 +654,8 @@ offer (the scenario tool, or `rules`) is left out, as in the server's `answer_qu
 
 `--no-tools` asks the question alone, with no server and a short prompt of its own (answer the employee's question;
 say so when you do not know): the baseline of a model with no access to your data. Every figure in its answer that is
-not in the question is listed as one no tool returned.
+not in the question is listed as one no tool returned. A tool call the model makes up goes back to it as an error;
+the answer's JSON keeps it, but the decision record and the count leave it out.
 
 The question, answer, every call, the model and the time taken go as JSON to the environment's git-ignored `runs/`
 (for a URL, `runs/` in the current folder). `clm-new-environment` writes a `.gitignore` for it, so it stays out of git
