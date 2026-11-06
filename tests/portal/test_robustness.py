@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from clm_portal import layer, managed, web
-from conftest import post, sign_in
-from test_managed import FakePopen, managed_server
-from test_review import FACT, GOOD_DMN, layer_of
+from clm_decision.portal import layer, managed, web
+from .conftest import post, sign_in
+from .test_managed import FakePopen, managed_server
+from .test_review import FACT, GOOD_DMN, layer_of
 
 
 def test_a_server_that_does_not_answer_shows_so_on_every_page(client, server):
@@ -26,7 +26,7 @@ def test_a_server_that_does_not_answer_shows_so_on_every_page(client, server):
 
 def test_ask_keeps_the_question_when_the_server_does_not_answer(client, server, portal):
     seen: list[dict] = []
-    from test_chat import reply, scripted  # pylint: disable=import-outside-toplevel
+    from .test_chat import reply, scripted  # pylint: disable=import-outside-toplevel
     model = scripted([reply("Here.")], seen)
     portal.make_model = lambda *args: model
     token = sign_in(client)
@@ -75,9 +75,9 @@ def test_the_banner_needs_a_server_running_in_testing_mode(client, server):
     assert web.TESTING_BANNER not in client.get("/").text
 
 
-def test_the_portal_installs_the_neo4j_driver():
-    project = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())
-    main = next(item for item in project["project"]["dependencies"] if item.startswith("clm-decision-agent"))
+def test_the_dev_group_installs_the_extras_the_portal_needs():
+    project = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text())
+    main = next(item for item in project["dependency-groups"]["dev"] if item.startswith("clm-decision-agent"))
     assert {"documents", "agent", "neo4j"} <= {extra.strip() for extra in main[main.index("[") + 1:main.index("]")]
                                                 .split(",")}
 

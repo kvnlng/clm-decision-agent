@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 from mcp.server import MCPServer
 
-from clm_portal import managed
+from clm_decision.portal import managed
 
 
 class FakeProcess:
@@ -316,7 +316,7 @@ NEW_SITE = Path(__file__).parents[2] / "examples" / "new_site" / "environment.to
                     reason="needs clm-server and examples/new_site")
 async def test_the_portal_and_the_chat_reach_a_real_server_through_the_sdks_own_http_client(monkeypatch):
     from mcp import Client  # pylint: disable=import-outside-toplevel
-    from clm_portal import chat  # pylint: disable=import-outside-toplevel
+    from clm_decision.portal import chat  # pylint: disable=import-outside-toplevel
     server = managed.ManagedServer(NEW_SITE, wait=60)
     await server.start()
     try:
@@ -339,7 +339,7 @@ async def test_the_portal_and_the_chat_reach_a_real_server_through_the_sdks_own_
 async def test_the_portal_and_the_chat_give_the_sdk_its_own_http_client(monkeypatch):
     import httpx2  # pylint: disable=import-outside-toplevel
     from clm_decision import connection  # pylint: disable=import-outside-toplevel
-    from clm_portal import chat  # pylint: disable=import-outside-toplevel
+    from clm_decision.portal import chat  # pylint: disable=import-outside-toplevel
     seen = []
 
     @contextlib.asynccontextmanager

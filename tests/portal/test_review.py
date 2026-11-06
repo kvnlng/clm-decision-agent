@@ -8,8 +8,8 @@ import re
 import pytest
 from starlette.testclient import TestClient
 
-from clm_portal import layer, web
-from conftest import KEY, ORIGIN, FakeServer, dmn, post, sign_in, source
+from clm_decision.portal import layer, web
+from .conftest import KEY, ORIGIN, FakeServer, dmn, post, sign_in, source
 
 FACT = "k401_2026.match_cap"
 GOOD_DMN = dmn("carryover_limit", "limit", [("&gt;= 5", "10"), ("-", "5")])

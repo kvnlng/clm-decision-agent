@@ -11,10 +11,10 @@ import pytest
 from mcp.server import MCPServer
 from starlette.testclient import TestClient
 
-import clm_portal
-from clm_portal import managed, web
-from conftest import KEY, ORIGIN, FakeServer, csrf_of, post, sign_in
-from test_managed import FakePopen
+from clm_decision import portal as portal_cli
+from clm_decision.portal import managed, web
+from .conftest import KEY, ORIGIN, FakeServer, csrf_of, post, sign_in
+from .test_managed import FakePopen
 
 PAGES = ["/", "/ask", "/review", "/documents", "/jobs/current", "/passage?collection=handbook&id=hb-401k"]
 
@@ -145,7 +145,7 @@ def test_a_public_origin_is_kept_as_a_browser_sends_it(given, kept):
 def test_serve_refuses_a_public_origin_that_is_not_one(environment, monkeypatch, capsys, given):
     monkeypatch.setenv("CLM_PORTAL_KEY", KEY)
     ran = []
-    assert clm_portal.serve(serve_args(environment, "--public-origin", given), run=lambda *a, **k: ran.append(a)) == 2
+    assert portal_cli.serve(serve_args(environment, "--public-origin", given), run=lambda *a, **k: ran.append(a)) == 2
     err = capsys.readouterr().err
     assert "--public-origin" in err and len(err.strip().splitlines()) == 1 and not ran
 
@@ -153,44 +153,44 @@ def test_serve_refuses_a_public_origin_that_is_not_one(environment, monkeypatch,
 def test_serve_passes_the_public_origin_to_the_page(environment, monkeypatch):
     monkeypatch.setenv("CLM_PORTAL_KEY", KEY)
     apps = []
-    assert clm_portal.serve(serve_args(environment, "--public-origin", PUBLIC + "/"),
+    assert portal_cli.serve(serve_args(environment, "--public-origin", PUBLIC + "/"),
                             run=lambda app, **kwargs: apps.append(app)) == 0
     assert apps[0].public == PUBLIC and apps[0].hosts == {"127.0.0.1:8400", "localhost:8400", "portal.example"}
 
 
 def serve_args(environment, *more):
-    return clm_portal.parse(["serve", str(environment), *more])
+    return portal_cli.parse(["serve", str(environment), *more])
 
 
 def test_serve_refuses_to_start_without_a_key(environment, monkeypatch, capsys):
     monkeypatch.delenv("CLM_PORTAL_KEY", raising=False)
     ran = []
-    assert clm_portal.serve(serve_args(environment), run=lambda *a, **k: ran.append(a)) == 2
+    assert portal_cli.serve(serve_args(environment), run=lambda *a, **k: ran.append(a)) == 2
     assert "CLM_PORTAL_KEY" in capsys.readouterr().err and not ran
     monkeypatch.setenv("CLM_PORTAL_KEY", KEY)
     other = environment.parent / "rules" / "vesting.dmn"
-    assert clm_portal.serve(serve_args(other), run=lambda *a, **k: ran.append(a)) == 2
+    assert portal_cli.serve(serve_args(other), run=lambda *a, **k: ran.append(a)) == 2
     assert "not an environment" in capsys.readouterr().err and not ran
 
 
 def test_serve_refuses_a_short_key(environment, monkeypatch, capsys):
     ran = []
     monkeypatch.setenv("CLM_PORTAL_KEY", "x" * 15)
-    assert clm_portal.serve(serve_args(environment), run=lambda *a, **k: ran.append(a)) == 2
+    assert portal_cli.serve(serve_args(environment), run=lambda *a, **k: ran.append(a)) == 2
     err = capsys.readouterr().err
     assert "at least 16 characters" in err and "x" * 15 not in err and len(err.strip().splitlines()) == 1
     assert not ran
     monkeypatch.setenv("CLM_PORTAL_KEY", "x" * 16)
-    assert clm_portal.serve(serve_args(environment), run=lambda *a, **k: ran.append(a)) == 0 and ran
+    assert portal_cli.serve(serve_args(environment), run=lambda *a, **k: ran.append(a)) == 0 and ran
 
 
 def test_serve_listens_on_loopback_by_default(environment, monkeypatch, capsys):
     monkeypatch.setenv("CLM_PORTAL_KEY", KEY)
     ran = []
-    assert clm_portal.serve(serve_args(environment), run=lambda app, **kwargs: ran.append(kwargs)) == 0
+    assert portal_cli.serve(serve_args(environment), run=lambda app, **kwargs: ran.append(kwargs)) == 0
     assert ran[0]["host"] == "127.0.0.1" and ran[0]["port"] == 8400
     assert "warning" not in capsys.readouterr().err.lower()
-    assert clm_portal.serve(serve_args(environment, "--host", "0.0.0.0", "--port", "9000"),
+    assert portal_cli.serve(serve_args(environment, "--host", "0.0.0.0", "--port", "9000"),
                             run=lambda app, **kwargs: ran.append(kwargs)) == 0
     assert ran[1]["host"] == "0.0.0.0" and ran[1]["port"] == 9000
     err = capsys.readouterr().err

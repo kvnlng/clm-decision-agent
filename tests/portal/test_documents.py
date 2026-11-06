@@ -8,7 +8,7 @@ import anyio.to_thread
 import pytest
 from starlette.datastructures import UploadFile
 
-from conftest import post, sign_in
+from .conftest import post, sign_in
 
 
 def finished(client) -> dict:

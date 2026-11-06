@@ -7,9 +7,9 @@ import anyio
 import httpx
 import pytest
 
-from clm_portal import chat, web
-from conftest import KEY, ORIGIN, csrf_of, post, sign_in
-from test_chat import reply, scripted
+from clm_decision.portal import chat, web
+from .conftest import KEY, ORIGIN, csrf_of, post, sign_in
+from .test_chat import reply, scripted
 
 
 def test_ask_shows_every_call_and_result(client, portal):

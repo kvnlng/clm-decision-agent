@@ -50,6 +50,7 @@ clm-load-documents = "clm_decision.load_documents:main"
 clm-registry = "clm_decision.registry:main"
 clm-trace-report = "clm_decision.trace_report:main"
 clm-derive = "clm_decision.derive:main"
+clm-portal = "clm_decision.portal:main"
 
 [dependency-groups]
 # A checkout gets every extra, so `uv sync` and the tests have everything

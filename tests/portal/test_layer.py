@@ -1,7 +1,7 @@
 """Tests for the configuration as the portal reads it from the files, without loading the environment."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name,unsubscriptable-object
-from clm_portal import layer
+from clm_decision.portal import layer
 
 DESCRIBED = {"collections": {"handbook": {"built": {"built_at": "2026-11-01T09:30:00+00:00"}}}}
 

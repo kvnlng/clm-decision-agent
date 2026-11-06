@@ -16,7 +16,7 @@ about patient care out of scope.
 | [registry](registry.md) | Listing a deployment in an MCP registry |
 | [data handling](data-handling.md) | Where text goes; read before using real text |
 | [findings](findings.md) | What the benchmark traces showed |
-| [portal](../portal/README.md) | An admin page for a server, and a chat with a running one |
+| [portal](portal.md) | An admin page for a server, and a chat with a running one |
 
 ## Your environment, and the decisions over it
 
@@ -152,7 +152,7 @@ npx -y @modelcontextprotocol/inspector@2.13.0 --cli uv run clm-server examples/t
 
 ## Trying it in a chat
 
-With no MCP client of your own, the [portal](../portal/README.md)'s chat talks to a running server from the command
+With no MCP client of your own, the [portal](portal.md)'s chat talks to a running server from the command
 line through any OpenAI-style model or Claude, printing every call and result. Its commands are in the portal's
 README.
 

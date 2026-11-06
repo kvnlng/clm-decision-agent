@@ -1,8 +1,8 @@
 # The portal
 
 The portal is a local page for the person who administers a decision server, and a command-line chat with any
-running MCP server. It is not part of the `clm-decision-agent` package but depends on it by path, and runs from a
-checkout with [uv](https://docs.astral.sh/uv/) as `uv run --project portal clm-portal ...`:
+running MCP server. It is part of the `clm-decision-agent` package, as `clm_decision.portal`, and runs from a
+checkout with [uv](https://docs.astral.sh/uv/) as `uv run clm-portal ...`:
 
 | Command | Option | Default | |
 |---|---|---|---|
@@ -30,7 +30,7 @@ and the decision server has no tool that changes a status. There is one role: an
 ```bash
 export CLM_PORTAL_KEY=<a long random key>                              # not the key agents use
 set -a; . ./.postgres-local.env; set +a                                # if the environment has documents
-uv run --project portal clm-portal serve examples/handbook/environment.toml
+uv run clm-portal serve examples/handbook/environment.toml
 ```
 
 Open <http://127.0.0.1:8400> and sign in with the key and your name, which is recorded with every change and not
@@ -40,7 +40,7 @@ A wrong key waits half a second. Sessions last 12 hours in memory, so a restart 
 **Its own server.** The portal starts `clm-server ENVIRONMENT --http` on 127.0.0.1 at a free port with a key made at
 each start for that process alone, never port 8000 or `DECISION_SERVER_KEY`. It needs the environment's folder, so
 it runs on the server's machine. It passes no tool selection, but `clm-server` reads the file's `[serve]` table
-([environment.md](../docs/environment.md#serving-settings)), so Ask sees the agents' tools only. Without a
+([environment.md](environment.md#serving-settings)), so Ask sees the agents' tools only. Without a
 collection's `document_` tool, a cited passage on Review gives an error; without all of a collection's tools,
 Configuration and Documents say it is not offered rather than when it was built. **The agents' server is yours to
 restart** after approving changes: it reads the files at start.
@@ -49,7 +49,7 @@ restart** after approving changes: it reads the files at start.
 
 | Page | Shows | Changes |
 |---|---|---|
-| Configuration | Name, description, Inspector command ([getting started](../docs/getting-started.md#looking-inside-the-server)), every rule (supplied or derived: origin, status, owner, version, DMN rows, cited passages), information items, graph nodes and edges (Neo4j: named only), collections with build time, load errors; read from files, not the server | Nothing |
+| Configuration | Name, description, Inspector command ([getting started](getting-started.md#looking-inside-the-server)), every rule (supplied or derived: origin, status, owner, version, DMN rows, cited passages), information items, graph nodes and edges (Neo4j: named only), collections with build time, load errors; read from files, not the server | Nothing |
 | Ask | The chat in a page: the same models, every call and result; a dry run of all or named tools (an unknown name sends nothing); **Full results** past 1,500 characters; one conversation per session | **Testing** switches its own server to `--admit-derived proposed,checked,approved`, flagged on every page; off at start, offered only with `[derived]`, dropped if that server fails to start |
 | Review | Derived decisions, facts and conflicts, each with its cited passage (or quote), check, supplied value and graph row | Approve (after `clm-derive check` passes), reject or resolve, with name and note recorded. **Correct** a value or DMN table (inside `derived/`; it must load): the entry goes back to proposed and the check reruns |
 | Documents | Collections | Load or upload a `.jsonl` into the folder (safe name; overwrite only if ticked) via `clm-load-documents`; **Derive** runs `clm-derive run`, unavailable without `clm-derive` |
@@ -71,7 +71,7 @@ Give it no real sensitive text unless the model may see it. The starter model ne
 ollama pull granite4:micro                                            # the starter model, about 2.1 GB
 export DECISION_SERVER_KEY=<a long random key>
 uv run clm-server examples/tariff/environment.toml --http             # terminal 1: the server
-uv run --project portal clm-portal chat http://127.0.0.1:8000/mcp     # terminal 2: the chat
+uv run clm-portal chat http://127.0.0.1:8000/mcp     # terminal 2: the chat
 ```
 
 ```
@@ -104,5 +104,5 @@ real actions.
 
 ## Tests
 
-`uv run --project portal pytest portal/tests` runs against a stand-in server and model, with no network, key or
+`uv run pytest tests/portal` runs against a stand-in server and model, with no network, key or
 PostgreSQL.

@@ -20,7 +20,7 @@ from mcp import Client
 from mcp.server import MCPServer
 from starlette.testclient import TestClient
 
-from clm_portal import managed, web
+from clm_decision.portal import managed, web
 
 KEY = "test-portal-key-not-a-secret"
 SERVER_KEY = "test-server-key-not-a-secret"
