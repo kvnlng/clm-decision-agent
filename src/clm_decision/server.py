@@ -1,4 +1,5 @@
-"""The decision server: a scenario's decisions offered to other agents as MCP tools, over stdio or HTTP."""
+"""The decision server: a scenario's decisions offered to other agents as MCP tools, over stdio or HTTP; for an
+environment over HTTP, with the portal (clm_decision.portal) on a second port of the same process."""
 from __future__ import annotations
 
 import argparse
@@ -411,10 +412,74 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--admit-derived", metavar="STATUSES",
                         help="for testing only: admit derived rules and facts with these statuses, such as "
                              "proposed,checked,approved, not only approved ones; describe says so")
+    portal = parser.add_argument_group("portal", "with --http and an environment: the administrator's page, on a "
+                                                 "second port, signed in to with the key in CLM_PORTAL_KEY")
+    portal.add_argument("--portal", metavar="PORT", type=int, help="serve the portal on this port")
+    portal.add_argument("--portal-host", metavar="HOST", default="127.0.0.1",
+                        help="the portal's address (default 127.0.0.1; any other is plain HTTP)")
+    portal.add_argument("--portal-public-origin", metavar="URL",
+                        help="the address a TLS-terminating proxy serves the portal at, such as "
+                             "https://portal.example.org; a form may also come from it")
+    portal.add_argument("--ask-backend", choices=("openai", "claude"), default="openai",
+                        help="Ask's starting model, changeable on the page: openai-style (default) or claude")
+    portal.add_argument("--ask-model", help="Ask's starting model name (default: the chat's for the backend)")
+    portal.add_argument("--ask-model-url", metavar="URL",
+                        help="Ask's model's OpenAI-style address (default: Ollama on this computer)")
     return parser
 
 
-# pylint: disable-next=too-many-return-statements,too-many-branches
+def _portal_settings(args: argparse.Namespace) -> tuple[str, str | None]:
+    """The portal's sign-in key and public origin, checked before anything loads; ScenarioError saying what is
+    wrong, never the key. Warns when the portal listens beyond this computer."""
+    # pylint: disable=import-outside-toplevel
+    from .portal import LOOPBACK, MIN_KEY, PORTAL_KEY_ENV, web
+    if not args.http:
+        raise ScenarioError("--portal needs --http: the portal is served beside the server's HTTP port")
+    if not is_environment(args.scenario):
+        raise ScenarioError("--portal is for environments; a CLM scenario has no documents or derived rules to "
+                            "administer")
+    if args.portal == args.port:
+        raise ScenarioError(f"--portal {args.portal} is the server's own --port; give the portal another")
+    key = os.environ.get(PORTAL_KEY_ENV, "").strip()
+    if not key:
+        raise ScenarioError(f"set {PORTAL_KEY_ENV} to the key that signs in to the portal; it is not the key agents "
+                            "use")
+    if len(key) < MIN_KEY:
+        raise ScenarioError(f"{PORTAL_KEY_ENV} must be at least {MIN_KEY} characters; use a long random key")
+    try:
+        public = web.public_origin(args.portal_public_origin) if args.portal_public_origin else None
+    except ValueError as error:
+        raise ScenarioError(str(error).replace("--public-origin", "--portal-public-origin")) from error
+    if args.portal_host not in LOOPBACK:
+        print(f"warning: the portal listens on {args.portal_host}: it is plain HTTP, so its key and every page cross "
+              "the network unencrypted; put it behind TLS or keep it on 127.0.0.1", file=sys.stderr)
+    return key, public
+
+
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments,too-many-locals
+def _serve_with_portal(args: argparse.Namespace, server: MCPServer, admin: Admin, trace: tracing.TraceWriter | None,
+                       auth: oauth.OAuth | None, keys: KeySet | None, portal_key: str, public: str | None) -> int:
+    """Serve the agents' port and the portal's from one process until SIGINT or SIGTERM."""
+    # pylint: disable=import-outside-toplevel
+    from .checks import Checks
+    from .portal import live, managed, web
+    checks = Checks(server, trace, auth.verifier if auth else None)
+    shown = f"[{args.host}]" if ":" in args.host else args.host
+    portal = web.Portal(Path(args.scenario), live.LiveServer(server, admin, checks),
+                        managed.Jobs(withheld=(args.key_env,)),
+                        options={"backend": args.ask_backend, "model": args.ask_model, "model_url": args.ask_model_url},
+                        agents_url=args.resource_url or f"http://{shown}:{args.port}/mcp", keys=keys)
+    portal_app = web.create_app(portal, portal_key, args.portal_host, args.portal, public)
+    print(f"Serving MCP at http://{shown}:{args.port}/mcp"
+          + (f", taking tokens from {auth.settings.issuer_url}" if auth else "")
+          + f"; the portal at http://{args.portal_host}:{args.portal}/, signed in to with the key in CLM_PORTAL_KEY",
+          file=sys.stderr)
+    live.serve_both(http_app(server, keys, args.host, args.allowed_hosts), portal_app, (args.host, args.port),
+                    (args.portal_host, args.portal))
+    return 0
+
+
+# pylint: disable-next=too-many-return-statements,too-many-branches,too-many-locals
 def main(argv: list[str] | None = None) -> int:
     """Command-line entry point; returns the process exit code. Messages go to stderr: stdout is MCP's."""
     args = _parser().parse_args(argv)
@@ -447,6 +512,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.admit_derived and not is_environment(args.scenario):
             print("error: --admit-derived is for environments; a CLM scenario has no derived rules", file=sys.stderr)
             return 2
+        portal_key, public = _portal_settings(args) if args.portal is not None else (None, None)
         serve = serving.merged(serving.read(args.scenario), args.tools, args.exclude_tools, args.read_only)
         if serve.read_only and args.review:
             raise ScenarioError(NO_REVIEW)
@@ -473,6 +539,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args.http:
         server.run("stdio")
         return 0
+    if args.portal is not None:
+        return _serve_with_portal(args, server, admin, trace, auth, keys, portal_key, public)
     import uvicorn  # pylint: disable=import-outside-toplevel
     print(f"Serving MCP at http://{args.host}:{args.port}/mcp"
           + (f", taking tokens from {auth.settings.issuer_url}" if auth else ""), file=sys.stderr)

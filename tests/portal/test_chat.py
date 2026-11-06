@@ -10,7 +10,6 @@ import pytest
 from mcp import Client
 from mcp.server import MCPServer
 
-from clm_decision import portal as portal_cli
 from clm_decision.portal import chat as tc
 
 
@@ -203,10 +202,10 @@ async def test_the_key_goes_only_over_https_or_to_this_computer(monkeypatch, cap
     assert ("not sending the key" in capsys.readouterr().err) is not sent
 
 
-def test_chat_subcommand_takes_the_old_arguments():
-    args = portal_cli.parse(["chat", "http://server/mcp", "--backend", "claude", "--model", "m", "--model-url",
-                             "http://model/v1", "--dry-run", "open_ticket", "--dry-run", "--full"])
-    assert args.command == "chat" and args.url == "http://server/mcp" and args.backend == "claude"
+def test_clm_chat_takes_the_old_subcommands_arguments():
+    args = tc.parse(["http://server/mcp", "--backend", "claude", "--model", "m", "--model-url",
+                     "http://model/v1", "--dry-run", "open_ticket", "--dry-run", "--full"])
+    assert args.url == "http://server/mcp" and args.backend == "claude"
     assert args.model == "m" and args.model_url == "http://model/v1" and args.full
     assert args.dry_run == ["open_ticket", tc.ALL]
 

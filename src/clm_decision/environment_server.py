@@ -468,7 +468,7 @@ def reload(server: MCPServer, new: Environment) -> dict:
             offered, _ = serving.choose(offering.serve, [name for name, *_ in found])
         except BaseException:
             if new is not offering.holder.current:
-                new.close(keeping=offering.holder.current)
+                new.close(keeping=offering.holder.alive())
             raise
         offering.holder.swap(new)
         before = offering.offered

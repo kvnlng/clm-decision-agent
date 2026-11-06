@@ -1,20 +1,17 @@
-"""Tests for the page: sign-in, the CSRF, Origin and Host checks, the serve command and the Configuration page."""
+"""Tests for the page: sign-in, the CSRF, Origin and Host checks, the Configuration page and its Reload button."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import html
 import json
 import re
 import shlex
-from pathlib import Path
 
 import pytest
 from mcp.server import MCPServer
 from starlette.testclient import TestClient
 
-from clm_decision import portal as portal_cli
-from clm_decision.portal import managed, web
-from .conftest import KEY, ORIGIN, FakeServer, csrf_of, post, sign_in
-from .test_managed import FakePopen
+from clm_decision.portal import web
+from .conftest import KEY, ORIGIN, csrf_of, post, sign_in
 
 PAGES = ["/", "/ask", "/review", "/documents", "/jobs/current", "/passage?collection=handbook&id=hb-401k"]
 
@@ -140,64 +137,7 @@ def test_a_public_origin_is_kept_as_a_browser_sends_it(given, kept):
     assert web.public_origin(given) == kept
 
 
-@pytest.mark.parametrize("given", ["portal.example", "https://portal.example/portal", "ftp://portal.example",
-                                   "https://portal.example?x=1", "https://"])
-def test_serve_refuses_a_public_origin_that_is_not_one(environment, monkeypatch, capsys, given):
-    monkeypatch.setenv("CLM_PORTAL_KEY", KEY)
-    ran = []
-    assert portal_cli.serve(serve_args(environment, "--public-origin", given), run=lambda *a, **k: ran.append(a)) == 2
-    err = capsys.readouterr().err
-    assert "--public-origin" in err and len(err.strip().splitlines()) == 1 and not ran
-
-
-def test_serve_passes_the_public_origin_to_the_page(environment, monkeypatch):
-    monkeypatch.setenv("CLM_PORTAL_KEY", KEY)
-    apps = []
-    assert portal_cli.serve(serve_args(environment, "--public-origin", PUBLIC + "/"),
-                            run=lambda app, **kwargs: apps.append(app)) == 0
-    assert apps[0].public == PUBLIC and apps[0].hosts == {"127.0.0.1:8400", "localhost:8400", "portal.example"}
-
-
-def serve_args(environment, *more):
-    return portal_cli.parse(["serve", str(environment), *more])
-
-
-def test_serve_refuses_to_start_without_a_key(environment, monkeypatch, capsys):
-    monkeypatch.delenv("CLM_PORTAL_KEY", raising=False)
-    ran = []
-    assert portal_cli.serve(serve_args(environment), run=lambda *a, **k: ran.append(a)) == 2
-    assert "CLM_PORTAL_KEY" in capsys.readouterr().err and not ran
-    monkeypatch.setenv("CLM_PORTAL_KEY", KEY)
-    other = environment.parent / "rules" / "vesting.dmn"
-    assert portal_cli.serve(serve_args(other), run=lambda *a, **k: ran.append(a)) == 2
-    assert "not an environment" in capsys.readouterr().err and not ran
-
-
-def test_serve_refuses_a_short_key(environment, monkeypatch, capsys):
-    ran = []
-    monkeypatch.setenv("CLM_PORTAL_KEY", "x" * 15)
-    assert portal_cli.serve(serve_args(environment), run=lambda *a, **k: ran.append(a)) == 2
-    err = capsys.readouterr().err
-    assert "at least 16 characters" in err and "x" * 15 not in err and len(err.strip().splitlines()) == 1
-    assert not ran
-    monkeypatch.setenv("CLM_PORTAL_KEY", "x" * 16)
-    assert portal_cli.serve(serve_args(environment), run=lambda *a, **k: ran.append(a)) == 0 and ran
-
-
-def test_serve_listens_on_loopback_by_default(environment, monkeypatch, capsys):
-    monkeypatch.setenv("CLM_PORTAL_KEY", KEY)
-    ran = []
-    assert portal_cli.serve(serve_args(environment), run=lambda app, **kwargs: ran.append(kwargs)) == 0
-    assert ran[0]["host"] == "127.0.0.1" and ran[0]["port"] == 8400
-    assert "warning" not in capsys.readouterr().err.lower()
-    assert portal_cli.serve(serve_args(environment, "--host", "0.0.0.0", "--port", "9000"),
-                            run=lambda app, **kwargs: ran.append(kwargs)) == 0
-    assert ran[1]["host"] == "0.0.0.0" and ran[1]["port"] == 9000
-    err = capsys.readouterr().err
-    assert "warning" in err.lower() and "plain HTTP" in err and KEY not in err
-
-
-def test_configuration_shows_every_rule_and_graph_row_and_points_to_the_inspector(client, environment):
+def test_configuration_shows_every_rule_and_graph_row_and_points_to_the_inspector(client):
     sign_in(client)
     page = client.get("/").text
     for text in ("Tiny handbook", "A made-up handbook, for the portal", "years_of_service", "vesting",
@@ -207,17 +147,19 @@ def test_configuration_shows_every_rule_and_graph_row_and_points_to_the_inspecto
                  "Full years of service.", "handbook", "2026-11-01T09:30:00+00:00", "handbook.jsonl"):
         assert text in page, text
     assert "/passage?collection=handbook&amp;id=hb-401k" in page
-    assert f"npx -y @modelcontextprotocol/inspector@2.13.0 uv run clm-server {environment}" in page
+    assert ("npx -y @modelcontextprotocol/inspector@2.13.0 --cli http://127.0.0.1:8000/mcp --transport http"
+            in page) and "uv run clm-server" not in page and "Bearer &lt;an agents' key&gt;" in page
     assert "Resource templates" not in page and "document_handbook" not in page
     assert "/passage?collection=handbook&amp;id=hb-leave&amp;passage=%282%29" in page
 
 
-def test_the_inspector_command_quotes_a_path_with_a_space():
-    environment = Path("/Users/someone/My Envs/handbook/environment.toml")
+def test_the_inspector_command_names_the_running_agents_url():
     found = {"description": "", "errors": [], "rules": [], "information": [], "collections": [],
              "graph": {"note": None, "nodes": None, "edges": None}}
-    command = re.search(r"<pre>(npx [^<]*)</pre>", web.configuration_body(found, environment)).group(1)
-    assert shlex.split(html.unescape(command))[-1] == str(environment)
+    url = "https://decisions.example.org/mcp"
+    command = re.search(r"<pre>(npx [^<]*)</pre>", web.configuration_body(found, url)).group(1)
+    words = shlex.split(html.unescape(command).replace("\\\n", " "))
+    assert words[words.index("--cli") + 1] == url and "/reload" not in web.configuration_body(found, url)
 
 
 def test_supplied_and_derived_rules_are_labelled_with_origin_and_status(client):
@@ -290,43 +232,28 @@ def test_a_passage_is_read_through_the_portals_server(client):
     assert client.get("/passage", params={"collection": "nope", "id": "x"}).status_code == 404
 
 
-def test_a_server_that_failed_to_start_shows_its_error_and_the_files(environment, portal, monkeypatch):
-    monkeypatch.setattr(web, "WRONG_KEY_WAIT", 0.01)
-    portal.server = FakeServer(error="error: environment.functions: cannot import 'tiny_functions'")
-    with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400), base_url=ORIGIN) as client:
-        sign_in(client)
-        page = client.get("/").text
-        assert "cannot import &#x27;tiny_functions&#x27;" in page and "not running" in page
-        assert "carryover_limit" in page and "k401_2026" in page and "&gt;= 4" in page
-        passage = client.get("/passage", params={"collection": "handbook", "id": "hb-401k"}).text
-        assert "not running" in passage
-    assert environment.is_file()
-
-
-class EchoesItsKey(FakePopen):
-    """A clm-server that prints the key it was given, then exits: the worst its error output could do."""
-
-    def __call__(self, argv, *, env, stderr, **kwargs):
-        self.stderr = f"error: cannot start with the key {env[managed.SERVER_KEY_ENV]}\n"
-        return super().__call__(argv, env=env, stderr=stderr, **kwargs)
+def test_a_failed_reload_shows_its_error_and_the_files(client, server):
+    token = sign_in(client)
+    server.failing = "the last reload failed: environment.functions: cannot import 'tiny_functions'"
+    page = post(client, "/reload", token).text
+    assert "cannot import &#x27;tiny_functions&#x27;" in page and "Load errors" in page
+    assert "carryover_limit" in page and "k401_2026" in page and "&gt;= 4" in page
+    passage = client.get("/passage", params={"collection": "handbook", "id": "hb-401k"}).text
+    assert "as stored" in passage
 
 
 @pytest.mark.parametrize("path", PAGES + ["/sign-in"])
-def test_the_keys_never_appear_on_a_page(environment, portal, path, monkeypatch):
+def test_the_keys_never_appear_on_a_page(portal, path, monkeypatch):
     monkeypatch.setattr(web, "WRONG_KEY_WAIT", 0.01)
     monkeypatch.setenv("CLM_PORTAL_KEY", KEY)
+    monkeypatch.setenv("DECISION_SERVER_KEY", "the-agents-key-not-a-secret")
     monkeypatch.setenv("LLM_API_KEY", "the-model-key-not-a-secret")
-    popen = EchoesItsKey(code=2)
-    portal.server = managed.ManagedServer(environment, popen=popen, connect=lambda url, key: None, wait=0.5,
-                                          find=lambda name: Path("/stand-in/bin") / name)
+    keys = (KEY, "the-agents-key-not-a-secret", "the-model-key-not-a-secret")
     with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400), base_url=ORIGIN) as client:
-        server_key = popen.started[0].env[managed.SERVER_KEY_ENV]
-        keys = (KEY, server_key, "the-model-key-not-a-secret")
-        assert len(server_key) >= 32 and server_key in popen.stderr
         assert not any(key in client.get("/sign-in").text for key in keys)
         wrong = client.post("/sign-in", data={"key": KEY + "x", "name": "K"}, headers={"Origin": ORIGIN}).text
         assert not any(key in wrong for key in keys)
         signed = client.post("/sign-in", data={"key": KEY, "name": "Kevin"}, headers={"Origin": ORIGIN}).text
-        assert "cannot start with the key ***" in signed and not any(key in signed for key in keys)
+        assert not any(key in signed for key in keys)
         page = client.get(path).text
         assert not any(key in page for key in keys)

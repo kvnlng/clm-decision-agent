@@ -29,6 +29,12 @@ class Holder:
         with self._lock:
             return self._current
 
+    def alive(self) -> list[Environment]:
+        """The environments a call holds or can still take: the current one and the retired ones still in use. An
+        environment built beside the server's, sharing what they share, is closed keeping these."""
+        with self._lock:
+            return self._alive()
+
     def _alive(self) -> list[Environment]:
         """The environments a call holds or can still take: the current one and the retired ones still in use.
         Called with the lock held."""

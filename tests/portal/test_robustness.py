@@ -1,42 +1,47 @@
-"""Tests for what can go wrong around the page: a server that does not answer or did not start in testing mode, a
-derived layer with wrongly typed fields, a correction that fails half way, and what the portal installs."""
+"""Tests for what can go wrong around the page: a reload that fails, a derived layer with wrongly typed fields, a
+correction that fails half way, and what the portal installs."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import asyncio
 import json
 import tomllib
 from pathlib import Path
 
 import pytest
 
-from clm_decision.portal import layer, managed, web
+from clm_decision.portal import layer, live, web
 from .conftest import post, sign_in
-from .test_managed import FakePopen, managed_server
 from .test_review import FACT, GOOD_DMN, layer_of
 
 
-def test_a_server_that_does_not_answer_shows_so_on_every_page(client, server):
-    sign_in(client)
-    server.unreachable = True
+def test_a_failed_reload_is_shown_on_configuration_and_every_page_still_serves(client, server):
+    token = sign_in(client)
+    server.failing = "the last reload failed: environment.functions: cannot import 'x'"
+    response = post(client, "/reload", token)
+    assert response.status_code == 409 and "cannot import &#x27;x&#x27;" in response.text
     for path in ("/", "/passage?collection=handbook&id=hb-401k", "/review", "/documents", "/ask"):
-        response = client.get(path)
-        assert response.status_code == 200, path
-    assert "not answering" in client.get("/").text
-    assert "not answering" in client.get("/passage?collection=handbook&id=hb-401k").text
+        assert client.get(path).status_code == 200, path
+    assert "The passage (1) of hb-401k, as stored." in client.get("/passage?collection=handbook&id=hb-401k").text
+    server.failing = None
+    portal = client.app.app.state.portal
+    asyncio.run(portal.jobs.lock.acquire())     # as while a job runs
+    busy = post(client, "/reload", token)
+    portal.jobs.lock.release()
+    assert busy.status_code == 409 and "wait for it to finish" in busy.text
+    assert post(client, "/reload", token, follow_redirects=False).status_code == 303
+    assert "cannot import" not in client.get("/").text and server.reloads == [False, False]
 
 
-def test_ask_keeps_the_question_when_the_server_does_not_answer(client, server, portal):
+def test_ask_still_answers_after_a_failed_reload(client, server, portal):
     seen: list[dict] = []
     from .test_chat import reply, scripted  # pylint: disable=import-outside-toplevel
-    model = scripted([reply("Here.")], seen)
-    portal.make_model = lambda *args: model
+    portal.make_model = lambda *args: scripted([reply("Here.")], seen)
     token = sign_in(client)
-    server.unreachable = True
+    server.failing = "the last reload failed: a broken file"
+    post(client, "/reload", token)
     response = post(client, "/ask", token, {"question": "Still there?", "backend": "openai"})
-    assert response.status_code == 200 and "not answering" in response.text
-    assert ">Still there?</textarea>" in response.text
-    server.unreachable = False
-    post(client, "/ask", token, {"question": "Now?", "backend": "openai"})
-    assert [item["content"] for item in seen[0]["messages"] if item["role"] == "user"] == ["Now?"]
+    assert response.status_code == 200 and "Here." in response.text
+    assert "decision_vesting" in [tool["function"]["name"] for tool in seen[0]["tools"]]
 
 
 def mistyped(environment) -> None:
@@ -62,17 +67,12 @@ def test_wrongly_typed_derived_fields_are_load_errors_and_the_rest_is_shown(clie
     assert any("carryover_limit.dmn" in error for error in found["errors"])
 
 
-@pytest.mark.anyio
-async def test_a_server_that_fails_in_testing_mode_is_not_called_testing(tmp_path):
-    server = managed_server(FakePopen(code=2, stderr="error: unrecognized arguments: --admit-derived\n"), tmp_path)
-    await server.start(testing=True)
-    assert server.error and not server.testing
-
-
-def test_the_banner_needs_a_server_running_in_testing_mode(client, server):
+def test_the_banner_shows_only_while_testing(client, server):
     sign_in(client)
-    server.testing, server.error = True, "error: it stopped"
+    server.error = "the last reload failed: it stopped"
     assert web.TESTING_BANNER not in client.get("/").text
+    server.testing = True
+    assert web.TESTING_BANNER in client.get("/").text
 
 
 def test_the_dev_group_installs_the_extras_the_portal_needs():
@@ -100,12 +100,12 @@ def test_a_failed_table_replace_leaves_the_entry_proposed_with_no_check(environm
     assert not list(table.parent.glob(".*.partial"))
 
 
-def test_a_correction_restarts_the_portals_server(client, server, runner):
+def test_a_correction_reloads_the_server(client, server, runner):
     token = sign_in(client)
     runner.release.clear()
     try:
         assert post(client, f"/review/facts/{FACT}/correct", token, {"value": "6300"}).status_code == 200
-        assert len(server.starts) == 2
+        assert server.reloads == [False]
     finally:
         runner.release.set()
 
@@ -116,4 +116,4 @@ def anyio_backend():
 
 
 def test_tool_failed_covers_a_server_that_is_not_answering():
-    assert issubclass(managed.NotAnswering, managed.ToolFailed)
+    assert issubclass(live.NotAnswering, live.ToolFailed)

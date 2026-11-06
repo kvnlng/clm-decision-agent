@@ -35,7 +35,8 @@ def test_review_shows_each_entry_beside_its_passage_and_check(client):
 
 def test_without_the_server_the_quote_is_shown(portal, monkeypatch):
     monkeypatch.setattr(web, "WRONG_KEY_WAIT", 0.01)
-    portal.server = FakeServer(error="error: cannot reach PostgreSQL")
+    portal.server = FakeServer()
+    portal.server.running = False
     with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400), base_url=ORIGIN) as client:
         sign_in(client)
         page = client.get("/review").text
@@ -48,7 +49,7 @@ def test_approve_records_the_signed_in_name(client, environment, server):
     assert response.status_code == 200 and "approved" in response.text
     entry = layer_of(environment)["decisions"]["carryover_limit"]
     assert entry["status"] == "approved" and entry["decided_by"] == "Kevin" and entry["note"] == "matches the handbook"
-    assert entry["decided_at"] and len(server.starts) == 2
+    assert entry["decided_at"] and server.reloads == [False]
 
 
 def test_a_failed_check_cannot_be_approved(client, environment):

@@ -557,3 +557,84 @@ def test_key_flags_are_checked(write_scenario, tmp_path, monkeypatch, capsys):
     assert server.main([str(write_scenario()), "--http", "--key-file", str(key_file(tmp_path, "too-short"))]) == 2
     err = capsys.readouterr().err
     assert "keys.txt line 1" in err and "too-short" not in err
+
+
+PORTAL_KEY = "a-portal-key-of-enough-length"
+
+
+@pytest.fixture
+def portal_started(monkeypatch):
+    """What serve_both was given, in place of serving it."""
+    from clm_decision.portal import live  # pylint: disable=import-outside-toplevel
+    started: list[tuple] = []
+    monkeypatch.setattr(live, "serve_both", lambda *args: started.append(args))
+    monkeypatch.setenv("DECISION_SERVER_KEY", "the-agents-key")
+    monkeypatch.setenv("CLM_PORTAL_KEY", PORTAL_KEY)
+    return started
+
+
+def test_portal_refused_for_scenario(write_scenario, portal_started, monkeypatch, capsys):
+    monkeypatch.setattr(server, "load", lambda path: pytest.fail("CLM was loaded"))
+    assert server.main([str(write_scenario()), "--http", "--portal", "8400"]) == 2
+    assert "--portal is for environments" in capsys.readouterr().err and not portal_started
+
+
+def test_portal_needs_http(write_environment, portal_started, capsys):
+    path = write_environment()
+    assert server.main([str(path), "--portal", "8400"]) == 2
+    assert "--portal needs --http" in capsys.readouterr().err and not portal_started
+    assert server.main([str(path), "--http", "--portal", "8000"]) == 2
+    assert "is the server's own --port" in capsys.readouterr().err and not portal_started
+
+
+def test_portal_needs_key(write_environment, portal_started, monkeypatch, capsys):
+    argv = [str(write_environment()), "--http", "--portal", "8400"]
+    monkeypatch.delenv("CLM_PORTAL_KEY")
+    assert server.main(argv) == 2
+    assert "set CLM_PORTAL_KEY" in capsys.readouterr().err and not portal_started
+    monkeypatch.setenv("CLM_PORTAL_KEY", "x" * 15)
+    assert server.main(argv) == 2
+    err = capsys.readouterr().err
+    assert "at least 16 characters" in err and "x" * 15 not in err and len(err.strip().splitlines()) == 1
+    monkeypatch.setenv("CLM_PORTAL_KEY", "x" * 16)
+    assert server.main(argv) == 0 and portal_started
+
+
+def test_the_portal_is_served_beside_the_agents_port(write_environment, portal_started, capsys):
+    path = write_environment()
+    assert server.main([str(path), "--http", "--port", "8001", "--portal", "8401", "--ask-backend", "claude",
+                        "--ask-model", "m", "--ask-model-url", "http://model/v1"]) == 0
+    agents_app, portal_app, agents, portal = portal_started[0]
+    assert agents == ("127.0.0.1", 8001) and portal == ("127.0.0.1", 8401) and agents_app is not portal_app
+    found = portal_app.portal
+    assert found.environment == path and found.agents_url == "http://127.0.0.1:8001/mcp"
+    assert found.options == {"backend": "claude", "model": "m", "model_url": "http://model/v1"}
+    assert found.server.checks is found.server.server.offering.checks and found.server.admin is not None
+    assert found.keys.ids() and found.jobs.withheld == ("DECISION_SERVER_KEY",)
+    assert portal_app.hosts == {"127.0.0.1:8401", "localhost:8401"}
+    err = capsys.readouterr().err
+    assert "the portal at http://127.0.0.1:8401/" in err and "warning" not in err.lower() and PORTAL_KEY not in err
+
+
+def test_the_portal_beyond_loopback_is_warned_about(write_environment, portal_started, capsys):
+    assert server.main([str(write_environment()), "--http", "--portal", "8400", "--portal-host", "0.0.0.0"]) == 0
+    err = capsys.readouterr().err
+    assert "warning" in err.lower() and "plain HTTP" in err and PORTAL_KEY not in err
+    assert portal_started[0][3] == ("0.0.0.0", 8400)
+
+
+@pytest.mark.parametrize("given", ["portal.example", "https://portal.example/portal", "ftp://portal.example",
+                                   "https://portal.example?x=1", "https://"])
+def test_a_portal_public_origin_that_is_not_one_is_refused(write_environment, portal_started, capsys, given):
+    assert server.main([str(write_environment()), "--http", "--portal", "8400", "--portal-public-origin",
+                        given]) == 2
+    err = capsys.readouterr().err
+    assert "--portal-public-origin" in err and len(err.strip().splitlines()) == 1 and not portal_started
+
+
+def test_the_portal_public_origin_reaches_the_page(write_environment, portal_started):
+    assert server.main([str(write_environment()), "--http", "--portal", "8400", "--portal-public-origin",
+                        "https://portal.example/"]) == 0
+    portal_app = portal_started[0][1]
+    assert portal_app.public == "https://portal.example"
+    assert portal_app.hosts == {"127.0.0.1:8400", "localhost:8400", "portal.example"}

@@ -1,4 +1,4 @@
-"""A tiny environment on disk, a stand-in for the portal's server, and a signed-in test client of the page.
+"""A tiny environment on disk, a stand-in for the server agents use, and a signed-in test client of the page.
 
 The environment has a built-in graph, one supplied DMN decision citing a document, and a derived layer with one
 checked decision, one fact whose check failed and one open conflict. The stand-in server answers `describe` and
@@ -14,16 +14,14 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 
-import httpx
 import pytest
 from mcp import Client
 from mcp.server import MCPServer
 from starlette.testclient import TestClient
 
-from clm_decision.portal import managed, web
+from clm_decision.portal import live, managed, web
 
 KEY = "test-portal-key-not-a-secret"
-SERVER_KEY = "test-server-key-not-a-secret"
 ORIGIN = "http://127.0.0.1:8400"
 
 ENVIRONMENT = """\
@@ -144,47 +142,28 @@ def stand_in() -> MCPServer:
     return server
 
 
-class Unreachable:
-    """A client of a server that is restarting: opening it fails as the MCP client does, with an exception group
-    around httpx's ConnectError."""
+class FakeServer:
+    """The server agents use, in memory: it reloads and turns testing on and off as told, failing a reload with
+    `failing`, and serves the stand-in. Its call is the real LiveServer's, over the stand-in."""
 
-    async def __aenter__(self):
-        raise ExceptionGroup("unhandled errors in a TaskGroup", [httpx.ConnectError("All connection attempts failed")])
+    call = live.LiveServer.call
+    running = True
+    checks = None
 
-    async def __aexit__(self, *_):
-        return False
-
-
-class FakeServer:  # pylint: disable=too-many-instance-attributes
-    """The portal's server, in memory: it starts, restarts and fails as told, and serves the stand-in. Its tools and
-    call are the real ManagedServer's, over the stand-in; with `unreachable` set it is running but not answering."""
-
-    tools = managed.ManagedServer.tools
-    call = managed.ManagedServer.call
-
-    def __init__(self, error: str | None = None):
+    def __init__(self, failing: str | None = None):
         self.server = stand_in()
-        self.testing, self.error, self.failing, self.unreachable = False, None, error, False
-        self.starts: list[bool] = []
-        self.url, self._key = "http://127.0.0.1:59999/mcp", SERVER_KEY
+        self.testing, self.error, self.failing = False, None, failing
+        self.reloads: list[bool] = []       # whether testing was on at each reload
 
-    @property
-    def running(self) -> bool:
-        return self.error is None and bool(self.starts)
-
-    async def start(self, testing: bool = False) -> None:
+    async def reload(self) -> None:
         self.error = self.failing
-        self.testing = testing and self.error is None
-        self.starts.append(testing)
+        self.reloads.append(self.testing)
 
-    async def restart(self, testing: bool | None = None) -> None:
-        await self.start(self.testing if testing is None else testing)
-
-    def stop(self) -> None:
-        pass
+    async def set_testing(self, on: bool) -> None:
+        self.testing = on
 
     def client(self):
-        return Unreachable() if self.unreachable else Client(self.server)
+        return Client(self.server)
 
 
 def recorder(code: int = 0, output: str = "done\n"):

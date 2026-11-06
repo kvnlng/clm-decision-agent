@@ -1,9 +1,11 @@
 """The portal's page: sign-in, then Configuration, Ask, Review and Documents, as plain HTML from Python.
 
-Every request must carry the bound address in its Host header, which stops DNS rebinding. Every POST must come from
-the portal's own origin and, once signed in, carry the session's CSRF token. Sessions are held in memory, so a
-restart signs everyone out.
+The page runs in the same process as the server agents use (live.py) and reads it directly. Every request must carry
+the bound address in its Host header, which stops DNS rebinding. Every POST must come from the portal's own origin
+and, once signed in, carry the session's CSRF token. Sessions are held in memory, so a restart signs everyone out.
 """
+# The pages are plain HTML from Python, one module, as the rest of the portal is
+# pylint: disable=too-many-lines
 from __future__ import annotations
 
 import asyncio
@@ -32,7 +34,8 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import chat, layer
-from .managed import Busy, Jobs, NotAnswering, ToolFailed, answering, script
+from .live import NotAnswering, ToolFailed, answering
+from .managed import Busy, Jobs, script, scrub
 
 COOKIE = "clm_portal_session"
 SESSION_SECONDS = 12 * 60 * 60
@@ -42,9 +45,12 @@ SIGN_IN_MAX_BODY = 16 * 1024    # a key and a name; read before the key is check
 STATIC = Path(__file__).parent / "static"
 INSPECTOR = "@modelcontextprotocol/inspector@2.13.0"
 OPEN_PATHS = ("/sign-in",)
-OPERATOR_NOTE = ("The portal restarts its own server after every change. The server agents use reads the files at "
-                 "start: its operator restarts it, or redeploys from git, to pick up approved changes.")
-TESTING_BANNER = "Testing: unapproved derived rules are deciding."
+OPERATOR_NOTE = ("A change here takes effect at once: the server agents use reloads its files after every approval, "
+                 "rejection and successful job, with no restart. The files are the record: commit them to git to "
+                 "keep a change.")
+TESTING_BANNER = ("Testing: Ask is talking to a testing server, where unapproved derived rules decide. The server "
+                  "agents use is not: it admits only what its file admits.")
+CHECK_SECONDS = 60      # how often the portal runs the server's checks
 BACKENDS = ("openai", "claude")
 STILL_ASKING = "A question is still being answered; reload Ask to see its answer, then try again."
 
@@ -60,12 +66,17 @@ class Session:
     asking: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
 
-class Portal:  # pylint: disable=too-few-public-methods
-    """What the page works on: the environment file, the portal's server, its jobs and the signed-in sessions."""
+class Portal:  # pylint: disable=too-few-public-methods,too-many-instance-attributes
+    """What the page works on: the environment file, the server agents use (a live.LiveServer), its jobs and the
+    signed-in sessions. `agents_url` is where agents reach the server, and `keys` the keys they may send (a
+    server.KeySet, or None under OAuth)."""
 
-    def __init__(self, environment: Path, server, jobs: Jobs, find=script, options: dict | None = None):
+    # pylint: disable-next=too-many-arguments
+    def __init__(self, environment: Path, server, jobs: Jobs, find=script, options: dict | None = None, *,
+                 agents_url: str = "http://127.0.0.1:8000/mcp", keys=None):
         self.environment, self.server, self.jobs, self.find = Path(environment), server, jobs, find
         self.options = options or {}
+        self.agents_url, self.keys = agents_url, keys
         self.sessions: dict[str, Session] = {}
         self.make_model = self._model
 
@@ -134,7 +145,7 @@ def table(columns: list[str], rows: list[list[str]]) -> str:
 
 
 def passage_link(collection: str | None, document: str, passage: str | None = None) -> str:
-    """A link to a cited passage, read through the portal's server."""
+    """A link to a cited passage, read through the server."""
     if not collection:
         return esc(document if passage is None else f"{document} {passage}")
     query = {"collection": collection, "id": document, **({"passage": passage} if passage else {})}
@@ -193,15 +204,22 @@ def _rule(rule: dict) -> str:
     return f'<section class="rule">{body}</section>'
 
 
-def configuration_body(found: dict, environment: Path) -> str:
-    """The Configuration page's sections."""
+def configuration_body(found: dict, agents_url: str, session: Session | None = None) -> str:
+    """The Configuration page's sections, with the Reload button for a signed-in session."""
     parts = [f'<p>{esc(found["description"])}</p>']
     if found["errors"]:
         items = "".join(f"<li><pre>{esc(error)}</pre></li>" for error in found["errors"])
         parts.append(f'<section class="errors"><h2>Load errors</h2><ul>{items}</ul></section>')
-    parts.append('<h2>Tools, resources and prompts</h2><p>The MCP Inspector shows what this server offers and calls '
-                 'one tool at a time (docs/getting-started.md, "Looking inside the server"):</p>'
-                 f'<pre>npx -y {INSPECTOR} uv run clm-server {esc(shlex.quote(str(environment)))}</pre>')
+    if session is not None:
+        parts.append(f'<form method="post" action="/reload" class="inline">{csrf_field(session)}'
+                     '<button data-confirm="Reload the server agents use from its files?">Reload</button></form>'
+                     '<p class="muted">Reload reads the environment\'s files again and serves them at once; calls '
+                     'already running finish with what they started with.</p>')
+    parts.append('<h2>Tools, resources and prompts</h2><p>The MCP Inspector shows what the server agents use offers '
+                 'and calls one tool at a time (docs/getting-started.md, "Looking inside the server"). It reaches '
+                 f'the running server at {esc(agents_url)} with one of the agents\' keys:</p>'
+                 f'<pre>npx -y {INSPECTOR} --cli {esc(shlex.quote(agents_url))} --transport http \\\n'
+                 '    --header "Authorization: Bearer &lt;an agents\' key&gt;" --method tools/list</pre>')
     parts.append("<h2>Rules</h2>" + ("".join(_rule(rule) for rule in found["rules"]) or "<p>No rules.</p>"))
     if found["information"]:
         parts.append("<h2>Information</h2>" + table(
@@ -241,20 +259,36 @@ def built_text(built: dict | None, left_out: bool = False, tools_off: bool = Fal
 async def server_view(portal: Portal) -> tuple[dict | None, str | None]:
     """The server's describe, or the reason it is not available."""
     if not portal.server.running:
-        return None, portal.server.error or "The portal's server is not running."
+        return None, portal.server.error or "The server is not running."
     try:
         described = await portal.server.call("describe", {})
     except (ToolFailed, OSError, RuntimeError) as error:
-        return None, f"The portal's server did not answer: {error}"
+        return None, f"The server did not answer: {error}"
     return described, None
 
 
-async def configuration_page(request: Request) -> Response:
-    """GET /: the whole configuration, read only."""
+async def configuration_page(request: Request, status: int = 200, message: str = "") -> Response:
+    """GET /: the whole configuration, read only, with why the last reload failed, if it did, and `message` as an
+    error above it."""
     portal, session = request.app.state.portal, request.state.session
     described, error = await server_view(portal)
-    found = layer.configuration(portal.environment, described, error)
-    return page(portal, session, found["name"], configuration_body(found, portal.environment))
+    found = layer.configuration(portal.environment, described, error or portal.server.error)
+    shown = f'<p class="failed">{esc(message)}</p>' if message else ""
+    return page(portal, session, found["name"], shown + configuration_body(found, portal.agents_url, session),
+                status=status)
+
+
+async def reload_action(request: Request) -> Response:
+    """POST /reload: reload the server agents use from its files."""
+    portal = request.app.state.portal
+    try:
+        async with changing(portal):
+            await portal.server.reload()
+    except Busy as error:
+        return await configuration_page(request, 409, str(error))
+    if portal.server.error:
+        return await configuration_page(request, 409)
+    return RedirectResponse("/", status_code=303)
 
 
 def collections(portal: Portal) -> dict:
@@ -266,7 +300,7 @@ def collections(portal: Portal) -> dict:
 
 
 async def passage_page(request: Request) -> Response:
-    """GET /passage: a cited passage, read through the portal's server."""
+    """GET /passage: a cited passage, read through the server."""
     portal, session = request.app.state.portal, request.state.session
     name, ident = request.query_params.get("collection", ""), request.query_params.get("id", "")
     label = request.query_params.get("passage") or None
@@ -279,7 +313,7 @@ async def passage_page(request: Request) -> Response:
 async def read_passage(portal: Portal, name: str, ident: str, label: str | None) -> str:
     """A passage as HTML, or why it cannot be shown."""
     if not portal.server.running:
-        return '<p class="muted">The portal\'s server is not running, so the passage cannot be read.</p>'
+        return '<p class="muted">The server is not running, so the passage cannot be read.</p>'
     try:
         found = await portal.server.call(f"document_{name}", {"id": ident, **({"passage": label} if label else {})})
     except (ToolFailed, OSError, RuntimeError) as error:
@@ -435,8 +469,9 @@ async def review_action(request: Request) -> Response:
         async with changing(portal):
             if action != "correct":
                 layer.decide(portal.environment, kind, name, DONE[action], by=session.name, note=note)
-                await portal.server.restart()
-                return await review_page(request, f"{name} {DONE[action]}.")
+                await portal.server.reload()
+                return await review_page(request, f"{name} {DONE[action]}." + reloaded(portal),
+                                         failed=bool(portal.server.error))
             if kind == "facts":
                 try:
                     value = json.loads(str(form.get("value", "")))
@@ -445,15 +480,21 @@ async def review_action(request: Request) -> Response:
                 layer.correct_fact(portal.environment, name, value, by=session.name, note=note)
             else:
                 layer.correct_decision(portal.environment, name, str(form.get("dmn", "")), by=session.name, note=note)
-            await portal.server.restart()
+            await portal.server.reload()
     except Busy as error:
         return await review_page(request, str(error), 409)
     except layer.Refused as error:
         return await review_page(request, str(error), 409 if action == "approve" else 400)
     job = await portal.jobs.start("clm-derive check", ["clm-derive", "check", str(portal.environment)],
-                                  on_success=portal.server.restart)
+                                  on_success=portal.server.reload)
     return await review_page(request, f"{name} corrected: it is proposed until clm-derive check passes it"
                                       + ("" if job.running else f"; {job.output}") + ".", failed=not job.running)
+
+
+def reloaded(portal: Portal) -> str:
+    """Nothing when the last reload succeeded; otherwise that the server did not take the change, and why."""
+    error = portal.server.error
+    return f" The server agents use did not take it: {error}" if error else ""
 
 
 def make_model(backend: str, model: str | None, url: str | None, http: httpx.AsyncClient, key: str | None = None):
@@ -514,8 +555,9 @@ def ask_body(portal: Portal, session: Session, message: str = "", draft: str = "
     testing = portal.server.testing
     held, full = conversation.get("controls") or ("", False)
     return (f'{f"<p class=failed>{esc(message)}</p>" if message else ""}'
-            '<p>Questions go to the model you choose, with the tools of the portal\'s own server. Every call and '
-            'result is shown. Tools run for real unless dry run holds them back.</p>'
+            '<p>Questions go to the model you choose, with the tools of the server agents use, or of the testing '
+            'server while testing is on. Every call and result is shown. Tools run for real unless dry run holds them '
+            'back.</p>'
             f'{shown or "<p class=muted>No questions yet.</p>"}'
             f'<form method="post" action="/ask" class="stack">{csrf_field(session)}'
             f'<label>Question <textarea name="question" required>{esc(draft)}</textarea></label>'
@@ -538,11 +580,15 @@ def ask_body(portal: Portal, session: Session, message: str = "", draft: str = "
 
 
 def testing_form(session: Session, testing: bool) -> str:
-    """The switch that restarts the portal's server with every derived status admitted, or without."""
+    """The switch that points Ask at a private testing server, where unapproved derived rules decide, or back at the
+    server agents use. It takes effect at once, and the agents' server never changes."""
+    confirm = "Point Ask back at the server agents use?" if testing else (
+        "Point Ask at a private testing server where unapproved derived rules decide? The server agents use does "
+        "not change.")
     return (f'<form method="post" action="/ask/testing" class="inline">{csrf_field(session)}'
             f'<input type="hidden" name="on" value="{"0" if testing else "1"}">'
-            f'<button data-confirm="Restart the portal\'s server{" without" if testing else " with"} unapproved '
-            f'derived rules?">{"Turn testing off" if testing else "Testing: let unapproved derived rules decide"}'
+            f'<button data-confirm="{esc(confirm)}">'
+            f'{"Turn testing off" if testing else "Testing: let unapproved derived rules decide, in Ask only"}'
             '</button></form>')
 
 
@@ -565,7 +611,7 @@ async def ask_page(request: Request) -> Response:
     if not question:
         return page(portal, session, "Ask", ask_body(portal, session, "Type a question."), status=400)
     if not portal.server.running:
-        return page(portal, session, "Ask", ask_body(portal, session, "The portal's server is not running: "
+        return page(portal, session, "Ask", ask_body(portal, session, "The server is not running: "
                                                      f"{portal.server.error or 'see Configuration'}"), status=409)
     # Refused rather than queued, as changing() does: a queued double-click would run the same tools twice
     if session.asking.locked():
@@ -628,7 +674,7 @@ async def ask_clear(request: Request) -> Response:
 
 
 async def ask_testing(request: Request) -> Response:
-    """POST /ask/testing: restart the portal's server admitting every derived status, or not."""
+    """POST /ask/testing: point Ask at a testing server admitting every derived status but rejected, or back."""
     portal, session = request.app.state.portal, request.state.session
     form = await request.form()
     if form.get("on") == "1" and not has_derived(portal):
@@ -636,9 +682,12 @@ async def ask_testing(request: Request) -> Response:
                                                      "table, so there are no derived rules to admit"), status=400)
     try:
         async with changing(portal):
-            await portal.server.restart(testing=form.get("on") == "1")
+            await portal.server.set_testing(form.get("on") == "1")
     except Busy as error:
         return page(portal, session, "Ask", ask_body(portal, session, str(error)), status=409)
+    except Exception as error:  # pylint: disable=broad-exception-caught  # whatever stops the load, shown on the page
+        return page(portal, session, "Ask", ask_body(portal, session, f"Testing could not start: {scrub(str(error))}"),
+                    status=409)
     return RedirectResponse("/ask", status_code=303)
 
 
@@ -710,7 +759,7 @@ async def _start(request: Request, name: str, argv: list[str], prepare=None) -> 
     """Start a job; `prepare`, such as saving an upload, runs only once the job holds the lock."""
     portal = request.app.state.portal
     try:
-        job = await portal.jobs.start(name, argv, on_success=portal.server.restart, prepare=prepare)
+        job = await portal.jobs.start(name, argv, on_success=portal.server.reload, prepare=prepare)
     except Busy as error:
         return await documents_page(request, str(error), 409)
     except OSError as error:
@@ -953,7 +1002,8 @@ def public_origin(text: str) -> str:
 def routes() -> list:
     """Every route of the page."""
     return [Route("/sign-in", sign_in, methods=["GET", "POST"]), Route("/sign-out", sign_out, methods=["POST"]),
-            Route("/", configuration_page), Route("/passage", passage_page), Route("/review", review_page),
+            Route("/", configuration_page), Route("/reload", reload_action, methods=["POST"]),
+            Route("/passage", passage_page), Route("/review", review_page),
             # A derived fact's name holds its graph node's id, which may hold "/": the name is the rest of the path
             Route("/review/{kind}/{name:path}/{action}", review_action, methods=["POST"]),
             Route("/ask", ask_page, methods=["GET", "POST"]), Route("/ask/clear", ask_clear, methods=["POST"]),
@@ -963,16 +1013,30 @@ def routes() -> list:
             Mount("/static", StaticFiles(directory=STATIC), name="static")]
 
 
+async def run_checks(checks) -> None:
+    """Run the server's checks now and every CHECK_SECONDS, until cancelled; a run that fails waits for the next."""
+    while True:
+        try:
+            await checks.run()
+        except Exception:  # pylint: disable=broad-exception-caught  # each check records its own failure
+            pass
+        await asyncio.sleep(CHECK_SECONDS)
+
+
 def create_app(portal: Portal, key: str, host: str, port: int, public: str | None = None):
-    """The page, behind its checks; it starts the portal's server with it and stops it after. `public` is the
+    """The page, behind its checks; while it runs, so do the server's checks, every CHECK_SECONDS. `public` is the
     origin a TLS-terminating proxy serves it at, if any, as public_origin() keeps it."""
     @contextlib.asynccontextmanager
     async def lifespan(_app):
-        await portal.server.start()
+        checks = getattr(portal.server, "checks", None)
+        timer = asyncio.create_task(run_checks(checks)) if checks is not None else None
         try:
             yield
         finally:
-            portal.server.stop()
+            if timer is not None:
+                timer.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await timer
     app = Starlette(routes=routes(), lifespan=lifespan)
     app.state.portal, app.state.key = portal, key
     app.state.secure = bool(public and public.startswith("https://"))     # behind TLS, never send it in clear

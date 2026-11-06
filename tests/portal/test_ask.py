@@ -160,7 +160,6 @@ async def test_a_second_question_while_one_is_answered_is_refused_and_the_conver
         return await answer(messages, tools)
     model.turn = turn
     portal.make_model = lambda *args: model
-    await portal.server.start()
     app = web.create_app(portal, KEY, "127.0.0.1", 8400)
     origin = {"Origin": ORIGIN}
     with anyio.fail_after(5):
@@ -214,17 +213,17 @@ def anyio_backend():
     return "asyncio"
 
 
-def test_testing_mode_restarts_the_server_and_every_page_says_so(client, server, environment):
+def test_testing_mode_turns_on_without_a_reload_and_every_page_says_so(client, server, environment):
     with environment.open("a") as file:
         file.write("\n[derived]\n")
     token = sign_in(client)
     assert web.TESTING_BANNER not in client.get("/").text
     post(client, "/ask/testing", token, {"on": "1"})
-    assert server.starts == [False, True] and server.testing
+    assert server.testing and not server.reloads
     for path in ("/", "/ask", "/review", "/documents"):
         assert web.TESTING_BANNER in client.get(path).text, path
     post(client, "/ask/testing", token, {"on": "0"})
-    assert server.starts[-1] is False and web.TESTING_BANNER not in client.get("/ask").text
+    assert not server.testing and web.TESTING_BANNER not in client.get("/ask").text
 
 
 def test_without_a_derived_table_there_is_no_testing_mode(client, server):
@@ -232,4 +231,4 @@ def test_without_a_derived_table_there_is_no_testing_mode(client, server):
     assert "/ask/testing" not in client.get("/ask").text
     response = post(client, "/ask/testing", token, {"on": "1"})
     assert response.status_code == 400 and "has no [derived] table" in response.text
-    assert server.starts == [False] and not server.testing
+    assert not server.testing

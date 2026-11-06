@@ -1,6 +1,6 @@
-"""The portal's command-line chat with a running MCP server, through any model.
+"""A command-line chat with a running MCP server, through any model; the portal's Ask uses its loop.
 
-    clm-portal chat URL [--model M] [--model-url U] [--backend openai|claude] [--dry-run [TOOL]] [--full]
+    clm-chat URL [--model M] [--model-url U] [--backend openai|claude] [--dry-run [TOOL]] [--full]
 
 It connects to a running server, offers a model the server's tools, and prints every call and result, so you can see
 where an answer came from and judge it yourself. Tools run for real unless --dry-run holds them back.
@@ -24,14 +24,13 @@ from mcp import Client, MCPError
 
 from clm_decision.connection import http_streams, key_for, withheld
 
-from .managed import READ_TIMEOUT
-
 KEY_ENV = "DECISION_SERVER_KEY"
 LLM_KEY_ENV = "LLM_API_KEY"
 STARTER_MODEL = "granite4:micro"
 OLLAMA_V1 = "http://127.0.0.1:11434/v1"
 CLAUDE_MODEL = "claude-opus-5-5"
 MAX_TURNS = 20
+READ_TIMEOUT = 600      # seconds to wait for a tool's reply, which a local model can take a while to give
 SHOWN = 1500
 ALL = "*"
 SYSTEM = "Answer using the tools you are given. If they cannot answer, say so plainly rather than guessing."
@@ -320,7 +319,7 @@ async def _run(args, refused: list[int]) -> int:
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
-    """The chat's arguments, as `clm-portal chat` takes them."""
+    """The chat's arguments, as `clm-chat` takes them."""
     parser.add_argument("url", help="the server's URL, such as http://127.0.0.1:8000/mcp")
     parser.add_argument("--backend", choices=("openai", "claude"), default="openai",
                         help="openai: anything that speaks the OpenAI chat API (default); claude: the Anthropic API")
@@ -329,6 +328,14 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dry-run", nargs="?", const=ALL, action="append", metavar="TOOL",
                         help="show this tool's calls without sending them; with no name, every tool's; repeatable")
     parser.add_argument("--full", action="store_true", help="print results in full")
+
+
+def parse(argv: list[str] | None = None) -> argparse.Namespace:
+    """The command line."""
+    parser = argparse.ArgumentParser(prog="clm-chat", description="Chat with a running MCP server through a model, "
+                                                                  "every tool call and result printed.")
+    add_arguments(parser)
+    return parser.parse_args(argv)
 
 
 def run(args: argparse.Namespace) -> int:
@@ -350,3 +357,12 @@ def run(args: argparse.Namespace) -> int:
         else:
             print(f"error: cannot connect to {args.url}: {_cause(error)}", file=sys.stderr)
         return 2
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Command-line entry point; returns the process exit code."""
+    return run(parse(argv))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

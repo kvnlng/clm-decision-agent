@@ -31,7 +31,7 @@ def test_load_runs_clm_load_documents_with_the_contract_arguments(client, enviro
     assert finished(client)["returncode"] == 0
     assert runner.seen == [["/stand-in/bin/clm-load-documents", str(environment), "handbook",
                             str(environment.parent / "handbook.jsonl")]]
-    assert len(server.starts) == 2
+    assert server.reloads == [False]
     assert post(client, "/documents/load", token, {"collection": "handbook", "file": "../x.jsonl"}).status_code == 400
     assert post(client, "/documents/load", token, {"collection": "nope", "file": "handbook.jsonl"}).status_code == 400
 
