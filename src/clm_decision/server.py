@@ -23,6 +23,7 @@ from . import decision
 from . import oauth
 from . import serving
 from . import tracing
+from .admin import Admin
 from .clm_common import ClmError
 from .evaluate import agreement as replay_agreement
 from .dataset import labels
@@ -388,7 +389,8 @@ def main(argv: list[str] | None = None) -> int:
         trace = tracing.TraceWriter(args.trace, text=args.trace_text, read_only=serve.read_only) \
             if args.trace else None
         if isinstance(loaded, Environment):
-            server = build_environment_server(loaded, trace=trace, auth=auth, serve=serve)
+            server = build_environment_server(loaded, trace=trace, auth=auth, serve=serve,
+                                              admin=Admin.for_environment(Path(args.scenario)))
         else:
             scenario, router, tools = loaded
             server = build_server(scenario, router, tools, args.review, trace=trace, auth=auth, serve=serve)

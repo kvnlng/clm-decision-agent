@@ -24,6 +24,8 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 
 # The record of the call being traced on this thread, or None
 _CURRENT: contextvars.ContextVar[dict | None] = contextvars.ContextVar("trace", default=None)
+# Which agents' key the request came with (the first 8 hex of its hash), set where the key is checked; never the key
+CALLER_KEY_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("caller_key_id", default=None)
 
 
 def active() -> bool:
@@ -115,10 +117,13 @@ class TraceWriter:
             record["text"] = request_text
         if self.read_only:
             record["read_only"] = True
-        # With OAuth, who called; never the token itself
-        access = get_access_token()
-        if access is not None:
-            record["caller"] = {"client_id": access.client_id, "subject": access.subject}
+        # With OAuth, who called, and which agents' key; never the token or the key itself
+        access, key_id = get_access_token(), CALLER_KEY_ID.get()
+        caller = {"client_id": access.client_id, "subject": access.subject} if access is not None else {}
+        if key_id is not None:
+            caller["key_id"] = key_id
+        if caller:
+            record["caller"] = caller
         token = _CURRENT.set(record)
         start = time.perf_counter()
         try:

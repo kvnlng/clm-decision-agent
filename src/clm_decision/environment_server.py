@@ -20,12 +20,14 @@ from typing import Any, Callable
 
 import pydantic_core
 from mcp.server import MCPServer
+from mcp.server.caching import CacheHint
 from mcp.server.mcpserver.exceptions import ResourceError, ToolError
 from mcp.server.mcpserver.prompts import Prompt
 from mcp.server.mcpserver.resources import FunctionResource
 from mcp.shared.exceptions import MCPError
 from mcp.types import INVALID_PARAMS, ToolAnnotations
 
+from . import admin as admin_module
 from . import derived
 from . import engine
 from . import instructions
@@ -61,10 +63,12 @@ def _branch_counts(result: dict) -> dict:
 @dataclass
 class _Offering:
     """What a server built here serves, kept on it as `server.offering` so reload can choose again: the holder, how
-    tools are chosen, the trace, the tools offered now and the resources and templates added, which stay."""
+    tools are chosen, the trace, the operator's disabled tools, the tools offered now and the resources and templates
+    added, which stay."""
     holder: Holder
     serve: Serve
     trace: tracing.TraceWriter | None
+    admin: admin_module.Admin | None = None
     offered: list[str] = field(default_factory=list)
     resources: set[str] = field(default_factory=set)
     reloading: threading.Lock = field(default_factory=threading.Lock)     # one reload at a time; calls never wait
@@ -84,6 +88,8 @@ def _tool(run: Callable[[Environment, dict], dict], signature: inspect.Signature
                 with offering.holder.use() as env:
                     result = run(env, arguments)
                 record["outcome"] = {"ok": True, **_branch_counts(result)}
+                if trace:
+                    record["result_size_bytes"] = len(json.dumps(result, default=str).encode())
                 return result
             except (engine.StepError, DmnError, ScenarioError) as error:
                 raise ToolError(str(error)) from error
@@ -95,12 +101,14 @@ def _tool(run: Callable[[Environment, dict], dict], signature: inspect.Signature
     return tool
 
 
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def describe(env: Environment, offered: list[str] | None = None, left_out: list[str] | None = None,
-             read_only: bool = False) -> dict:
+             read_only: bool = False, disabled: list[str] | None = None) -> dict:
     """What the environment offers, for an agent to read first. With `offered`, only the parts whose tools are
-    offered, and in left_out the tools the operator left out; read_only says the server is read-only."""
+    offered, in left_out the tools the operator left out and in disabled those offered but disabled, whose parts are
+    not shown; read_only says the server is read-only."""
     def shown(tool: str) -> bool:
-        return offered is None or tool in offered
+        return (offered is None or tool in offered) and tool not in (disabled or ())
     collections = {name: collection for name, collection in env.collections.items() if env.document_tools
                    and any(shown(f"{kind}_{name}") for kind in ("search", "document", "cites", "cited_by"))}
     return {"name": env.name, "description": env.description,
@@ -123,7 +131,8 @@ def describe(env: Environment, offered: list[str] | None = None, left_out: list[
                                 for name, collection in collections.items()}} if collections else {}),
             **({"topics": env.topics()} if env.topics() and shown("rules") else {}),
             **({"derived": _derived(env)} if env.slots else {}),
-            **({"left_out": left_out} if left_out else {}), **({"read_only": True} if read_only else {})}
+            **({"left_out": left_out} if left_out else {}), **({"disabled": disabled} if disabled else {}),
+            **({"read_only": True} if read_only else {})}
 
 
 def _derived(env: Environment) -> dict:
@@ -269,7 +278,8 @@ def _chosen(env: Environment, offering: _Offering) -> tuple[list[str], list[str]
 
 def _described(offering: _Offering, env: Environment) -> dict:
     offered, left_out = _chosen(env, offering)
-    return describe(env, offered, left_out, offering.serve.read_only)
+    held = offering.admin.disabled if offering.admin else frozenset()
+    return describe(env, offered, left_out, offering.serve.read_only, [name for name in offered if name in held])
 
 
 def _readable(env: Environment, offering: _Offering) -> list[str]:
@@ -390,17 +400,23 @@ def _offer_tools(server: MCPServer, offering: _Offering, found: list, offered: l
 
 # pylint: disable-next=too-many-arguments
 def build_environment_server(env_or_holder: Environment | Holder, trace: tracing.TraceWriter | None = None,
-                             auth: oauth.OAuth | None = None, serve: Serve = Serve(), **server_options) -> MCPServer:
+                             auth: oauth.OAuth | None = None, serve: Serve = Serve(),
+                             admin: admin_module.Admin | None = None, **server_options) -> MCPServer:
     """The MCP server for an environment, or for the one a Holder holds, which `reload` can replace while it runs;
     server.holder is the holder. With `trace`, each call is written to the trace; with `auth`, HTTP callers need a
     token; `server_options` go to MCPServer. `serve` chooses the tools offered (serving.py; an unknown one is a
     ScenarioError); every tool here only reads, so read-only changes nothing but describe. A tool that writes, if
-    one is ever added, must not run when serve.read_only is set."""
+    one is ever added, must not run when serve.read_only is set. With `admin`, the tools it disables are hidden and
+    refused (admin.py), tools/list carries a 30-second ttlMs and a change to the list is announced on admin.bus."""
     holder = env_or_holder if isinstance(env_or_holder, Holder) else Holder(env_or_holder)
     env = holder.current
-    offering = _Offering(holder, serve, trace)
+    offering = _Offering(holder, serve, trace, admin)
     found = _found(env, offering)
     offered, _ = serving.choose(serve, [name for name, *_ in found])
+    if admin:
+        admin.known = lambda: set(offering.offered)
+        server_options = {"middleware": [admin_module.middleware(admin)], "subscriptions": admin.bus,
+                          "cache_hints": {"tools/list": CacheHint(ttl_ms=30_000)}, **server_options}
     server = MCPServer("decision-server", instructions=_instructions(env), log_level="WARNING",
                        **oauth.server_options(auth), **server_options)
     server.holder = holder
@@ -416,7 +432,8 @@ def reload(server: MCPServer, new: Environment) -> dict:
     closed when the last ends. The tools are chosen again; each offered one is registered again, so it has the new
     environment's description and parameters, and the result names the tools added and removed. When the choice
     fails for `new` (a tool named in --tools is gone), the old environment keeps serving, `new` is closed and the
-    error is raised."""
+    error is raised. When the tools change on a server with an admin, the change is announced on admin.bus from the
+    running event loop."""
     offering: _Offering = server.offering
     with offering.reloading:
         try:
@@ -430,6 +447,8 @@ def reload(server: MCPServer, new: Environment) -> dict:
         before = offering.offered
         _offer_tools(server, offering, found, offered)
         _add_resources(server, offering, new, offered)
+    if offering.admin and offered != before:
+        offering.admin.announce()
     return {"added": [name for name in offered if name not in before],
             "removed": [name for name in before if name not in offered]}
 
