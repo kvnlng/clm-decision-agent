@@ -380,16 +380,18 @@ neither the file nor the flag can admit one. No tool of the decision server chan
 | Resource | Is |
 |---|---|
 | `environment://describe` | What `describe` returns |
-| `rule://<name>` | What `rule` returns for one rule, supplied or derived, with its origin and status; one listed per rule, and a template; offered when the `rule` tool is |
+| `rule://<name>` | What `rule` returns for one rule, supplied or derived, with its origin and status; a template, not listed one by one; offered when the `rule` tool is |
 | `document://<collection>/<id>`, `document://<collection>/<id>/<passage>` | A document or one passage, as `document_<collection>` returns it |
 | `derived://in-force` | The derived entries in force: each rule and fact admitted to decide, with its origin, status and source (the quote only with the document tools), when `environment.toml` has a `[derived]` table |
 
+The server's instructions name only `describe`, and the environment's name as it was at start-up; a reload that
+renames the environment does not change them.
+
 Each resource is read by the code its tool uses, as JSON, and fails with the tool's one-line reason; every read is
 traced like a tool call, named by its URI, failed reads too. Documents are offered only when the document tools are
-(`tools = true`). The templates always work, and each document is also listed when its collection holds at most 100
-documents at server start and the tools could read it. A collection that holds nothing, or was loaded with another
-embedding model, is not listed, and reading one of its documents gives the tools' reason; the document template's
-description says so. The whole derived layer, with entries not in force, is not a resource: the portal
+(`tools = true`). Rules and documents are resource templates only and are not listed one by one; a client reads
+one by name. A collection that holds nothing, or was loaded with another embedding model, gives the tools' reason when
+a document of it is read; the document template's description says so. The whole derived layer, with entries not in force, is not a resource: the portal
 reads it from the files. Graph facts stay `query_` tools, since a query takes parameters and runs your code. Outside
 information reaches the model only through tools: most MCP clients, and the reference agent, let a model fetch only
 that way. Resources are for clients and people that browse or attach data.

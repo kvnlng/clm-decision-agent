@@ -16,7 +16,7 @@ about patient care out of scope.
 | [registry](registry.md) | Listing a deployment in an MCP registry |
 | [data handling](data-handling.md) | Where text goes; read before using real text |
 | [findings](findings.md) | What the benchmark traces showed |
-| [portal](portal.md) | An admin page for a server, and a chat with a running one |
+| [portal](portal.md) | An admin page `clm-server` serves, and a chat with a running server |
 
 ## Your environment, and the decisions over it
 
@@ -126,14 +126,13 @@ npx -y @modelcontextprotocol/inspector@2.13.0 uv run clm-server examples/tariff/
 2. **Connect** with the server card's switch; on **Failed**, the **Console** has the one-line reason.
 3. **Tools** lists every tool (18 for tariff): run `query_components_of` with `PX` to see the JSON an agent gets,
    the rows and the steps behind them.
-4. **Resources** are read without a tool: `describe`, and each rule and document when there are any; **Templates**
-   read one, such as a passage.
+4. **Resources** are read without a tool: `describe`; **Templates** read one rule, document or passage by name.
 5. **Prompts** has `answer_question`, the reference agent's instructions with your environment's description.
 6. **After an edit**, switch off and on to restart from your files; the **Protocol** panel times every message.
 
 **An environment with documents** needs its PostgreSQL password, and the Inspector passes on none of your shell's
 variables, so start the server through a shell that reads your file; the password never reaches the command or the
-page. The handbook shows 22 tools, 19 resources (`describe`, 5 rules, 13 documents), 3 templates and 1 prompt:
+page. The handbook shows 22 tools, 1 resource (`describe`), 3 templates and 1 prompt:
 
 ```bash
 npx -y @modelcontextprotocol/inspector@2.13.0 sh -c \
@@ -152,9 +151,9 @@ npx -y @modelcontextprotocol/inspector@2.13.0 --cli uv run clm-server examples/t
 
 ## Trying it in a chat
 
-With no MCP client of your own, the [portal](portal.md)'s chat talks to a running server from the command
-line through any OpenAI-style model or Claude, printing every call and result. Its commands are in the portal's
-README.
+With no MCP client of your own, the [portal](portal.md)'s chat, `clm-chat`, talks to a running server from the
+command line through any OpenAI-style model or Claude, printing every call and result. Its options are in the
+portal's page.
 
 ## Connecting agents
 

@@ -69,7 +69,7 @@ These are small tests, said plainly in [docs/findings.md](docs/findings.md):
 | `src/clm_decision/` | The framework and the `clm-*` commands |
 | `examples/` | Six worked examples ([the list](examples/README.md)) |
 | `docs/` | The guides, starting with [getting started](docs/getting-started.md) |
-| `src/clm_decision/portal/` | [The portal](docs/portal.md): a local page for administering a server, and a command-line chat (`clm-portal`) |
+| `src/clm_decision/portal/` | [The portal](docs/portal.md): a page `clm-server` serves for administering a server, and a command-line chat (`clm-chat`) |
 | `tests/` | `uv run pytest`; `uv run pytest -m slow` also loads CLM (`CLM_TEST_BACKEND=torch` for torch) |
 
 ## Licence

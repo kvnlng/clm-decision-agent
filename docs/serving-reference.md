@@ -16,7 +16,7 @@ provider steps, the exact rules of tool selection, the trace format and the meas
 | `--allowed-host HOST` | this computer | A host that callers name (`decisions.example.org`), accepted on any port, as is a page served over https from it. `127.0.0.1`, `localhost` and `[::1]` are still accepted. Repeatable |
 | `--auth key\|oauth` | `key` | A shared key, or JWTs from an OIDC issuer (next section) |
 | `--key-env VAR` | `DECISION_SERVER_KEY` | The variable holding the key |
-| `--key-file FILE` | none | With `--auth key`: a file of more keys, one per line (`#` comments; each at least 16 characters), valid besides the variable's key. Each key is known by an id, the first 8 hex characters of its SHA-256 |
+| `--key-file FILE` | none | With `--auth key`: a file of more keys, one per line (`#` comments; each at least 16 characters), valid besides the variable's key. Each key is known by an id, the first 8 hex characters of its SHA-256. To rotate by overlap: add a line, reload or restart, move the agents over, then retire the old key |
 | `--issuer URL` | `DECISION_OAUTH_ISSUER` | The token issuer; HTTPS except on this computer |
 | `--audience NAME` | `DECISION_OAUTH_AUDIENCE`, else the resource URL | The audience tokens must name |
 | `--scope NAME` | `DECISION_OAUTH_SCOPES`, space-separated | A scope or app role tokens must carry; repeatable |
@@ -26,6 +26,10 @@ provider steps, the exact rules of tool selection, the trace format and the meas
 | `--read-only` | off | Run no acting tool ([below](#choosing-the-tools-and-a-read-only-server)) |
 | `--trace FILE` | off | One JSON line per call, saying where the time went |
 | `--trace-text` | off | Add each request's text to the trace |
+| `--portal PORT` | off | Serve the [portal](portal.md) on this port, from the same process; needs `--http`, an environment file and `CLM_PORTAL_KEY` |
+| `--portal-host HOST`, `--portal-public-origin URL` | `127.0.0.1`, none | The portal's address, and the address a TLS-ending proxy serves it at |
+| `--ask-backend`, `--ask-model`, `--ask-model-url` | `openai`, the chat's | The portal's Ask starting model |
+| `--admit-derived STATUSES` | none | For testing only: also admit derived entries with these statuses |
 
 ### With tokens from your identity provider (OAuth)
 
@@ -80,8 +84,8 @@ The overview has the commands and what `--read-only` means
   excluded. A name or pattern that matches no tool stops start-up with one line naming it and the tools there are.
   For a scenario, `correct` and `agreement` count as its tools with or without `--review`, so a file can exclude them.
 - What is not offered is gone everywhere: from the tool list; from `describe`, which lists it under `left_out` so an
-  agent does not look for it; from the resources that stand for the same thing (rule resources with the `rule` tool,
-  a collection's documents with `document_COLLECTION`); and from the `answer_question` prompt and the server's
+  agent does not look for it; from the resource templates that stand for the same thing (`rule://{name}` with the `rule` tool,
+  `document://` with `document_COLLECTION`); and from the `answer_question` prompt and the server's
   instructions where they name a tool. A scenario of an environment still runs every query, decision and
   calculation it needs: the selection limits what the agent can call, not what runs inside a scenario.
 - The same settings can live in the scenario or environment file as a `[serve]` table
@@ -107,7 +111,10 @@ Each trace line gives a call's time and how much went on waiting for CLM, encodi
 tools and matching stored corrections, with the texts and tokens encoded and how many came from the cache. An
 environment's line counts the queries, decisions, calculations and judgements with each kind's time; a `scenario_`
 tool's line gives the branches kept, rejected and failed, and the best. A resource read is traced the same way, named by
-its URI (`rule://vesting`), with the caller and whether it failed.
+its URI (`rule://vesting`), with the caller and whether it failed. The line's `caller` holds the OAuth client and
+subject, or, with a shared key, `key_id`, the key's 8-character id, never the key. An environment server's line also
+has `result_size_bytes`, the size of what the call returned. The server's own health checks (the portal's Server page)
+are marked `synthetic: true`.
 
 The report gives each kind of call (`decide`, `check_call`, ...) a table of stages, with each stage's mean, median,
 95th and 99th percentile in milliseconds and its share of the time. Then come the cache hit rate, texts and tokens

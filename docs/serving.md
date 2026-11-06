@@ -44,6 +44,10 @@ For Claude Code: `claude mcp add --transport http decisions http://127.0.0.1:800
 
 Every flag, with its default: [the flags](serving-reference.md#the-flags).
 
+To change a key without a break, list more keys in a file (`--key-file`), add the new one, reload or restart, move
+the agents over, then remove the old one. For an environment, `--portal PORT` also serves the
+[portal](portal.md), the administrator's page, from the same process.
+
 ### With tokens from your identity provider (OAuth)
 
 Instead of a shared key, the server takes OAuth JWTs from any OIDC issuer (Keycloak, Entra ID and others), checked for
@@ -118,7 +122,7 @@ private network link, allowed by your workspace's outbound network rules.
 
 ```bash
 uv run clm-server my_scenario.toml --http --trace calls.jsonl
-uv run clm-trace-report calls.jsonl
+uv run clm-trace-report calls.jsonl [--since 2h] [--until 15m]
 ```
 
 What a trace line and the report hold: [reference](serving-reference.md#where-the-time-goes). Decisions a second on a

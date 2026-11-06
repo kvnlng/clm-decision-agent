@@ -281,7 +281,7 @@ read_only = true                                               # describe says s
 
 `clm-server --tools`, `--exclude-tools` and `--read-only` replace the file's setting, never add to it. What is left
 out is gone from the tool list, `describe` (which names it under `left_out`), the matching resources and the prompt;
-the scenarios still run every part they need. The portal's own server reads the same file, so it honours `[serve]`.
+the scenarios still run every part they need. The portal reads the same file, so it honours `[serve]`.
 
 ## Resources, a prompt and context
 

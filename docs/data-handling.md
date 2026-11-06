@@ -14,7 +14,7 @@ The text a caller sends with `decide`, `decide_many`, `check_call` or `correct` 
 | `correct`, in review mode only | The corrections record, `<scenario>.corrections.jsonl` | Owner only (below) | `[record]`; no review mode |
 | Corrections you train from | The examples file and the trained heads, unencrypted | Whoever reads those files | See below |
 | Only with `--trace FILE --trace-text` | The trace: a scenario's `decide`, `decide_many`, `check_call` and `correct` text; an environment's tool-call arguments. Without `--trace-text` the trace has no text | Owner only, like the record | Leave `--trace-text` off |
-| The server's key, on every HTTP call | As a bearer header. `clm-agent` and `clm-portal chat` send it over HTTPS or to this computer only, never over plain http to another host | Key holders: they can call the server and see its decisions and what its informing tools return | Keep the key secret; HTTPS when callers are elsewhere ([serving.md](serving.md)) |
+| The server's key, on every HTTP call | As a bearer header. `clm-agent` and `clm-chat` send it over HTTPS or to this computer only, never over plain http to another host | Key holders: they can call the server and see its decisions and what its informing tools return | Keep the key secret; HTTPS when callers are elsewhere ([serving.md](serving.md)) |
 
 Nothing leaves the machine except what your tools send. Outside review mode and `--trace-text`, the server saves no
 request text. The language model in `[generator]` is used only by `clm-synthesize`, which sends it the scenario's
