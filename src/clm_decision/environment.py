@@ -247,11 +247,21 @@ class Environment:  # pylint: disable=too-many-instance-attributes
     derived_facts: dict[str, dict[str, dict]] = field(default_factory=dict)    # node -> property -> entry
     second_reader: dict | None = None       # [derived] second_reader: {backend, model}, or None for no second reading
     slot_statuses: dict[str, str] = field(default_factory=dict)     # slot name -> its entry's status, or not derived
+    document_settings: docs.DocumentSettings | None = None          # what `store` and `embedder` were made from
+    graph_settings: GraphSettings | None = None                     # what `graph` or the Neo4j connector was made from
 
     def topics(self) -> list[str]:
         """The kinds of decision the rules govern."""
         return sorted({topic for decision in self.decisions.values() if decision.rule
                        for topic in decision.rule.governs})
+
+    def close(self, keeping: "Environment | None" = None) -> None:
+        """Closes what this environment opened: the document store and the Neo4j driver. An object `keeping` also
+        holds is left open, because that environment still uses it. Safe to call twice."""
+        kept = ([keeping.store, keeping.connector] if keeping else [])
+        for owned in (self.store, self.connector):
+            if owned is not None and hasattr(owned, "close") and not any(owned is other for other in kept):
+                owned.close()
 
 
 def _read(path: Path) -> dict:
@@ -364,9 +374,12 @@ def neo4j_password(settings: GraphSettings) -> str:
     return password
 
 
-def _connector(settings: GraphSettings, graph: Graph | None, functions: ModuleType) -> Connector:
+def _connector(settings: GraphSettings, graph: Graph | None, functions: ModuleType,
+               reuse: "Environment | None" = None) -> Connector:
     if settings.backend == "builtin":
         return BuiltinConnector(graph, functions)
+    if reuse is not None and reuse.graph_settings == settings and not isinstance(reuse.connector, BuiltinConnector):
+        return reuse.connector
     from .graph_neo4j import Neo4jConnector, connect  # pylint: disable=import-outside-toplevel
     driver = connect(settings.uri, settings.user, neo4j_password(settings))
     return Neo4jConnector(driver, settings.uri, settings.database)
@@ -766,12 +779,14 @@ _CHECK_TYPE = {"string": lambda v: isinstance(v, str), "boolean": lambda v: isin
 def load_environment(path: str | Path, backend: str | None = None,
                      store: docs.DocumentStore | None = None,
                      embedder: docs.Embedder | None = None, *, admit: list[str] | None = None,
-                     today: date | None = None) -> Environment:
+                     today: date | None = None, reuse: Environment | None = None) -> Environment:
     """Read and check an environment file; raises ScenarioError naming the setting. `backend` overrides the file's
     [graph] backend, to run the same environment on the other graph. `store` and `embedder` replace the document
     store and embedder the file names, as tests do. With a [derived] table, admitted derived rules and facts join
     the supplied ones (docs/environment.md); `admit` overrides the statuses admitted, for testing only, and `today`
-    is the date a cited document must be in force on."""
+    is the date a cited document must be in force on. With `reuse`, the new environment takes the old one's CLM,
+    document store and embedder, and Neo4j connector, each when the file's settings for it are unchanged; the
+    built-in graph is always read again. An explicit `store` or `embedder` still wins."""
     path = Path(path)
     data = _read(path)
     folder = path.resolve().parent
@@ -802,12 +817,17 @@ def load_environment(path: str | Path, backend: str | None = None,
     scenarios = {name: _scenario(name, table, functions, kinds, queries)
                  for name, table in _parts(data, "scenarios").items()}
     clm = _clm(data)
+    if clm is not None and reuse is not None and reuse.clm is not None and (
+            (reuse.clm.backend, reuse.clm.model_id, reuse.clm.device) == (clm.backend, clm.model_id, clm.device)):
+        clm = reuse.clm
     judges = {name: _judge(name, table, clm) for name, table in _parts(data, "judges").items()}
     document_settings = docs.document_settings(data)
     collections = docs.collections(data, document_settings)
     if document_settings is not None:
-        store = store or docs.connect(document_settings)
-        embedder = embedder or docs.OllamaEmbedder(document_settings.ollama_url)
+        shared = reuse if reuse is not None and reuse.document_settings == document_settings else None
+        store = store or (shared.store if shared and shared.store else None) or docs.connect(document_settings)
+        embedder = embedder or (shared.embedder if shared and shared.embedder else None) or docs.OllamaEmbedder(
+            document_settings.ollama_url)
     else:
         store = embedder = None
     _check_citations(decisions, collections, store)
@@ -815,10 +835,11 @@ def load_environment(path: str | Path, backend: str | None = None,
                    collections, store)
     # Connected last, once everything else is known to be right
     return Environment(path, _text(head, "name", "environment"), _text(head, "description", "environment"), graph,
-                       functions, _connector(settings, graph, functions), queries, decisions | filled.decisions,
+                       functions, _connector(settings, graph, functions, reuse), queries, decisions | filled.decisions,
                        calculations, scenarios,
                        judges, clm, information, collections, store, embedder,
                        document_settings.tools if document_settings else True,
                        document_settings.cited_text if document_settings else True, slots, filled.unfilled,
                        tuple(filled.admitted), admitted_statuses, admit is not None,
-                       filled.facts, _second_reader(data) if declared is not None else None, filled.statuses)
+                       filled.facts, _second_reader(data) if declared is not None else None, filled.statuses,
+                       document_settings, settings)

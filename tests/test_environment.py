@@ -1,10 +1,13 @@
 """Tests for environment.py: loading an environment's graph, queries, decisions, calculations and scenarios."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
-import pytest
-from conftest import BASE_TOML, ENV_TOML, limit_dmn
+from dataclasses import replace
 
-from clm_decision.environment import is_environment, load_environment
+import pytest
+from conftest import BASE_TOML, ENV_TOML, JUDGE_TOML, limit_dmn
+from fake_documents import FakeEmbedder, FakeStore
+
+from clm_decision.environment import _connector, _graph_settings, is_environment, load_environment
 from clm_decision.scenario import ScenarioError
 
 
@@ -64,3 +67,126 @@ def test_names_the_tools_cannot_take_are_refused(write_environment, change, sett
     toml, dmn = change(ENV_TOML, limit_dmn())
     with pytest.raises(ScenarioError, match=f"^{setting}"):
         load_environment(write_environment(toml, dmn=dmn))
+
+
+class Closable:
+    """A store or connector that notes whether it was closed."""
+
+    def __init__(self):
+        self.closed = 0
+
+    def close(self):
+        self.closed += 1
+
+
+class ClosableStore(FakeStore, Closable):
+    """A fake document store that notes whether it was closed."""
+
+    def __init__(self):
+        FakeStore.__init__(self)
+        Closable.__init__(self)
+
+
+WITH_DOCUMENTS = ENV_TOML + '\n[documents]\nbackend = "postgres"\npassword_env = "TOY_DOCUMENTS_PASSWORD"\n'
+
+
+def test_reuse_shares_clm_and_store(write_environment):
+    path = write_environment(WITH_DOCUMENTS + JUDGE_TOML)
+    old = load_environment(path, store=ClosableStore(), embedder=FakeEmbedder())
+    new = load_environment(path, reuse=old)
+    assert new.clm is old.clm and new.store is old.store and new.embedder is old.embedder
+    assert new.judges["risk"].name == "risk"
+    assert new.graph is not old.graph and new.connector is not old.connector       # the built-in graph is read again
+
+
+def test_explicit_store_wins_over_reuse(write_environment):
+    path = write_environment(WITH_DOCUMENTS)
+    old = load_environment(path, store=ClosableStore(), embedder=FakeEmbedder())
+    own = ClosableStore()
+    assert load_environment(path, store=own, reuse=old).store is own
+
+
+def test_reuse_rebuilds_when_settings_change(write_environment):
+    path = write_environment(WITH_DOCUMENTS + JUDGE_TOML)
+    old = load_environment(path, store=ClosableStore(), embedder=FakeEmbedder())
+    path.write_text(path.read_text(encoding="utf-8").replace('backend = "mlx"', 'backend = "mlx"\nmodel_id = "other"')
+                    .replace('backend = "postgres"', 'backend = "postgres"\nhost = "elsewhere"'), encoding="utf-8")
+    other_store = ClosableStore()
+    new = load_environment(path, store=other_store, embedder=FakeEmbedder(), reuse=old)
+    assert new.clm is not old.clm and new.clm.model_id == "other"
+    assert new.store is other_store and new.document_settings != old.document_settings
+
+
+def test_reuse_connects_again_when_documents_change(write_environment, monkeypatch):
+    path = write_environment(WITH_DOCUMENTS)
+    old = load_environment(path, store=ClosableStore(), embedder=FakeEmbedder())
+    path.write_text(path.read_text(encoding="utf-8").replace('backend = "postgres"',
+                                                             'backend = "postgres"\ndatabase = "other"'),
+                    encoding="utf-8")
+    fresh = ClosableStore()
+    monkeypatch.setattr("clm_decision.environment.docs.connect", lambda settings: fresh)
+    assert load_environment(path, reuse=old).store is fresh
+
+
+def test_reuse_shares_a_neo4j_connector_when_graph_settings_are_equal(write_environment):
+    path = write_environment()
+    neo4j = replace(load_environment(path), connector=Closable(), graph_settings=replace(
+        _graph_settings({}, path.parent, "neo4j"), uri="bolt://one"))
+    same, changed = neo4j.graph_settings, replace(neo4j.graph_settings, uri="bolt://two")
+    assert _connector(same, None, neo4j.functions, neo4j) is neo4j.connector
+    with pytest.raises(ScenarioError, match="password_env"):        # different settings: a new driver is wanted
+        _connector(changed, None, neo4j.functions, neo4j)
+
+
+def test_close_keeps_shared(write_environment):
+    path = write_environment(WITH_DOCUMENTS)
+    store = ClosableStore()
+    old = load_environment(path, store=store, embedder=FakeEmbedder())
+    new = load_environment(path, reuse=old)
+    old.close(keeping=new)
+    assert store.closed == 0
+    old.close()
+    assert store.closed == 1
+
+
+def test_close_closes_a_store_the_new_environment_does_not_hold(write_environment):
+    path = write_environment(WITH_DOCUMENTS)
+    old_store, new_store = ClosableStore(), ClosableStore()
+    old = load_environment(path, store=old_store, embedder=FakeEmbedder())
+    new = load_environment(path, store=new_store, embedder=FakeEmbedder())
+    old.close(keeping=new)
+    assert old_store.closed == 1 and new_store.closed == 0
+
+
+def test_close_closes_the_neo4j_connector_unless_kept(write_environment):
+    path = write_environment()
+    connector = Closable()
+    old = replace(load_environment(path), connector=connector)
+    old.close(keeping=replace(old))
+    assert connector.closed == 0
+    old.close()
+    assert connector.closed == 1
+
+
+def test_a_store_with_nothing_to_close_is_fine(write_environment):
+    load_environment(write_environment()).close()
+    load_environment(write_environment(WITH_DOCUMENTS, folder="second"), store=FakeStore(),
+                     embedder=FakeEmbedder()).close()
+
+
+class FakeConnection:
+    """A database connection that notes being closed."""
+    closed, broken = False, False
+
+    def close(self):
+        self.closed = True
+
+
+def test_a_closed_postgres_store_stays_closed():
+    from clm_decision.documents_pg import PostgresStore  # pylint: disable=import-outside-toplevel
+    opened = []
+    store = PostgresStore(FakeConnection(), "here", reconnect=lambda: opened.append(1) or FakeConnection())
+    first = store.connection
+    store.close()
+    store.close()
+    assert first.closed and store._connection() is first and not opened     # pylint: disable=protected-access

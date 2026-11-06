@@ -55,6 +55,10 @@ class Neo4jConnector:  # pylint: disable=too-few-public-methods
         self.driver, self.uri, self.database = driver, uri, database
         self.errors = errors if errors is not None else driver_errors()
 
+    def close(self) -> None:
+        """Closes the driver and its connections."""
+        self.driver.close()
+
     def run(self, query, params: dict) -> list[dict]:
         """The query's rows."""
         try:

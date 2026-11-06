@@ -105,9 +105,16 @@ class PostgresStore:
     def __init__(self, connection, where: str, reconnect=None):
         self.connection, self.where, self.reconnect = connection, where, reconnect
         self._swap = threading.Lock()
+        self._closed = False
+
+    def close(self) -> None:
+        """Closes the connection for good: a closed store is not opened again. Safe to call twice."""
+        with self._swap:
+            self._closed = True
+            self.connection.close()
 
     def _lost(self) -> bool:
-        return self.reconnect is not None and (self.connection.closed or self.connection.broken)
+        return self.reconnect is not None and not self._closed and (self.connection.closed or self.connection.broken)
 
     def _connection(self):
         """The connection, opened again first when a restart, a sleep or a timeout has lost it. One thread opens it
