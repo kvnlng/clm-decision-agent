@@ -1,36 +1,21 @@
-"""A command-line chat with a running MCP server, through any model; the portal's Ask uses its loop.
+"""The portal's Ask: a model answers a question with a server's tools, every call and result shown.
 
-    clm-chat URL [--model M] [--model-url U] [--backend openai|claude] [--dry-run [TOOL]] [--full]
-
-It connects to a running server, offers a model the server's tools, and prints every call and result, so you can see
-where an answer came from and judge it yourself. Tools run for real unless --dry-run holds them back.
-
-The model is anything that speaks the OpenAI chat API, Ollama by default, or Claude with --backend claude. The
-server's key or token is read from DECISION_SERVER_KEY and sent only over https or to this computer; the model's is
-read from LLM_API_KEY. Neither is printed.
+The model is anything that speaks the OpenAI chat API, Ollama by default, or Claude. The model's key is read from
+LLM_API_KEY and never shown. Tools run for real unless a dry run holds them back.
 """
 from __future__ import annotations
 
-import argparse
 import json
-import os
-import sys
 from dataclasses import dataclass
 
-import anyio
-import anyio.to_thread
 import httpx
 from mcp import Client, MCPError
 
-from clm_decision.connection import http_streams, key_for, withheld
-
-KEY_ENV = "DECISION_SERVER_KEY"
 LLM_KEY_ENV = "LLM_API_KEY"
 STARTER_MODEL = "granite4:micro"
 OLLAMA_V1 = "http://127.0.0.1:11434/v1"
 CLAUDE_MODEL = "claude-opus-5-5"
 MAX_TURNS = 20
-READ_TIMEOUT = 600      # seconds to wait for a tool's reply, which a local model can take a while to give
 SHOWN = 1500
 ALL = "*"
 SYSTEM = "Answer using the tools you are given. If they cannot answer, say so plainly rather than guessing."
@@ -176,7 +161,7 @@ def shown(text: str, full: bool) -> str:
     """A result for the screen, shortened unless the user asked for all of it."""
     if full or len(text) <= SHOWN:
         return text
-    return f"{text[:SHOWN]} ... ({len(text) - SHOWN} more characters; --full shows them)"
+    return f"{text[:SHOWN]} ... ({len(text) - SHOWN} more characters; tick Full results to see them)"
 
 
 async def _send(client: Client, call: Call) -> tuple[str, bool]:
@@ -237,132 +222,3 @@ async def answer(client: Client, model, tools: list[dict], messages: list[dict],
         messages.extend(model.results(pairs))
     show(f"  [stopped: no answer after {MAX_TURNS} turns]")
     del messages[mark:]
-
-
-def check_dry_run(names: set, tools: list[str]) -> None:
-    """Refuse a name the server does not have: a mistyped tool would otherwise run for real."""
-    unknown = sorted(set(names) - set(tools) - {ALL})
-    if unknown:
-        raise ClientError(f"--dry-run names {', '.join(unknown)}, which the server does not have; "
-                          f"its tools are {', '.join(sorted(tools))}")
-
-
-def banner(url: str, model: str, dry_run: DryRun) -> str:
-    """What the user must know before typing anything."""
-    if ALL in dry_run.tools:
-        tools = "Dry run: every tool call is shown and not sent."
-    elif dry_run.tools:
-        tools = f"Dry run for {', '.join(sorted(dry_run.tools))}, not sent. Every other tool will run for real."
-    else:
-        tools = "Tools will run for real, including any that act. --dry-run holds them back."
-    return f"Server: {url}\nModel: {model}\n{tools}\nType a question; /tools lists the tools; /quit leaves."
-
-
-def _connect(url: str, refused: list[int]):
-    key = key_for(url)      # never in the clear to another computer
-    return http_streams(url, {"Authorization": f"Bearer {key}"} if key else None, refused, read=READ_TIMEOUT)
-
-
-def _list(listed) -> str:
-    return "\n".join(f"  {tool.name}: {tool.description or ''}".rstrip() for tool in listed)
-
-
-async def _chat(args, http: httpx.AsyncClient, refused: list[int]) -> int:
-    model = _model(args, http)
-    dry_run = DryRun(frozenset(args.dry_run or ()))
-    async with Client(_connect(args.url, refused)) as client:
-        listed = (await client.list_tools()).tools
-        check_dry_run(set(dry_run.tools), [tool.name for tool in listed])
-        print(banner(args.url, model.describe(), dry_run))
-        print(_list(listed))
-        tools, messages = model.tools(listed), model.start()
-        while True:
-            try:
-                question = (await anyio.to_thread.run_sync(input, "\nyou> ", abandon_on_cancel=True)).strip()
-            except EOFError:
-                return 0
-            if question == "/quit":
-                return 0
-            if question == "/tools":
-                print(_list(listed))
-            elif question:
-                await answer(client, model, tools, messages, question, dry_run, print, args.full)
-
-
-def _model(args, http: httpx.AsyncClient):
-    if args.backend == "openai":
-        return OpenAIModel(http, args.model or STARTER_MODEL, args.model_url or OLLAMA_V1,
-                           os.environ.get(LLM_KEY_ENV))
-    try:
-        from anthropic import AsyncAnthropic  # pylint: disable=import-outside-toplevel
-    except ImportError as error:
-        raise ClientError("--backend claude needs the anthropic package, which the portal installs with "
-                          "clm-decision-agent[agent]") from error
-    return ClaudeModel(AsyncAnthropic(), args.model or CLAUDE_MODEL)
-
-
-def _cause(error: BaseException) -> str:
-    while isinstance(error, BaseExceptionGroup) and error.exceptions:
-        error = error.exceptions[0]
-    return str(error) or type(error).__name__
-
-
-def _user_error(error: BaseException) -> ClientError | None:
-    while isinstance(error, BaseExceptionGroup) and error.exceptions:
-        error = error.exceptions[0]
-    return error if isinstance(error, ClientError) else None
-
-
-async def _run(args, refused: list[int]) -> int:
-    async with httpx.AsyncClient() as http:
-        return await _chat(args, http, refused)
-
-
-def add_arguments(parser: argparse.ArgumentParser) -> None:
-    """The chat's arguments, as `clm-chat` takes them."""
-    parser.add_argument("url", help="the server's URL, such as http://127.0.0.1:8000/mcp")
-    parser.add_argument("--backend", choices=("openai", "claude"), default="openai",
-                        help="openai: anything that speaks the OpenAI chat API (default); claude: the Anthropic API")
-    parser.add_argument("--model", help=f"default: {STARTER_MODEL} with openai, {CLAUDE_MODEL} with claude")
-    parser.add_argument("--model-url", help=f"the model's OpenAI-style address (default: Ollama, {OLLAMA_V1})")
-    parser.add_argument("--dry-run", nargs="?", const=ALL, action="append", metavar="TOOL",
-                        help="show this tool's calls without sending them; with no name, every tool's; repeatable")
-    parser.add_argument("--full", action="store_true", help="print results in full")
-
-
-def parse(argv: list[str] | None = None) -> argparse.Namespace:
-    """The command line."""
-    parser = argparse.ArgumentParser(prog="clm-chat", description="Chat with a running MCP server through a model, "
-                                                                  "every tool call and result printed.")
-    add_arguments(parser)
-    return parser.parse_args(argv)
-
-
-def run(args: argparse.Namespace) -> int:
-    """Chat until the user leaves; returns the process exit code."""
-    refused: list[int] = []
-    try:
-        return anyio.run(_run, args, refused)
-    except KeyboardInterrupt:
-        return 0
-    except (Exception, BaseExceptionGroup) as error:  # pylint: disable=broad-exception-caught
-        known = _user_error(error)
-        if known:
-            print(f"error: {known}", file=sys.stderr)
-        elif refused and withheld(args.url):
-            print(f"error: {args.url} refused the call ({refused[0]}): {withheld(args.url)}", file=sys.stderr)
-        elif refused:
-            print(f"error: {args.url} refused the call ({refused[0]}); set the key or token in {KEY_ENV}",
-                  file=sys.stderr)
-        else:
-            print(f"error: cannot connect to {args.url}: {_cause(error)}", file=sys.stderr)
-        return 2
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Command-line entry point; returns the process exit code."""
-    return run(parse(argv))
-
-
-if __name__ == "__main__":
-    sys.exit(main())

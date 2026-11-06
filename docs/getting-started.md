@@ -151,9 +151,9 @@ npx -y @modelcontextprotocol/inspector@2.13.0 --cli uv run clm-server examples/t
 
 ## Trying it in a chat
 
-With no MCP client of your own, the [portal](portal.md)'s chat, `clm-chat`, talks to a running server from the
-command line through any OpenAI-style model or Claude, printing every call and result. Its options are in the
-portal's page.
+With no MCP client of your own, the [portal](portal.md)'s **Ask** page puts a question to the running server through
+any OpenAI-style model or Claude, showing every call and result ([how](portal.md#ask)). Without the portal, the MCP
+Inspector above calls tools by hand.
 
 ## Connecting agents
 

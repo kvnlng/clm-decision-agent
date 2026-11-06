@@ -1,7 +1,6 @@
 """Tests for the portal's chat, against a stand-in MCP server and a stand-in model; neither needs a network or a key."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
-import contextlib
 import json
 from types import SimpleNamespace
 
@@ -106,11 +105,6 @@ async def test_a_dry_run_of_one_tool_leaves_the_others_running(tracker):
     assert tracker.tickets == 0 and '"found": "x"' in shown and "dry run, not sent: open_ticket" in shown
 
 
-def test_a_dry_run_of_a_tool_the_server_does_not_have_is_refused_before_any_call():
-    with pytest.raises(tc.ClientError, match="open_tikcet.*lookup, open_ticket"):
-        tc.check_dry_run({"open_tikcet"}, ["lookup", "open_ticket"])
-
-
 @pytest.mark.anyio
 async def test_a_follow_up_keeps_the_conversation(tracker):
     seen: list[dict] = []
@@ -168,46 +162,8 @@ async def test_a_model_reply_that_is_not_a_chat_reply_is_its_error_and_the_chat_
 
 
 def test_a_long_result_is_shortened_unless_full_is_asked_for():
-    assert "more characters; --full" in tc.shown("x" * 5000, full=False)
+    assert "more characters; tick Full results" in tc.shown("x" * 5000, full=False)
     assert tc.shown("x" * 5000, full=True) == "x" * 5000
-
-
-def test_the_banner_names_the_model_and_whether_tools_run():
-    text = tc.banner("http://server/mcp", "small at http://model/v1", tc.DryRun(frozenset()))
-    assert "testing only" not in text.lower() and "small at http://model/v1" in text and "run for real" in text
-    assert "not sent" in tc.banner("http://server/mcp", "small", tc.DryRun({tc.ALL}))
-    assert "open_ticket" in tc.banner("http://server/mcp", "small", tc.DryRun({"open_ticket"}))
-
-
-def test_the_key_is_never_in_the_banner(monkeypatch):
-    monkeypatch.setenv("DECISION_SERVER_KEY", "secret-value")
-    assert "secret-value" not in tc.banner("http://server/mcp", "small", tc.DryRun(frozenset()))
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("url, sent", [("https://decisions.example.org/mcp", True), ("http://127.0.0.1:8000/mcp", True),
-                                       ("http://10.0.0.5:8000/mcp", False)])
-async def test_the_key_goes_only_over_https_or_to_this_computer(monkeypatch, capsys, url, sent):
-    monkeypatch.setenv("DECISION_SERVER_KEY", "secret-value")
-    seen = {}
-
-    @contextlib.asynccontextmanager
-    async def streams(_url, headers, *_, **__):
-        seen["authorization"] = (headers or {}).get("Authorization")
-        yield None
-    monkeypatch.setattr(tc, "http_streams", streams)
-    async with tc._connect(url, []):  # pylint: disable=protected-access
-        pass
-    assert (seen["authorization"] == "Bearer secret-value") is sent
-    assert ("not sending the key" in capsys.readouterr().err) is not sent
-
-
-def test_clm_chat_takes_the_old_subcommands_arguments():
-    args = tc.parse(["http://server/mcp", "--backend", "claude", "--model", "m", "--model-url",
-                     "http://model/v1", "--dry-run", "open_ticket", "--dry-run", "--full"])
-    assert args.url == "http://server/mcp" and args.backend == "claude"
-    assert args.model == "m" and args.model_url == "http://model/v1" and args.full
-    assert args.dry_run == ["open_ticket", tc.ALL]
 
 
 class FakeStream:
@@ -310,15 +266,3 @@ async def test_a_tool_error_is_every_text_block_of_it_whatever_comes_first():
     call, send = tc.Call("c1", "lookup", {}), tc._send  # pylint: disable=protected-access
     assert await send(FailingTools(image, one, two), call) == ("one\ntwo", True)
     assert await send(FailingTools(image), call) == ("Error: the server reported an error", True)
-
-
-def test_a_refusal_after_the_key_was_withheld_says_it_was_not_sent(monkeypatch, capsys):
-    monkeypatch.setenv("DECISION_SERVER_KEY", "secret-value")
-
-    async def refused_run(_args, refused):
-        refused.append(401)
-        raise RuntimeError("refused")
-    monkeypatch.setattr(tc, "_run", refused_run)
-    assert tc.run(SimpleNamespace(url="http://10.0.0.5:8000/mcp")) == 2
-    error = capsys.readouterr().err
-    assert "not sent over plain http to 10.0.0.5; use https" in error and "secret-value" not in error

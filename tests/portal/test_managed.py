@@ -1,7 +1,6 @@
 """Tests for the portal's jobs: one at a time, under the lock layer writes share, with what a child may see."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
-import contextlib
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -139,21 +138,3 @@ async def test_jobs_lose_server_keys(monkeypatch):
     env = jobs.runner.seen[0][1]["env"]
     assert "CLM_PORTAL_KEY" not in env and "AGENTS_KEY" not in env
     assert env["CLM_DOCUMENTS_PASSWORD"] == "a-long-database-password"     # a job needs the database's
-
-
-@pytest.mark.anyio
-async def test_the_chat_gives_the_sdk_its_own_http_client(monkeypatch):
-    import httpx2  # pylint: disable=import-outside-toplevel
-    from clm_decision import connection  # pylint: disable=import-outside-toplevel
-    from clm_decision.portal import chat  # pylint: disable=import-outside-toplevel
-    seen = []
-
-    @contextlib.asynccontextmanager
-    async def streams(url, http_client):
-        seen.append((url, http_client))
-        yield "streams"
-    monkeypatch.setattr(connection, "streamable_http_client", streams)
-    async with chat._connect("http://127.0.0.1:1/mcp", []) as found:  # pylint: disable=protected-access
-        assert found == "streams"
-    assert len(seen) == 1 and isinstance(seen[0][1], httpx2.AsyncClient)
-    assert seen[0][1].timeout.read == chat.READ_TIMEOUT == 600 and not seen[0][1].follow_redirects
