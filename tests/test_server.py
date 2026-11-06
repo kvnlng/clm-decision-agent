@@ -1,6 +1,7 @@
 """Tests for server.py: the scenario's decisions over MCP, in process and over HTTP."""
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
+import json
 import time
 
 import httpx2
@@ -12,9 +13,10 @@ from mcp.client.streamable_http import streamable_http_client
 
 from clm_decision import clm_router
 from clm_decision import server
+from clm_decision import tracing
 from clm_decision.decision import decide, routed_text
 from clm_decision.record import append_record, load_records, new_key
-from clm_decision.scenario import load_scenario
+from clm_decision.scenario import ScenarioError, load_scenario
 from clm_decision.serving import Serve
 from clm_decision.tools import load_tools
 
@@ -475,3 +477,83 @@ def test_loading_says_how_many_record_lines_it_could_not_read(write_scenario, ca
                                          "clm": {"route": "Billing", "confidence": 0.8}}, key=new_key())
     server.load(str(scenario.path))
     assert "1 unreadable line skipped in scenario.corrections.jsonl" in capsys.readouterr().err
+
+
+KEY_A, KEY_B = "agent-a-key-0123456789", "agent-b-key-9876543210"
+
+
+def key_file(tmp_path, *lines):
+    path = tmp_path / "keys.txt"
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def test_either_key_opens(parts, tmp_path):
+    keys = server.KeySet.from_sources(None, key_file(tmp_path, KEY_A, KEY_B))
+    port = free_port()
+    with serving(server.http_app(server.build_server(*parts, review=False), keys), port):
+        url = f"http://127.0.0.1:{port}/mcp"
+        status = [httpx2.post(url, headers={"Authorization": f"Bearer {key}"}, json={}).status_code
+                  for key in (KEY_A, KEY_B, "wrong-key-0123456789")]
+    assert status[0] != 401 and status[1] != 401 and status[2] == 401
+
+
+def test_the_variable_and_the_file_both_count(tmp_path):
+    keys = server.KeySet.from_sources("short", key_file(tmp_path, KEY_A, KEY_A))
+    assert len(keys.ids()) == 2
+    assert keys.match(b"short") and keys.match(KEY_A.encode()) and keys.match(b"other") is None
+
+
+def test_short_file_key_refused(tmp_path):
+    path = key_file(tmp_path, KEY_A, "too-short")
+    with pytest.raises(ScenarioError, match=r"keys.txt line 2: a key must be at least 16") as error:
+        server.KeySet.from_sources(None, path)
+    assert "too-short" not in str(error.value)
+
+
+@pytest.mark.parametrize("file_exists, message", [(False, "cannot read the key file"), (True, "no keys")])
+def test_no_keys_or_no_file_refused(tmp_path, file_exists, message):
+    path = key_file(tmp_path, "# nothing here", "") if file_exists else tmp_path / "missing.txt"
+    with pytest.raises(ScenarioError, match=message):
+        server.KeySet.from_sources(None, path)
+
+
+def test_comment_lines_ignored(tmp_path):
+    keys = server.KeySet.from_sources(None, key_file(tmp_path, "# agent a", "", f"  {KEY_A}  ", "#" + KEY_B))
+    assert keys.match(KEY_A.encode()) and keys.match(KEY_B.encode()) is None and len(keys.ids()) == 1
+
+
+def test_last_used_updates(tmp_path):
+    keys = server.KeySet.from_sources(None, key_file(tmp_path, KEY_A, KEY_B))
+    assert not keys.last_used
+    before = time.time()
+    key_id = keys.match(KEY_B.encode())
+    assert keys.last_used.keys() == {key_id} and keys.last_used[key_id] >= before
+    assert keys.match(b"wrong") is None and keys.last_used.keys() == {key_id}
+
+
+@pytest.mark.anyio
+async def test_key_id_is_not_the_key_and_reaches_the_trace(parts, tmp_path):
+    keys = server.KeySet.from_sources(None, key_file(tmp_path, KEY_A, KEY_B))
+    writer = tracing.TraceWriter(tmp_path / "trace.jsonl")
+    port = free_port()
+    app = server.http_app(server.build_server(*parts, review=False, trace=writer), keys)
+    with serving(app, port):
+        async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {KEY_B}"}) as http:
+            async with Client(streamable_http_client(f"http://127.0.0.1:{port}/mcp", http_client=http)) as client:
+                await client.call_tool("decide", {"text": TEXT})
+    writer.close()
+    trace = (tmp_path / "trace.jsonl").read_text()
+    records = [json.loads(line) for line in trace.splitlines()]
+    assert [record["caller"] for record in records if record["tool"] == "decide"] == [{"key_id": keys.ids()[1]}]
+    for key in (KEY_A, KEY_B):
+        assert key not in trace and key not in "".join(keys.ids()) and key[:8] not in "".join(keys.ids())
+
+
+def test_key_flags_are_checked(write_scenario, tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("DECISION_SERVER_KEY", raising=False)
+    assert server.main([str(write_scenario()), "--http", "--auth", "oauth", "--key-file", "k.txt"]) == 2
+    assert "--key-file is for --auth key" in capsys.readouterr().err
+    assert server.main([str(write_scenario()), "--http", "--key-file", str(key_file(tmp_path, "too-short"))]) == 2
+    err = capsys.readouterr().err
+    assert "keys.txt line 1" in err and "too-short" not in err

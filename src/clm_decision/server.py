@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import dataclasses
+import hashlib
 import hmac
 import json
 import os
@@ -262,22 +263,81 @@ def _security(allowed_hosts: list[str]) -> TransportSecuritySettings:
                                      allowed_origins=origins)
 
 
-def http_app(server: MCPServer, key: str | None, host: str = "127.0.0.1", allowed_hosts: list[str] | None = None):
+MIN_FILE_KEY = 16
+
+
+class KeySet:
+    """The keys agents may send, held as SHA-256 digests only. An agent's key is known by its id, the first 8 hex
+    characters of its digest; `last_used` says when each id last opened a request."""
+
+    def __init__(self, digests: list[str]):
+        self._digests = list(dict.fromkeys(digests))
+        self.last_used: dict[str, float] = {}
+
+    @classmethod
+    def from_sources(cls, env_key: str | None, file: Path | None) -> KeySet:
+        """The key from a variable (any length) and each key in a file, one per line (blank lines and lines
+        starting with # skipped, each key at least 16 characters); raises ScenarioError naming the file and line,
+        never a key."""
+        digests = [hashlib.sha256(env_key.encode()).hexdigest()] if env_key else []
+        if file is not None:
+            try:
+                lines = file.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeDecodeError) as error:
+                raise ScenarioError(f"cannot read the key file {file}: {type(error).__name__}") from error
+            for number, line in enumerate(lines, 1):
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if len(line) < MIN_FILE_KEY:
+                    raise ScenarioError(f"{file} line {number}: a key must be at least {MIN_FILE_KEY} characters")
+                digests.append(hashlib.sha256(line.encode()).hexdigest())
+        if not digests:
+            raise ScenarioError("no keys: give a key in the environment or a key file with at least one key")
+        return cls(digests)
+
+    def ids(self) -> list[str]:
+        """The id of each key, in the order given."""
+        return [digest[:8] for digest in self._digests]
+
+    def match(self, sent: bytes) -> str | None:
+        """The id of the key `sent` is, noting the time; None if it is none of them. Every digest is compared."""
+        sent_digest = hashlib.sha256(sent).hexdigest().encode()
+        found = None
+        for digest in self._digests:
+            if hmac.compare_digest(sent_digest, digest.encode()):
+                found = digest[:8]
+        if found is not None:
+            self.last_used[found] = time.time()
+        return found
+
+
+def http_app(server: MCPServer, keys: KeySet | str | None, host: str = "127.0.0.1",
+             allowed_hosts: list[str] | None = None):
     """The server over Streamable HTTP at /mcp, answering only requests that send `Authorization: Bearer <key>`
-    (the scheme in any case). With no key, the server was built with OAuth and checks tokens itself."""
+    (the scheme in any case) with one of the keys (a KeySet, or one key as text), and tracing each call under the
+    key's id. With no keys, the server was built with OAuth and checks tokens itself."""
     security = _security(allowed_hosts) if allowed_hosts else None
     app = server.streamable_http_app(stateless_http=True, host=host, transport_security=security)
-    if key is None:
+    if keys is None:
         return app
-    expected = key.encode()
+    if isinstance(keys, str):
+        keys = KeySet.from_sources(keys, None)
 
     async def guarded(scope, receive, send):
         if scope["type"] == "http":
             scheme, _, sent = dict(scope["headers"]).get(b"authorization", b"").partition(b" ")
-            if scheme.lower() != b"bearer" or not hmac.compare_digest(sent.strip(), expected):
+            key_id = keys.match(sent.strip()) if scheme.lower() == b"bearer" else None
+            if key_id is None:
                 await JSONResponse({"error": "missing or wrong key"}, status_code=401,
                                    headers={"WWW-Authenticate": 'Bearer realm="decision-server"'})(scope, receive, send)
                 return
+            token = tracing.CALLER_KEY_ID.set(key_id)
+            try:
+                await app(scope, receive, send)
+            finally:
+                tracing.CALLER_KEY_ID.reset(token)
+            return
         await app(scope, receive, send)
     return guarded
 
@@ -323,6 +383,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--auth", choices=("key", "oauth"), default="key",
                         help="over HTTP: a shared key (default), or tokens from an OIDC issuer")
     parser.add_argument("--key-env", default=KEY_ENV, help="variable holding the key callers must send")
+    parser.add_argument("--key-file", metavar="FILE", type=Path,
+                        help="with --auth key: a file of keys callers may send, one per line (# comments, at least "
+                             "16 characters each), besides the one in the variable")
     parser.add_argument("--issuer", help=f"with --auth oauth: the token issuer's URL (or {oauth.ISSUER_ENV})")
     parser.add_argument("--audience", help=f"with --auth oauth: the audience tokens must name (or "
                                            f"{oauth.AUDIENCE_ENV}; default: the resource URL)")
@@ -355,7 +418,10 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Command-line entry point; returns the process exit code. Messages go to stderr: stdout is MCP's."""
     args = _parser().parse_args(argv)
-    key, auth = None, None
+    keys, auth = None, None
+    if args.key_file and args.auth == "oauth":
+        print("error: --key-file is for --auth key; with --auth oauth callers send tokens", file=sys.stderr)
+        return 2
     if args.http and args.auth == "oauth":
         try:
             auth = oauth.from_args(args.issuer, args.audience, args.scopes,
@@ -365,8 +431,13 @@ def main(argv: list[str] | None = None) -> int:
             return 2
     elif args.http:
         key = os.environ.get(args.key_env, "").strip()
-        if not key:
-            print(f"error: set {args.key_env} to the key callers must send", file=sys.stderr)
+        if not key and not args.key_file:
+            print(f"error: set {args.key_env} to the key callers must send, or give --key-file", file=sys.stderr)
+            return 2
+        try:
+            keys = KeySet.from_sources(key or None, args.key_file)
+        except ScenarioError as error:
+            print(f"error: {error}", file=sys.stderr)
             return 2
     try:
         if args.review and is_environment(args.scenario):
@@ -405,7 +476,7 @@ def main(argv: list[str] | None = None) -> int:
     import uvicorn  # pylint: disable=import-outside-toplevel
     print(f"Serving MCP at http://{args.host}:{args.port}/mcp"
           + (f", taking tokens from {auth.settings.issuer_url}" if auth else ""), file=sys.stderr)
-    uvicorn.run(http_app(server, key, args.host, args.allowed_hosts), host=args.host, port=args.port,
+    uvicorn.run(http_app(server, keys, args.host, args.allowed_hosts), host=args.host, port=args.port,
                 log_level="warning")
     return 0
 

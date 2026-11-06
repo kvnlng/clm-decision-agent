@@ -16,6 +16,7 @@ provider steps, the exact rules of tool selection, the trace format and the meas
 | `--allowed-host HOST` | this computer | A host that callers name (`decisions.example.org`), accepted on any port, as is a page served over https from it. `127.0.0.1`, `localhost` and `[::1]` are still accepted. Repeatable |
 | `--auth key\|oauth` | `key` | A shared key, or JWTs from an OIDC issuer (next section) |
 | `--key-env VAR` | `DECISION_SERVER_KEY` | The variable holding the key |
+| `--key-file FILE` | none | With `--auth key`: a file of more keys, one per line (`#` comments; each at least 16 characters), valid besides the variable's key. Each key is known by an id, the first 8 hex characters of its SHA-256 |
 | `--issuer URL` | `DECISION_OAUTH_ISSUER` | The token issuer; HTTPS except on this computer |
 | `--audience NAME` | `DECISION_OAUTH_AUDIENCE`, else the resource URL | The audience tokens must name |
 | `--scope NAME` | `DECISION_OAUTH_SCOPES`, space-separated | A scope or app role tokens must carry; repeatable |
