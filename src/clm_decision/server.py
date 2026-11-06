@@ -385,12 +385,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.review:
             # correct writes the record, so it must take this key; checked before CLM loads too
             check_record(load_scenario(args.scenario))
+        # A disabled_tools.json that cannot be read stops start-up before the environment loads
+        admin = Admin.for_environment(Path(args.scenario)) if is_environment(args.scenario) else None
         loaded = load_any(args.scenario, args.admit_derived.split(",") if args.admit_derived else None)
         trace = tracing.TraceWriter(args.trace, text=args.trace_text, read_only=serve.read_only) \
             if args.trace else None
         if isinstance(loaded, Environment):
             server = build_environment_server(loaded, trace=trace, auth=auth, serve=serve,
-                                              admin=Admin.for_environment(Path(args.scenario)))
+                                              admin=admin)
         else:
             scenario, router, tools = loaded
             server = build_server(scenario, router, tools, args.review, trace=trace, auth=auth, serve=serve)

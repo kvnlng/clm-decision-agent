@@ -62,6 +62,13 @@ class Admin:
         """Every name in the file, offered now or not."""
         return self._disabled
 
+    def hidden(self) -> frozenset[str]:
+        """The disabled tools the server offers now: those the middleware hides and refuses. A name the server does
+        not offer is left to the SDK, which says it has no such tool."""
+        if self.known is None:
+            return self._disabled
+        return self._disabled & set(self.known())  # pylint: disable=not-callable  # None is ruled out above
+
     def _check(self, name: str) -> None:
         if name == "describe":
             raise ValueError("describe cannot be disabled: an agent reads it first")
@@ -114,7 +121,7 @@ def middleware(admin: Admin) -> ServerMiddleware[Any]:
     """Takes the disabled tools out of each tools/list result and refuses a tools/call for one. It traces nothing."""
 
     async def admin_middleware(ctx: ServerRequestContext[Any, Any], call_next: CallNext) -> HandlerResult:
-        disabled = admin.disabled
+        disabled = admin.hidden() if ctx.method in ("tools/call", "tools/list") else frozenset()
         if ctx.method == "tools/call" and disabled and (ctx.params or {}).get("name") in disabled:
             raise MCPError(INVALID_PARAMS, REFUSAL)
         result = await call_next(ctx)

@@ -118,7 +118,9 @@ async def test_a_name_disabled_in_the_file_hides_only_an_offered_tool(write_envi
     async with Client(server) as client:
         names = {tool.name for tool in (await client.list_tools()).tools}
         described = (await client.call_tool("describe", {})).structured_content
+        left_out = await client.call_tool("scenario_sourcing", {"product": "P1"})
     assert names == {"describe", "calculation_cost"}
+    assert left_out.is_error and "disabled" not in left_out.content[0].text
     assert described["disabled"] == ["query_suppliers"]
     assert path.read_text() == written
 

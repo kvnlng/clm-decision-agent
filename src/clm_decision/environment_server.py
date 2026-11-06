@@ -447,7 +447,7 @@ def reload(server: MCPServer, new: Environment) -> dict:
         before = offering.offered
         _offer_tools(server, offering, found, offered)
         _add_resources(server, offering, new, offered)
-    if offering.admin and offered != before:
+    if offering.admin and set(offered) != set(before):
         offering.admin.announce()
     return {"added": [name for name in offered if name not in before],
             "removed": [name for name in before if name not in offered]}
