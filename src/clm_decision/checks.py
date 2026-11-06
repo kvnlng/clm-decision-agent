@@ -53,7 +53,7 @@ def _first_line(error: BaseException) -> str:
 def _failure(error: BaseException) -> str:
     """An error in one line, with its type unless it is one of ours, whose message already says what failed."""
     line, kind = _first_line(error), type(error).__name__
-    if kind in ("StepError", "OAuthError", "ScenarioError") and line:
+    if kind in ("StepError", "OAuthError", "ScenarioError", "_Hung") and line:
         return line
     return f"{kind}: {line}" if line else kind
 
@@ -69,10 +69,8 @@ def _fingerprint(schemas: dict[str, str]) -> str:
     return hashlib.sha256(json.dumps(sorted(schemas.items())).encode()).hexdigest()
 
 
-async def _in_thread(run: Callable[[], object]) -> object:
-    """run() in a thread, given TIMEOUT_SECONDS; raises TimeoutError past it, leaving the thread to finish."""
-    with anyio.fail_after(TIMEOUT_SECONDS):
-        return await anyio.to_thread.run_sync(run, abandon_on_cancel=True)
+class _Hung(Exception):
+    """A check's last ping is still running."""
 
 
 class Checks:
@@ -83,6 +81,9 @@ class Checks:
         self.server, self.trace, self.verifier = server, trace, verifier
         self._results: dict[str, Check] = {}
         self._schemas: dict[str, str] = {}
+        # The checks whose ping is still running in a thread, with when it started: one at a time each, so a hung
+        # database never gathers threads
+        self._pinging: dict[str, float] = {}
         self.baseline = ""
         self.rebaseline()
         offering = getattr(server, "offering", None)
@@ -103,25 +104,43 @@ class Checks:
         """Runs every check, in order; with `refresh`, the OAuth check fetches the keys first."""
         offering = getattr(self.server, "offering", None)
         if offering is None:
-            measured = {name: (NOT_CONFIGURED, "") for name in NAMES[:3]}
-            uses: dict[str, set[str]] = {}
+            for name in NAMES[:3]:
+                self._record(name, NOT_CONFIGURED, "", {})
         else:
             with offering.holder.use() as env:
-                measured = {"clm": await self._guarded(lambda: self._clm(env)),
-                            "postgres": await self._guarded(lambda: self._postgres(env)),
-                            "neo4j": await self._guarded(lambda: self._neo4j(env))}
                 uses = {name: needs for name, needs in infrastructure(env).items() if name in offering.offered}
-        measured["oauth"] = await self._guarded(lambda: self._oauth(refresh))
-        measured["trace"] = await self._guarded(self._trace)
-        measured["tools"] = await self._guarded(self._tools)
-        measured["describe"] = await self._guarded(self._describe)
-        for name in NAMES:
-            status, detail = measured[name]
-            tools = sorted(tool for tool, needs in uses.items() if name in needs)
-            self._record(name, status, detail, tools)
+                # Each result is kept as soon as it is measured, so a check that never ends hides none before it
+                self._record("clm", *await self._guarded(lambda: self._clm(env)), uses)
+                self._record("postgres", *await self._guarded(lambda: self._postgres(env)), uses)
+                self._record("neo4j", *await self._guarded(lambda: self._neo4j(env)), uses)
+        self._record("oauth", *await self._guarded(lambda: self._oauth(refresh)), {})
+        self._record("trace", *await self._guarded(self._trace), {})
+        self._record("tools", *await self._guarded(self._tools), {})
+        if self._results["postgres"].status == FAIL:
+            # describe reads the store when document tools are offered, in a thread the SDK cannot abandon
+            self._record("describe", FAIL, "skipped: PostgreSQL not answering", {})
+        else:
+            self._record("describe", *await self._guarded(self._describe), {})
         return self.latest
 
-    def _record(self, name: str, status: str, detail: str, tools: list[str]) -> None:
+    async def _ping(self, name: str, ping: Callable[[], object]) -> object:
+        """ping() in a thread, given TIMEOUT_SECONDS; raises TimeoutError past it, leaving the thread to finish. While
+        the last ping of `name` has not returned, no other starts: that raises _Hung saying since when."""
+        if name in self._pinging:
+            since = time.strftime("%H:%M:%S", time.localtime(self._pinging[name]))
+            raise _Hung(f"the last ping has not answered since {since}")
+        self._pinging[name] = time.time()
+
+        def run() -> object:
+            try:
+                return ping()
+            finally:
+                self._pinging.pop(name, None)
+        with anyio.fail_after(TIMEOUT_SECONDS):
+            return await anyio.to_thread.run_sync(run, abandon_on_cancel=True)
+
+    def _record(self, name: str, status: str, detail: str, uses: dict[str, set[str]]) -> None:
+        tools = sorted(tool for tool, needs in uses.items() if name in needs)
         before = self._results.get(name)
         now = time.time()
         last_success = before.last_success if before else None
@@ -151,18 +170,16 @@ class Checks:
             return WARN, "loads on first judgement"
         return PASS, f"loaded, on {env.clm.backend}"
 
-    @staticmethod
-    async def _postgres(env: Environment) -> tuple[str, str]:
+    async def _postgres(self, env: Environment) -> tuple[str, str]:
         if env.store is None:
             return NOT_CONFIGURED, "no document store"
-        reconnected = await _in_thread(env.store.ping)
+        reconnected = await self._ping("postgres", env.store.ping)
         return PASS, "SELECT 1 answered" + (" after reconnecting" if reconnected else "")
 
-    @staticmethod
-    async def _neo4j(env: Environment) -> tuple[str, str]:
+    async def _neo4j(self, env: Environment) -> tuple[str, str]:
         if isinstance(env.connector, BuiltinConnector):
             return NOT_CONFIGURED, "the built-in graph"
-        await _in_thread(env.connector.ping)
+        await self._ping("neo4j", env.connector.ping)
         return PASS, "RETURN 1 answered"
 
     async def _oauth(self, refresh: bool) -> tuple[str, str]:
@@ -170,7 +187,8 @@ class Checks:
         if verifier is None:
             return NOT_CONFIGURED, "no OAuth"
         if refresh:
-            await verifier.refresh()
+            with anyio.fail_after(TIMEOUT_SECONDS):
+                await verifier.refresh()
         if verifier.last_error is not None:
             return FAIL, verifier.last_error
         if verifier.fetched_at is None:

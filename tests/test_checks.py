@@ -4,13 +4,17 @@
 import dataclasses
 import json
 import os
+import threading
+import time
 
+import anyio
 import pytest
 from conftest import ENV_TOML, JUDGE_TOML
 from fake_documents import FakeEmbedder
 from test_environment_resources import copied, load as load_handbook
 
-from clm_decision import derived, tracing
+from clm_decision import checks as checks_module
+from clm_decision import derived, oauth, tracing
 from clm_decision.admin import Admin
 from clm_decision.checks import Checks
 from clm_decision.environment import load_environment
@@ -150,3 +154,62 @@ def test_an_infrastructure_outside_the_three_is_refused_naming_the_table(write_e
     toml = ENV_TOML.replace('function = "cost"\n', f'function = "cost"\ninfrastructure = {value}\n')
     with pytest.raises(ScenarioError, match=r"calculations\.cost\.infrastructure"):
         load_environment(write_environment(toml))
+
+
+class Hung:
+    """A store or a fetch that blocks until released, counting the threads it holds."""
+
+    def __init__(self):
+        self.release, self.started = threading.Event(), 0
+
+    def block(self, *_args):
+        self.started += 1
+        self.release.wait(10)
+
+
+@pytest.mark.anyio
+async def test_a_hung_postgres_is_recorded_and_describe_skipped(monkeypatch):
+    monkeypatch.setattr(checks_module, "TIMEOUT_SECONDS", 0.3)
+    env, hung = load_handbook(), Hung()
+    checks = Checks(build_environment_server(env), None, None)
+    monkeypatch.setattr(env.store, "ping", hung.block)
+    monkeypatch.setattr(env.store, "built", hung.block)
+    try:
+        start = time.monotonic()
+        found = by_name(await checks.run())
+        took = time.monotonic() - start
+    finally:
+        hung.release.set()
+    assert took < 2
+    assert found["postgres"].status == "fail" and found["postgres"].detail == "no answer within 0.3 s"
+    assert found["describe"].status == "fail" and found["describe"].detail == "skipped: PostgreSQL not answering"
+
+
+@pytest.mark.anyio
+async def test_a_hung_ping_is_not_started_again(monkeypatch):
+    monkeypatch.setattr(checks_module, "TIMEOUT_SECONDS", 0.2)
+    env, hung = load_handbook(), Hung()
+    checks = Checks(build_environment_server(env), None, None)
+    monkeypatch.setattr(env.store, "ping", hung.block)
+    try:
+        first = by_name(await checks.run())["postgres"]
+        second = by_name(await checks.run())["postgres"]
+    finally:
+        hung.release.set()
+    assert hung.started == 1
+    assert first.detail == "no answer within 0.2 s"
+    assert second.status == "fail" and second.detail.startswith("the last ping has not answered since ")
+
+
+@pytest.mark.anyio
+async def test_a_slow_oauth_refresh_fails_within_the_limit(monkeypatch):
+    monkeypatch.setattr(checks_module, "TIMEOUT_SECONDS", 0.2)
+
+    async def slow(_url):
+        await anyio.sleep(10)
+    verifier = oauth.OidcVerifier("https://login.example.test/realms/clm", "decision-server", fetch=slow)
+    checks = Checks(build_environment_server(load_handbook()), None, verifier)
+    start = time.monotonic()
+    found = by_name(await checks.run(refresh=True))["oauth"]
+    assert time.monotonic() - start < 2
+    assert found.status == "fail" and found.detail == "no answer within 0.2 s"
