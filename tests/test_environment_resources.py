@@ -11,9 +11,9 @@ import pytest
 from fake_documents import FakeEmbedder, FakeStore
 from mcp import Client, MCPError
 
-from clm_decision import derived, environment_server, instructions, tracing
+from clm_decision import derived, instructions, tracing
 from clm_decision.environment import load_environment
-from clm_decision.environment_server import build_environment_server
+from clm_decision.environment_server import build_environment_server, reload
 
 HANDBOOK = Path(__file__).parent.parent / "examples" / "handbook"
 TARIFF = Path(__file__).parent.parent / "examples" / "tariff" / "environment.toml"
@@ -51,15 +51,33 @@ async def test_describe_is_a_resource_with_what_the_tool_returns():
 
 
 @pytest.mark.anyio
-async def test_every_rule_is_listed_and_reads_as_the_rule_tool_returns_it():
+async def test_rule_and_document_are_templates():
     async with Client(build_environment_server(load())) as client:
         listed = {str(resource.uri) for resource in (await client.list_resources()).resources}
         templates = {template.uri_template for template in (await client.list_resource_templates()).resource_templates}
         tool = await client.call_tool("rule", {"name": "match_eligible"})
         found = await read(client, "rule://match_eligible")
-    assert {f"rule://{name}" for name in RULES} | {"environment://describe"} <= listed
-    assert "rule://{name}" in templates
+    assert listed == {"environment://describe"}
+    assert {"rule://{name}", "document://{collection}/{id}", "document://{collection}/{id}/{passage}"} <= templates
     assert found == tool.structured_content and found["origin"] == "supplied"
+
+
+@pytest.mark.anyio
+async def test_a_rule_approved_after_start_reads_after_a_reload_without_a_new_server(tmp_path):
+    mcp = build_environment_server(copied(tmp_path, {"tuition_eligible": "proposed"}))
+    async with Client(mcp) as client:
+        with pytest.raises(MCPError, match="no rule 'tuition_eligible'"):
+            await client.read_resource("rule://tuition_eligible")
+        before = await read(client, "derived://in-force")
+        folder = tmp_path / "handbook"
+        layer = derived.read(folder)
+        layer["decisions"]["tuition_eligible"]["status"] = "approved"
+        derived.write(folder, layer)
+        reload(mcp, load_environment(folder / "environment_derived.toml", store=store(), embedder=FakeEmbedder()))
+        found = await read(client, "rule://tuition_eligible")
+        after = await read(client, "derived://in-force")
+    assert found["origin"] == "derived" and found["status"] == "approved"
+    assert "tuition_eligible" not in before["entries"] and "tuition_eligible" in after["entries"]
 
 
 @pytest.mark.anyio
@@ -159,32 +177,16 @@ async def test_a_document_and_a_passage_read_as_the_document_tool_returns_them()
 
 
 @pytest.mark.anyio
-async def test_a_small_collection_lists_each_document_and_the_template_says_the_limit():
+async def test_describe_shows_a_collection_without_listing_its_documents():
     async with Client(build_environment_server(load())) as client:
-        resources = {str(resource.uri): resource for resource in (await client.list_resources()).resources}
-        templates = {template.uri_template: template
-                     for template in (await client.list_resource_templates()).resource_templates}
+        listed = {str(resource.uri) for resource in (await client.list_resources()).resources}
         described = await client.call_tool("describe", {})
-    documents = sorted(uri for uri in resources if uri.startswith("document://"))
-    assert len(documents) == 13 and "document://handbook/hb-welcome" in documents
-    assert resources["document://handbook/hb-401k-2026"].description.startswith("Meridian")
-    assert {"document://{collection}/{id}", "document://{collection}/{id}/{passage}"} <= set(templates)
-    note = templates["document://{collection}/{id}"].description
-    assert f"at most {environment_server.LISTED_DOCUMENTS} documents" in note
+    assert not any(uri.startswith("document://") for uri in listed)
     assert set(described.structured_content["collections"]["handbook"]) == {"description", "filters", "built"}
 
 
 @pytest.mark.anyio
-async def test_a_large_collection_is_not_listed_but_can_be_read(monkeypatch):
-    monkeypatch.setattr(environment_server, "LISTED_DOCUMENTS", 12)
-    async with Client(build_environment_server(load())) as client:
-        listed = {str(resource.uri) for resource in (await client.list_resources()).resources}
-        found = await read(client, "document://handbook/hb-welcome")
-    assert not any(uri.startswith("document://") for uri in listed) and found["document"]["id"] == "hb-welcome"
-
-
-@pytest.mark.anyio
-async def test_a_collection_loaded_with_another_model_is_not_listed_and_reading_says_why():
+async def test_a_collection_loaded_with_another_model_says_why_when_read():
     other = store()
     other.replace("handbook", [json.loads(line) for line in (HANDBOOK / "handbook.jsonl").read_text().splitlines()],
                   [], {"built_at": "2026-11-03T12:00:00Z", "source": "test", "model": "other-model",
@@ -236,3 +238,23 @@ async def test_the_prompt_is_the_agents_instructions_with_the_environment_and_th
     assert text == instructions.answer_question(env.name, env.description, "Am I eligible for the match?")
     assert text.startswith(instructions.agent_system() + "\n\n")
     assert f"'{env.name}'" in text and env.description in text and text.endswith("Am I eligible for the match?")
+
+
+@pytest.mark.anyio
+async def test_a_template_a_reload_no_longer_offers_says_so_and_one_it_needs_is_added():
+    env = load()
+    without_rules = dataclasses.replace(env, decisions={
+        name: dataclasses.replace(decision, rule=dataclasses.replace(decision.rule, governs=()))
+        if decision.rule else decision for name, decision in env.decisions.items()})
+    mcp = build_environment_server(env)
+    async with Client(mcp) as client:
+        reload(mcp, without_rules)
+        with pytest.raises(MCPError, match="this server offers no rules"):
+            await client.read_resource("rule://match_eligible")
+        assert (await read(client, "document://handbook/hb-welcome"))["document"]["id"] == "hb-welcome"
+    mcp = build_environment_server(load_environment(TARIFF))
+    async with Client(mcp) as client:
+        reload(mcp, load())
+        templates = {template.uri_template for template in (await client.list_resource_templates()).resource_templates}
+        found = await read(client, "rule://match_eligible")
+    assert {"rule://{name}", "document://{collection}/{id}"} <= templates and found["origin"] == "supplied"

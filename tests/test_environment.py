@@ -190,3 +190,27 @@ def test_a_closed_postgres_store_stays_closed():
     store.close()
     store.close()
     assert first.closed and store._connection() is first and not opened     # pylint: disable=protected-access
+
+
+def test_a_load_that_fails_closes_the_store_it_connected(write_environment, monkeypatch):
+    fresh = ClosableStore()
+    monkeypatch.setattr("clm_decision.environment.docs.connect", lambda settings: fresh)
+
+    def fail(*args):
+        raise ScenarioError("derived: broken")
+    monkeypatch.setattr("clm_decision.environment._fill", fail)
+    with pytest.raises(ScenarioError, match="derived: broken"):
+        load_environment(write_environment(WITH_DOCUMENTS))
+    assert fresh.closed == 1
+
+
+def test_a_load_that_fails_leaves_a_shared_store_open(write_environment, monkeypatch):
+    path = write_environment(WITH_DOCUMENTS)
+    old = load_environment(path, store=ClosableStore(), embedder=FakeEmbedder())
+
+    def fail(*args):
+        raise ScenarioError("derived: broken")
+    monkeypatch.setattr("clm_decision.environment._fill", fail)
+    with pytest.raises(ScenarioError):
+        load_environment(path, reuse=old)
+    assert old.store.closed == 0

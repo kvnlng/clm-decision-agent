@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from types import ModuleType
-from typing import Protocol
+from typing import Iterable, Protocol
 
 from . import derived
 from . import documents as docs
@@ -255,10 +255,12 @@ class Environment:  # pylint: disable=too-many-instance-attributes
         return sorted({topic for decision in self.decisions.values() if decision.rule
                        for topic in decision.rule.governs})
 
-    def close(self, keeping: "Environment | None" = None) -> None:
-        """Closes what this environment opened: the document store and the Neo4j driver. An object `keeping` also
-        holds is left open, because that environment still uses it. Safe to call twice."""
-        kept = ([keeping.store, keeping.connector] if keeping else [])
+    def close(self, keeping: Environment | Iterable[Environment] | None = None) -> None:
+        """Closes what this environment opened: the document store and the Neo4j driver. An object an environment in
+        `keeping` (one, or several) also holds is left open, because that environment still uses it. Safe to call
+        twice."""
+        others = [] if keeping is None else [keeping] if isinstance(keeping, Environment) else list(keeping)
+        kept = [owned for other in others for owned in (other.store, other.connector)]
         for owned in (self.store, self.connector):
             if owned is not None and hasattr(owned, "close") and not any(owned is other for other in kept):
                 owned.close()
@@ -823,19 +825,28 @@ def load_environment(path: str | Path, backend: str | None = None,
     judges = {name: _judge(name, table, clm) for name, table in _parts(data, "judges").items()}
     document_settings = docs.document_settings(data)
     collections = docs.collections(data, document_settings)
+    opened = None       # a store connected here, closed again if a later step fails
     if document_settings is not None:
         shared = reuse if reuse is not None and reuse.document_settings == document_settings else None
-        store = store or (shared.store if shared and shared.store else None) or docs.connect(document_settings)
+        store = store or (shared.store if shared and shared.store else None)
+        if store is None:
+            store = opened = docs.connect(document_settings)
         embedder = embedder or (shared.embedder if shared and shared.embedder else None) or docs.OllamaEmbedder(
             document_settings.ollama_url)
     else:
         store = embedder = None
-    _check_citations(decisions, collections, store)
-    filled = _fill(slots, (folder, functions, admitted_statuses, admit is not None, today or date.today()), graph,
-                   collections, store)
-    # Connected last, once everything else is known to be right
+    try:
+        _check_citations(decisions, collections, store)
+        filled = _fill(slots, (folder, functions, admitted_statuses, admit is not None, today or date.today()), graph,
+                       collections, store)
+        # Connected last, once everything else is known to be right
+        connector = _connector(settings, graph, functions, reuse)
+    except BaseException:
+        if opened is not None and hasattr(opened, "close"):
+            opened.close()
+        raise
     return Environment(path, _text(head, "name", "environment"), _text(head, "description", "environment"), graph,
-                       functions, _connector(settings, graph, functions, reuse), queries, decisions | filled.decisions,
+                       functions, connector, queries, decisions | filled.decisions,
                        calculations, scenarios,
                        judges, clm, information, collections, store, embedder,
                        document_settings.tools if document_settings else True,

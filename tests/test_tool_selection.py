@@ -110,20 +110,23 @@ async def test_the_prompt_names_only_tools_that_are_offered():
 
 
 @pytest.mark.anyio
-async def test_the_servers_instructions_name_only_tools_that_are_offered():
+async def test_the_servers_instructions_name_no_tool_a_reload_can_take_away():
     async with Client(build_environment_server(load(), serve=Serve(exclude_tools=("scenario_*",)))) as client:
         said = client.instructions
-    assert "Call describe first" in said and "run a scenario" not in said
+    async with Client(build_environment_server(load())) as client:
+        assert client.instructions == said
+    assert "Call describe first" in said and "scenario_" not in said and "when describe lists a scenario" in said
 
 
 @pytest.mark.anyio
-async def test_without_a_selection_an_environment_with_no_scenarios_names_none():
+async def test_an_environment_with_no_scenarios_gets_the_same_instructions_and_a_prompt_naming_none():
     async with Client(build_environment_server(load("environment_documents_only.toml"))) as client:
         said = client.instructions
         text = (await client.get_prompt("answer_question", {"question": "How many days carry over?"})
                 ).messages[0].content.text
     assert said == ("Decisions for 'Employee handbook (documents only)'. Call describe first. Every figure and verdict "
-                    "comes from these tools.")
+                    "comes from these tools: when describe lists a scenario, run it to compare alternatives rather "
+                    "than combining queries and decisions yourself.")
     assert "run the scenario tool" not in text and "Start with describe" in text
 
 
@@ -133,8 +136,8 @@ async def test_with_every_tool_the_instructions_and_prompt_are_whole():
     async with Client(build_environment_server(env)) as client:
         said = client.instructions
         text = (await client.get_prompt("answer_question", {"question": "q"})).messages[0].content.text
-    assert said.endswith(": run a scenario to compare alternatives rather than combining queries and decisions "
-                         "yourself.")
+    assert said.endswith(": when describe lists a scenario, run it to compare alternatives rather than combining "
+                         "queries and decisions yourself.")
     assert text == instructions.answer_question(env.name, env.description, "q")
 
 

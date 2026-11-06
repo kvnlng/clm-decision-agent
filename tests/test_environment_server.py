@@ -2,17 +2,24 @@
 # Test names say what they check, and pytest fixtures are used by repeating their names.
 # pylint: disable=missing-function-docstring,redefined-outer-name
 import json
+import threading
 from pathlib import Path
 
+import anyio
 import pytest
-from conftest import ENV_TOML, JUDGE_TOML, FakeRouter, decision
+from conftest import ENV_FUNCTIONS, ENV_TOML, JUDGE_TOML, FakeRouter, decision
+from fake_documents import FakeEmbedder
 from mcp import Client
+from test_holder import ClosableStore
 
 from clm_decision import clm_router
 from clm_decision import server
 from clm_decision import tracing
 from clm_decision.environment import Environment, load_environment
-from clm_decision.environment_server import build_environment_server, describe
+from clm_decision.environment_server import build_environment_server, describe, reload
+from clm_decision.holder import Holder
+from clm_decision.scenario import ScenarioError
+from clm_decision.serving import Serve
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "tariff" / "environment.toml"
 QUERIES = ["product_facts", "components_of", "suppliers_of", "key_clients_of", "supply_dependencies",
@@ -229,3 +236,110 @@ async def test_no_tool_changes_a_status(tmp_path, monkeypatch):
     assert all(tool.annotations.read_only_hint for tool in tools)
     assert not [tool.name for tool in tools if any(word in tool.name for word in ("status", "approve", "check"))]
     assert (tmp_path / "derived" / "derived.json").read_text(encoding="utf-8") == before
+
+
+GATED_FUNCTIONS = ENV_FUNCTIONS + '''
+GATE = None        # set by a test: (entered, release), two threading.Events
+MARGIN = 20
+
+
+def cost(share, cost_a, cost_b):
+    if GATE:
+        GATE[0].set()
+        GATE[1].wait(10)
+    unit = cost_a * (1 - share) + cost_b * share
+    return {"unit_cost": unit, "margin": MARGIN - unit}
+
+
+def x(share):
+    return {"share": share}
+'''
+DOCUMENTS = '\n[documents]\nbackend = "postgres"\npassword_env = "TOY_DOCUMENTS_PASSWORD"\n'
+WITH_DOCUMENTS = ENV_TOML + DOCUMENTS
+NO_SCENARIO = ENV_TOML.split("[scenarios.sourcing]", maxsplit=1)[0] + DOCUMENTS
+DECISION_X = '\n[decisions.x]\ndescription = "One more decision"\nparams = { share = "number" }\nfunction = "x"\n'
+
+
+def gated(write_environment, toml=WITH_DOCUMENTS, margin=20, folder="toy"):
+    """The toy environment with a closable store, whose cost calculation gives `margin` less the unit cost."""
+    return load_environment(write_environment(toml, GATED_FUNCTIONS.replace("MARGIN = 20", f"MARGIN = {margin}"),
+                                              folder=folder), store=ClosableStore(), embedder=FakeEmbedder())
+
+
+@pytest.mark.anyio
+async def test_call_in_flight_keeps_old_environment(write_environment):
+    old = gated(write_environment)
+    new = gated(write_environment, margin=30, folder="new")
+    entered, release = threading.Event(), threading.Event()
+    old.functions.GATE = (entered, release)
+    mcp = build_environment_server(old)
+    arguments = {"share": 0, "cost_a": 10, "cost_b": 6}
+    async with Client(mcp) as client:
+        async with anyio.create_task_group() as group:
+            results = []
+
+            async def call():
+                results.append(await client.call_tool("calculation_cost", arguments))
+            group.start_soon(call)
+            assert await anyio.to_thread.run_sync(entered.wait, 10)
+            reload(mcp, new)
+            assert mcp.holder.current is new and old.store.closed == 0
+            release.set()
+        after = await client.call_tool("calculation_cost", arguments)
+    assert results[0].structured_content["result"]["margin"] == 10         # the old environment's function
+    assert after.structured_content["result"]["margin"] == 20               # the new one's
+    assert old.store.closed == 1 and new.store.closed == 0
+
+
+@pytest.mark.anyio
+async def test_reload_adds_and_removes_tools(write_environment):
+    old = gated(write_environment)
+    new = gated(write_environment, NO_SCENARIO + DECISION_X, folder="new")
+    mcp = build_environment_server(old)
+    async with Client(mcp) as client:
+        before = {tool.name for tool in (await client.list_tools()).tools}
+        changed = reload(mcp, new)
+        after = {tool.name for tool in (await client.list_tools()).tools}
+        decided = await client.call_tool("decision_x", {"share": 0.5})
+        gone = await client.call_tool("scenario_sourcing", {"product": "P1"})
+        described = await client.call_tool("describe", {})
+    assert changed == {"added": ["decision_x"], "removed": ["scenario_sourcing"]}
+    assert after == before - {"scenario_sourcing"} | {"decision_x"}
+    assert not decided.is_error and decided.structured_content["outputs"] == {"share": 0.5}
+    assert gone.is_error
+    assert "x" in described.structured_content["decisions"] and not described.structured_content["scenarios"]
+
+
+@pytest.mark.anyio
+async def test_reload_replaces_changed_function(write_environment):
+    mcp = build_environment_server(gated(write_environment))
+    arguments = {"share": 0, "cost_a": 10, "cost_b": 6}
+    async with Client(mcp) as client:
+        first = await client.call_tool("calculation_cost", arguments)
+        changed = reload(mcp, gated(write_environment, margin=30, folder="new"))
+        second = await client.call_tool("calculation_cost", arguments)
+    assert changed == {"added": [], "removed": []}
+    assert first.structured_content["result"]["margin"] == 10 and second.structured_content["result"]["margin"] == 20
+
+
+@pytest.mark.anyio
+async def test_a_reload_whose_tool_selection_fails_keeps_the_old_environment(write_environment):
+    old = gated(write_environment)
+    new = gated(write_environment, NO_SCENARIO, folder="new")
+    mcp = build_environment_server(old, serve=Serve(tools=("describe", "scenario_sourcing")))
+    with pytest.raises(ScenarioError, match="scenario_sourcing"):
+        reload(mcp, new)
+    async with Client(mcp) as client:
+        names = {tool.name for tool in (await client.list_tools()).tools}
+        ran = await client.call_tool("scenario_sourcing", {"product": "P1"})
+    assert mcp.holder.current is old and names == {"describe", "scenario_sourcing"} and not ran.is_error
+    assert new.store.closed == 1 and old.store.closed == 0
+
+
+@pytest.mark.anyio
+async def test_a_server_built_on_a_holder_serves_what_it_holds(write_environment):
+    holder = Holder(gated(write_environment))
+    mcp = build_environment_server(holder, website_url="https://example.test")
+    async with Client(mcp) as client:
+        result = await client.call_tool("calculation_cost", {"share": 0, "cost_a": 10, "cost_b": 6})
+    assert mcp.holder is holder and not result.is_error and mcp.website_url == "https://example.test"
