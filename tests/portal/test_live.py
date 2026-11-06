@@ -26,6 +26,7 @@ from clm_decision.checks import Checks
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server
 from clm_decision.portal import live, managed, web
+from clm_decision.server import KeySet
 from clm_decision.scenario import ScenarioError
 from .conftest import KEY, ORIGIN, post, sign_in
 from .test_chat import reply, scripted
@@ -143,6 +144,36 @@ def test_the_checks_run_while_the_portal_runs(derived_environment, server, monke
                 break
             time.sleep(0.01)
     assert [check.name for check in server.checks.latest][-2:] == ["tools", "describe"]
+
+
+AGENT_KEY, NEW_AGENT_KEY = "an-agents-key-0123456789", "a-new-agents-key-9876543210"
+
+
+def test_a_reload_reads_the_agents_keys_again(derived_environment, tmp_path, monkeypatch):
+    monkeypatch.setattr(web, "WRONG_KEY_WAIT", 0.01)
+    path = tmp_path / "keys.txt"
+    path.write_text(AGENT_KEY + "\n")
+    keys, built = KeySet.from_sources(None, path), build(derived_environment)
+    server = live.LiveServer(built.server, built.admin, built.checks, keys=keys, portal_key=KEY)
+    portal = web.Portal(derived_environment, server, managed.Jobs(script=lambda name: None), keys=keys)
+    with TestClient(web.create_app(portal, KEY, "127.0.0.1", 8400), base_url=ORIGIN) as client:
+        token = sign_in(client)
+        path.write_text(f"{AGENT_KEY}\n{NEW_AGENT_KEY}\n")
+        assert post(client, "/reload", token, follow_redirects=False).status_code == 303
+        assert keys.match(NEW_AGENT_KEY.encode()) and server.key_error is None
+        path.write_text(f"{NEW_AGENT_KEY}\nshort\n")
+        response = post(client, "/reload", token)
+        assert response.status_code == 409 and server.error is None
+        assert "keys.txt line 2" in response.text and "the keys from before still open" in response.text
+        assert keys.match(AGENT_KEY.encode()) and "the keys from before" in client.get("/server").text
+        path.write_text(f"{NEW_AGENT_KEY}\n{KEY}\n")
+        response = post(client, "/reload", token)
+        assert response.status_code == 409 and "the portal&#x27;s key" in response.text
+        assert KEY not in response.text and not keys.holds(KEY)
+        path.write_text(NEW_AGENT_KEY + "\n")
+        assert post(client, "/reload", token, follow_redirects=False).status_code == 303
+        assert server.key_error is None and keys.match(AGENT_KEY.encode()) is None
+        assert "the keys from before" not in client.get("/").text
 
 
 def free_port() -> int:

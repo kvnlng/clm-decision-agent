@@ -70,6 +70,8 @@ as `***`.
   was last used, OAuth issuer, audience and scopes, and `set` or `missing` for the PostgreSQL and Neo4j passwords
   and `LLM_API_KEY`. No value is shown. To rotate an agents' key, add the new one to the `--key-file` file, reload or
   restart, move the agents over, then delete the old line ([serving-reference.md](serving-reference.md#the-flags)).
+  A reload that cannot read the key file (missing, a key too short, no keys, or the portal's own key) keeps the old
+  keys and says why.
 
 **Security:** the cookie is `HttpOnly` and `SameSite=Strict`; every form carries a per-session token; a POST from
 another origin, or a request whose `Host` is not the portal's address, is refused. Off 127.0.0.1, put it behind TLS.

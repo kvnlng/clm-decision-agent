@@ -269,56 +269,82 @@ MIN_FILE_KEY = 16
 
 class KeySet:
     """The keys agents may send, held as SHA-256 digests only. An agent's key is known by its id, the first 8 hex
-    characters of its digest; `last_used` says when each id last opened a request."""
+    characters of its digest; `last_used` says when each id last opened a request. `reload` reads the key file
+    again, so a key is rotated by adding a line, letting both keys overlap, removing the old line and reloading."""
 
-    def __init__(self, digests: list[str]):
+    def __init__(self, digests: list[str], env_digest: str | None = None, file: Path | None = None):
         self._digests = list(dict.fromkeys(digests))
+        self._env_digest, self._file = env_digest, file
         self.last_used: dict[str, float] = {}
+        # reload swaps the digests in a thread while match runs on the event loop
+        self._lock = threading.Lock()
 
     @classmethod
     def from_sources(cls, env_key: str | None, file: Path | None) -> KeySet:
         """The key from a variable (any length) and each key in a file, one per line (blank lines and lines
         starting with # skipped, each key at least 16 characters); raises ScenarioError naming the file and line,
         never a key."""
-        digests = [hashlib.sha256(env_key.encode()).hexdigest()] if env_key else []
-        if file is not None:
-            try:
-                lines = file.read_text(encoding="utf-8").splitlines()
-            except (OSError, UnicodeDecodeError) as error:
-                raise ScenarioError(f"cannot read the key file {file}: {type(error).__name__}") from error
-            for number, line in enumerate(lines, 1):
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if len(line) < MIN_FILE_KEY:
-                    raise ScenarioError(f"{file} line {number}: a key must be at least {MIN_FILE_KEY} characters")
-                digests.append(hashlib.sha256(line.encode()).hexdigest())
-        if not digests:
-            raise ScenarioError("no keys: give a key in the environment or a key file with at least one key")
-        return cls(digests)
+        env_digest = hashlib.sha256(env_key.encode()).hexdigest() if env_key else None
+        return cls(_digests_from(env_digest, file), env_digest, file)
+
+    def reload(self, forbidden: str | None = None) -> None:
+        """Read the key file again, keeping when each key that stays was last used. On any error, or when the keys
+        would hold `forbidden` (the portal's key), raises ScenarioError and leaves the keys as they were."""
+        digests = list(dict.fromkeys(_digests_from(self._env_digest, self._file)))
+        if forbidden is not None and _matching(digests, forbidden.encode()) is not None:
+            raise ScenarioError("the key file holds the portal's key (CLM_PORTAL_KEY); give the portal a key of its "
+                                "own")
+        kept = {digest[:8] for digest in digests}
+        with self._lock:
+            self._digests = digests
+            self.last_used = {ident: when for ident, when in self.last_used.items() if ident in kept}
 
     def ids(self) -> list[str]:
         """The id of each key, in the order given."""
         return [digest[:8] for digest in self._digests]
 
-    def _find(self, sent: bytes) -> str | None:
-        sent_digest = hashlib.sha256(sent).hexdigest().encode()
-        found = None
-        for digest in self._digests:
-            if hmac.compare_digest(sent_digest, digest.encode()):
-                found = digest[:8]
-        return found
-
     def holds(self, key: str) -> bool:
         """Whether `key` is one of the keys, without noting a use."""
-        return self._find(key.encode()) is not None
+        return _matching(self._digests, key.encode()) is not None
 
     def match(self, sent: bytes) -> str | None:
         """The id of the key `sent` is, noting the time; None if it is none of them. Every digest is compared."""
-        found = self._find(sent)
-        if found is not None:
-            self.last_used[found] = time.time()
+        with self._lock:
+            found = _matching(self._digests, sent)
+            if found is not None:
+                self.last_used[found] = time.time()
         return found
+
+
+def _digests_from(env_digest: str | None, file: Path | None) -> list[str]:
+    """The variable's key digest, if any, and the digest of each key in the file; ScenarioError as
+    KeySet.from_sources says."""
+    digests = [env_digest] if env_digest else []
+    if file is not None:
+        try:
+            lines = file.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError) as error:
+            raise ScenarioError(f"cannot read the key file {file}: {type(error).__name__}") from error
+        for number, line in enumerate(lines, 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if len(line) < MIN_FILE_KEY:
+                raise ScenarioError(f"{file} line {number}: a key must be at least {MIN_FILE_KEY} characters")
+            digests.append(hashlib.sha256(line.encode()).hexdigest())
+    if not digests:
+        raise ScenarioError("no keys: give a key in the environment or a key file with at least one key")
+    return digests
+
+
+def _matching(digests: list[str], sent: bytes) -> str | None:
+    """The id of the digest `sent` has, comparing every digest; None if none."""
+    sent_digest = hashlib.sha256(sent).hexdigest().encode()
+    found = None
+    for digest in digests:
+        if hmac.compare_digest(sent_digest, digest.encode()):
+            found = digest[:8]
+    return found
 
 
 def http_app(server: MCPServer, keys: KeySet | str | None, host: str = "127.0.0.1",
@@ -476,7 +502,7 @@ def _serve_with_portal(args: argparse.Namespace, server: MCPServer, admin: Admin
     from .portal import live, managed, web
     checks = Checks(server, trace, auth.verifier if auth else None)
     shown = f"[{args.host}]" if ":" in args.host else args.host
-    portal = web.Portal(Path(args.scenario), live.LiveServer(server, admin, checks),
+    portal = web.Portal(Path(args.scenario), live.LiveServer(server, admin, checks, keys=keys, portal_key=portal_key),
                         managed.Jobs(withheld=(args.key_env,)),
                         options={"backend": args.ask_backend, "model": args.ask_model, "model_url": args.ask_model_url},
                         agents_url=args.resource_url or f"http://{shown}:{args.port}/mcp", keys=keys, oauth=auth)

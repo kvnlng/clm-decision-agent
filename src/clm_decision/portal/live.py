@@ -70,18 +70,24 @@ def result_dict(name: str, result) -> dict:
     return found if isinstance(found, dict) else {"result": found}
 
 
-class LiveServer:
-    """The agents' server (built by build_environment_server), its admin and its checks, for the portal. `error`
-    says why the last reload failed, while the server goes on serving what it loaded before; `testing` is whether
-    Ask talks to the private testing server, and `testing_error` why testing was turned off when a reload that
-    succeeded could not build it again. One lock takes reloads and testing changes in turn, so a load never
-    reuses an environment a concurrent reload retired; registry changes run on the event loop."""
+class LiveServer:  # pylint: disable=too-many-instance-attributes
+    """The agents' server (built by build_environment_server), its admin and its checks, for the portal, and `keys`,
+    the server.KeySet agents send (None under OAuth), which must never hold `portal_key`. `error` says why the last
+    reload failed, while the server goes on serving what it loaded before; `key_error` why the last reload could not
+    read the agents' keys again, while the keys from before go on opening; `testing` is whether Ask talks to the
+    private testing server, and `testing_error` why testing was turned off when a reload that succeeded could not
+    build it again. One lock takes reloads and testing changes in turn, so a load never reuses an environment a
+    concurrent reload retired; registry changes run on the event loop."""
 
     running = True      # the server is built before the portal starts, and serves until the process stops
 
-    def __init__(self, server: MCPServer, admin: admin_module.Admin | None, checks):
+    # pylint: disable-next=too-many-arguments
+    def __init__(self, server: MCPServer, admin: admin_module.Admin | None, checks, *, keys=None,
+                 portal_key: str | None = None):
         self.server, self.admin, self.checks = server, admin, checks
+        self.keys, self._portal_key = keys, portal_key
         self.error: str | None = None
+        self.key_error: str | None = None
         self.testing_error: str | None = None
         self._testing: MCPServer | None = None
         self._testing_env: Environment | None = None
@@ -117,11 +123,14 @@ class LiveServer:
                                                                 reuse=current))
 
     async def reload(self) -> None:
-        """Read the environment file again and serve it: calls already running finish with the old environment.
-        Never raises: when the load or the choice of tools fails, the old environment goes on serving and `error`
-        says why; a reload that succeeds clears it and builds the testing server again, if one is on. When that
-        rebuild fails, the reload still succeeded: testing is turned off and `testing_error` says why."""
+        """Read the environment file and the agents' key file again and serve them: calls already running finish
+        with the old environment. Never raises: when the load or the choice of tools fails, the old environment goes
+        on serving and `error` says why; a reload that succeeds clears it and builds the testing server again, if one
+        is on. When that rebuild fails, the reload still succeeded: testing is turned off and `testing_error` says
+        why. The keys are read whether or not the environment loads: when they cannot be, the keys from before go on
+        opening and `key_error` says why, never showing a key."""
         async with self.lock:
+            await self._reload_keys()
             current = self.server.holder.current
             try:
                 new = await self._load(list(current.admit) if current.admit_override else None)
@@ -137,6 +146,17 @@ class LiveServer:
                 except Exception as error:  # pylint: disable=broad-exception-caught
                     self.testing_error = ("the change is served; testing was turned off because the testing server "
                                           f"could not be built: {scrub(str(error) or type(error).__name__)}")
+
+    async def _reload_keys(self) -> None:
+        if self.keys is None:
+            return
+        try:
+            await anyio.to_thread.run_sync(functools.partial(self.keys.reload, forbidden=self._portal_key))
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            self.key_error = ("the agents' keys were not read again, so the keys from before still open: "
+                              f"{scrub(str(error) or type(error).__name__)}")
+            return
+        self.key_error = None
 
     async def set_testing(self, on: bool) -> None:
         """Point Ask at a private testing server, which admits every derived status but rejected, or back at the

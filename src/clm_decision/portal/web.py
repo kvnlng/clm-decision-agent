@@ -132,9 +132,9 @@ def page(portal: Portal, session: Session | None, title: str, body: str, *, stat
                f'<form method="post" action="/sign-out">{csrf_field(session)}<button>Sign out</button></form></nav>')
     banner = f'<p class="banner testing">{TESTING_BANNER}</p>' if portal.server.testing and portal.server.running \
         else ""
-    testing_error = getattr(portal.server, "testing_error", None)
-    if testing_error:
-        banner += f'<p class="banner failed">{esc(testing_error)}</p>'
+    for failed in (getattr(portal.server, "testing_error", None), getattr(portal.server, "key_error", None)):
+        if failed:
+            banner += f'<p class="banner failed">{esc(failed)}</p>'
     note = f'<p class="note">{OPERATOR_NOTE}</p>' if changes else ""
     return HTMLResponse(
         f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
@@ -292,7 +292,7 @@ async def reload_action(request: Request) -> Response:
             await portal.server.reload()
     except Busy as error:
         return await configuration_page(request, 409, str(error))
-    if portal.server.error:
+    if portal.server.error or getattr(portal.server, "key_error", None):
         return await configuration_page(request, 409)
     return RedirectResponse("/", status_code=303)
 

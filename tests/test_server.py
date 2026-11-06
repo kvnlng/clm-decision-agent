@@ -532,6 +532,66 @@ def test_last_used_updates(tmp_path):
     assert keys.match(b"wrong") is None and keys.last_used.keys() == {key_id}
 
 
+KEY_C = "agent-c-key-5555555555"
+
+
+def test_a_key_added_to_the_file_opens_after_a_reload(parts, tmp_path):
+    path = key_file(tmp_path, KEY_A)
+    keys = server.KeySet.from_sources(None, path)
+    port = free_port()
+    with serving(server.http_app(server.build_server(*parts, review=False), keys), port):
+        url = f"http://127.0.0.1:{port}/mcp"
+
+        def status() -> int:
+            return httpx2.post(url, headers={"Authorization": f"Bearer {KEY_C}"}, json={}).status_code
+        before = status()
+        key_file(tmp_path, KEY_A, KEY_C)
+        keys.reload()
+        after = status()
+    assert before == 401 and after != 401
+
+
+def test_a_key_removed_from_the_file_no_longer_matches_after_a_reload(tmp_path):
+    keys = server.KeySet.from_sources("the-variable", key_file(tmp_path, KEY_A, KEY_B))
+    key_file(tmp_path, KEY_B)
+    keys.reload()
+    assert keys.match(KEY_A.encode()) is None and keys.match(KEY_B.encode()) and keys.match(b"the-variable")
+    assert len(keys.ids()) == 2
+
+
+def test_a_reload_that_fails_keeps_the_keys_before(tmp_path):
+    path = key_file(tmp_path, KEY_A)
+    keys = server.KeySet.from_sources(None, path)
+    key_file(tmp_path, KEY_A, "too-short")
+    with pytest.raises(ScenarioError, match="line 2: a key must be at least 16") as error:
+        keys.reload()
+    assert "too-short" not in str(error.value)
+    path.unlink()
+    with pytest.raises(ScenarioError, match="cannot read the key file"):
+        keys.reload()
+    key_file(tmp_path, "# none")
+    with pytest.raises(ScenarioError, match="no keys"):
+        keys.reload()
+    assert keys.match(KEY_A.encode()) and len(keys.ids()) == 1
+
+
+def test_a_reload_keeps_when_a_kept_key_was_last_used(tmp_path):
+    keys = server.KeySet.from_sources(None, key_file(tmp_path, KEY_A, KEY_B))
+    kept, dropped = keys.match(KEY_A.encode()), keys.match(KEY_B.encode())
+    when = keys.last_used[kept]
+    key_file(tmp_path, KEY_A, KEY_C)
+    keys.reload()
+    assert keys.last_used == {kept: when} and dropped not in keys.last_used
+
+
+def test_a_reload_that_would_take_a_forbidden_key_is_refused(tmp_path):
+    keys = server.KeySet.from_sources(None, key_file(tmp_path, KEY_A))
+    key_file(tmp_path, KEY_A, KEY_C)
+    with pytest.raises(ScenarioError, match="the portal's key") as error:
+        keys.reload(forbidden=KEY_C)
+    assert KEY_C not in str(error.value) and keys.match(KEY_C.encode()) is None
+
+
 @pytest.mark.anyio
 async def test_key_id_is_not_the_key_and_reaches_the_trace(parts, tmp_path):
     keys = server.KeySet.from_sources(None, key_file(tmp_path, KEY_A, KEY_B))
@@ -611,6 +671,7 @@ def test_the_portal_is_served_beside_the_agents_port(write_environment, portal_s
     assert found.options == {"backend": "claude", "model": "m", "model_url": "http://model/v1"}
     assert found.server.checks is found.server.server.offering.checks and found.server.admin is not None
     assert found.keys.ids() and found.jobs.withheld == ("DECISION_SERVER_KEY",)
+    assert found.server.keys is found.keys      # a reload reads the very keys the agents' port checks
     assert portal_app.hosts == {"127.0.0.1:8401", "localhost:8401"}
     err = capsys.readouterr().err
     assert "the portal at http://127.0.0.1:8401/" in err and "warning" not in err.lower() and PORTAL_KEY not in err

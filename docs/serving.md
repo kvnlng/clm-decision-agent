@@ -45,8 +45,9 @@ For Claude Code: `claude mcp add --transport http decisions http://127.0.0.1:800
 Every flag, with its default: [the flags](serving-reference.md#the-flags).
 
 To change a key without a break, list more keys in a file (`--key-file`), add the new one, reload or restart, move
-the agents over, then remove the old one. For an environment, `--portal PORT` also serves the
-[portal](portal.md), the administrator's page, from the same process.
+the agents over, then remove the old one; a reload that cannot read the key file keeps the old keys and says why.
+For an environment, `--portal PORT` also serves the [portal](portal.md), the administrator's page, from the same
+process.
 
 ### With tokens from your identity provider (OAuth)
 
