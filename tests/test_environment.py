@@ -214,3 +214,11 @@ def test_a_load_that_fails_leaves_a_shared_store_open(write_environment, monkeyp
     with pytest.raises(ScenarioError):
         load_environment(path, reuse=old)
     assert old.store.closed == 0
+
+
+def test_a_bad_second_reader_is_refused_before_a_store_is_connected(write_environment, monkeypatch):
+    connected = []
+    monkeypatch.setattr("clm_decision.environment.docs.connect", lambda settings: connected.append(ClosableStore()))
+    with pytest.raises(ScenarioError, match="^derived.second_reader: must be a table"):
+        load_environment(write_environment(WITH_DOCUMENTS + '\n[derived]\nsecond_reader = "nope"\n'))
+    assert not connected

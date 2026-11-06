@@ -825,6 +825,7 @@ def load_environment(path: str | Path, backend: str | None = None,
     judges = {name: _judge(name, table, clm) for name, table in _parts(data, "judges").items()}
     document_settings = docs.document_settings(data)
     collections = docs.collections(data, document_settings)
+    second = _second_reader(data) if declared is not None else None     # checked before anything is opened
     opened = None       # a store connected here, closed again if a later step fails
     if document_settings is not None:
         shared = reuse if reuse is not None and reuse.document_settings == document_settings else None
@@ -852,5 +853,5 @@ def load_environment(path: str | Path, backend: str | None = None,
                        document_settings.tools if document_settings else True,
                        document_settings.cited_text if document_settings else True, slots, filled.unfilled,
                        tuple(filled.admitted), admitted_statuses, admit is not None,
-                       filled.facts, _second_reader(data) if declared is not None else None, filled.statuses,
+                       filled.facts, second, filled.statuses,
                        document_settings, settings)
