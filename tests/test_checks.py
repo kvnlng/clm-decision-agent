@@ -213,3 +213,13 @@ async def test_a_slow_oauth_refresh_fails_within_the_limit(monkeypatch):
     found = by_name(await checks.run(refresh=True))["oauth"]
     assert time.monotonic() - start < 2
     assert found.status == "fail" and found.detail == "no answer within 0.2 s"
+
+
+@pytest.mark.anyio
+async def test_a_ping_cancelled_before_its_thread_starts_does_not_block_the_next():
+    env = load_handbook()
+    checks = Checks(build_environment_server(env), None, None)
+    with anyio.move_on_after(0):
+        await checks._ping("postgres", lambda: False)  # pylint: disable=protected-access
+    found = by_name(await checks.run())
+    assert found["postgres"].status == "pass" and found["describe"].status == "pass"

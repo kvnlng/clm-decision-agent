@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import stat
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
@@ -130,14 +131,28 @@ class Checks:
             since = time.strftime("%H:%M:%S", time.localtime(self._pinging[name]))
             raise _Hung(f"the last ping has not answered since {since}")
         self._pinging[name] = time.time()
+        # Whether the thread took the ping, or the caller gave it up first: decided under the lock, so exactly one
+        # side clears the entry
+        lock, state = threading.Lock(), {"started": False, "given_up": False}
 
         def run() -> object:
+            with lock:
+                if state["given_up"]:
+                    return None
+                state["started"] = True
             try:
                 return ping()
             finally:
                 self._pinging.pop(name, None)
-        with anyio.fail_after(TIMEOUT_SECONDS):
-            return await anyio.to_thread.run_sync(run, abandon_on_cancel=True)
+        try:
+            with anyio.fail_after(TIMEOUT_SECONDS):
+                return await anyio.to_thread.run_sync(run, abandon_on_cancel=True)
+        finally:
+            # Cancelled or timed out before a thread took it: the ping never ran, so the next run may ping again
+            with lock:
+                if not state["started"]:
+                    state["given_up"] = True
+                    self._pinging.pop(name, None)
 
     def _record(self, name: str, status: str, detail: str, uses: dict[str, set[str]]) -> None:
         tools = sorted(tool for tool, needs in uses.items() if name in needs)
