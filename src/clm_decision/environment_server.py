@@ -276,6 +276,13 @@ def _chosen(env: Environment, offering: _Offering) -> tuple[list[str], list[str]
     return serving.choose(offering.serve, [name for name, *_ in _found(env, offering)])
 
 
+def _usable(env: Environment, offering: _Offering) -> list[str]:
+    """The tools offered for `env` that the operator has not disabled: a resource or prompt that stands for a tool
+    follows this, so a disabled tool is no more reachable through it than one left out."""
+    held = offering.admin.disabled if offering.admin else frozenset()
+    return [name for name in _chosen(env, offering)[0] if name not in held]
+
+
 def _described(offering: _Offering, env: Environment) -> dict:
     offered, left_out = _chosen(env, offering)
     held = offering.admin.disabled if offering.admin else frozenset()
@@ -283,8 +290,8 @@ def _described(offering: _Offering, env: Environment) -> dict:
 
 
 def _readable(env: Environment, offering: _Offering) -> list[str]:
-    """The collections whose document tool is offered for `env`."""
-    offered = _chosen(env, offering)[0]
+    """The collections whose document tool is offered for `env` and not disabled."""
+    offered = _usable(env, offering)
     return [name for name in env.collections if f"document_{name}" in offered]
 
 
@@ -295,7 +302,7 @@ def _read(offering: _Offering, uri: str, run: Callable[[Environment], dict]) -> 
 
 
 def _rule(offering: _Offering, env: Environment, name: str) -> dict:
-    if "rule" not in _chosen(env, offering)[0]:
+    if "rule" not in _usable(env, offering):
         raise engine.StepError("this server offers no rules")
     return explain_rule(env, name)
 
@@ -369,7 +376,7 @@ def _add_prompt(server: MCPServer, offering: _Offering) -> None:
     """answer_question: the reference agent's instructions with the current environment and a question."""
     def answer_question(question: str) -> str:
         with offering.holder.use() as env:
-            return instructions.answer_question(env.name, env.description, question, _chosen(env, offering)[0])
+            return instructions.answer_question(env.name, env.description, question, _usable(env, offering))
     server.add_prompt(_QuestionPrompt.from_function(
         answer_question, name="answer_question", description="Ask a question the way the reference agent does: its "
         "instructions, this environment's name and description, and the question, in one message."))

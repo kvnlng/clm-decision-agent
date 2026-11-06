@@ -12,6 +12,7 @@ from fake_documents import FakeEmbedder, FakeStore
 from mcp import Client, MCPError
 
 from clm_decision import derived, instructions, tracing
+from clm_decision.admin import Admin
 from clm_decision.environment import load_environment
 from clm_decision.environment_server import build_environment_server, reload
 
@@ -258,3 +259,31 @@ async def test_a_template_a_reload_no_longer_offers_says_so_and_one_it_needs_is_
         templates = {template.uri_template for template in (await client.list_resource_templates()).resource_templates}
         found = await read(client, "rule://match_eligible")
     assert {"rule://{name}", "document://{collection}/{id}"} <= templates and found["origin"] == "supplied"
+
+
+@pytest.mark.anyio
+async def test_a_disabled_tool_resource_reads_fail_as_a_left_out_one_does_until_it_is_enabled(tmp_path):
+    admin = Admin(tmp_path / "disabled_tools.json")
+    async with Client(build_environment_server(copied(tmp_path, {}), admin=admin)) as client:
+        admin.disable("rule")
+        admin.disable("document_handbook")
+        admin.disable("rules")
+        with pytest.raises(MCPError, match="this server offers no rules"):
+            await client.read_resource("rule://match_eligible")
+        with pytest.raises(MCPError, match="no collection 'handbook'"):
+            await client.read_resource("document://handbook/hb-welcome")
+        with pytest.raises(MCPError, match="no collection 'handbook'"):
+            await client.read_resource("document://handbook/hb-welcome/(1)")
+        hidden = await read(client, "derived://in-force")
+        prompt = await client.get_prompt("answer_question", {"question": "Am I eligible?"})
+        admin.enable("rule")
+        admin.enable("document_handbook")
+        admin.enable("rules")
+        restored = await client.get_prompt("answer_question", {"question": "Am I eligible?"})
+        rule = await read(client, "rule://match_eligible")
+        document = await read(client, "document://handbook/hb-welcome")
+        shown = await read(client, "derived://in-force")
+    assert all("quote" not in entry["source"] for entry in hidden["entries"].values())
+    assert "call rules" not in prompt.messages[0].content.text and "call rules" in restored.messages[0].content.text
+    assert rule["name"] == "match_eligible" and document["document"]["id"] == "hb-welcome"
+    assert any("quote" in entry["source"] for entry in shown["entries"].values())
