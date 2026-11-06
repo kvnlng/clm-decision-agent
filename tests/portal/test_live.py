@@ -182,3 +182,25 @@ def test_both_ports_stop():
         thread.join(10)
     assert not thread.is_alive() and removed == [True]
     assert not any(answers(port) for port in ports)
+
+
+def test_a_reload_whose_testing_rebuild_fails_is_still_a_success(client, server, monkeypatch):
+    token = sign_in(client)
+    post(client, "/ask/testing", token, {"on": "1"})
+    assert server.testing
+    load = live.load_environment
+
+    def no_testing(*args, admit=None, **kwargs):
+        if admit and "proposed" in admit:
+            raise ScenarioError("the testing server's file is broken")
+        return load(*args, admit=admit, **kwargs)
+    monkeypatch.setattr(live, "load_environment", no_testing)
+    assert post(client, "/reload", token, follow_redirects=False).status_code == 303
+    assert server.error is None and not server.testing
+    page = client.get("/").text
+    assert "testing was turned off because" in page and "the testing server&#x27;s file is broken" in page
+    assert "Load errors" not in page and web.TESTING_BANNER not in page
+    review = post(client, "/review/decisions/carry/approve", token).text
+    assert "carry approved." in review and "did not take it" not in review
+    post(client, "/ask/testing", token, {"on": "0"})
+    assert "testing was turned off" not in client.get("/").text

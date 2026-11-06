@@ -129,6 +129,9 @@ def page(portal: Portal, session: Session | None, title: str, body: str, *, stat
                f'<form method="post" action="/sign-out">{csrf_field(session)}<button>Sign out</button></form></nav>')
     banner = f'<p class="banner testing">{TESTING_BANNER}</p>' if portal.server.testing and portal.server.running \
         else ""
+    testing_error = getattr(portal.server, "testing_error", None)
+    if testing_error:
+        banner += f'<p class="banner failed">{esc(testing_error)}</p>'
     note = f'<p class="note">{OPERATOR_NOTE}</p>' if changes else ""
     return HTMLResponse(
         f'<!doctype html><html lang="en"><head><meta charset="utf-8">'

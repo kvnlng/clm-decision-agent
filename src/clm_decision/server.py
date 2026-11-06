@@ -301,13 +301,21 @@ class KeySet:
         """The id of each key, in the order given."""
         return [digest[:8] for digest in self._digests]
 
-    def match(self, sent: bytes) -> str | None:
-        """The id of the key `sent` is, noting the time; None if it is none of them. Every digest is compared."""
+    def _find(self, sent: bytes) -> str | None:
         sent_digest = hashlib.sha256(sent).hexdigest().encode()
         found = None
         for digest in self._digests:
             if hmac.compare_digest(sent_digest, digest.encode()):
                 found = digest[:8]
+        return found
+
+    def holds(self, key: str) -> bool:
+        """Whether `key` is one of the keys, without noting a use."""
+        return self._find(key.encode()) is not None
+
+    def match(self, sent: bytes) -> str | None:
+        """The id of the key `sent` is, noting the time; None if it is none of them. Every digest is compared."""
+        found = self._find(sent)
         if found is not None:
             self.last_used[found] = time.time()
         return found
@@ -428,9 +436,10 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _portal_settings(args: argparse.Namespace) -> tuple[str, str | None]:
+def _portal_settings(args: argparse.Namespace, keys: KeySet | None) -> tuple[str, str | None]:
     """The portal's sign-in key and public origin, checked before anything loads; ScenarioError saying what is
-    wrong, never the key. Warns when the portal listens beyond this computer."""
+    wrong, never a key. The portal's key must not be one of `keys`, the agents'. Warns when the portal listens beyond
+    this computer."""
     # pylint: disable=import-outside-toplevel
     from .portal import LOOPBACK, MIN_KEY, PORTAL_KEY_ENV, web
     if not args.http:
@@ -446,6 +455,8 @@ def _portal_settings(args: argparse.Namespace) -> tuple[str, str | None]:
                             "use")
     if len(key) < MIN_KEY:
         raise ScenarioError(f"{PORTAL_KEY_ENV} must be at least {MIN_KEY} characters; use a long random key")
+    if keys is not None and keys.holds(key):
+        raise ScenarioError(f"{PORTAL_KEY_ENV} is one of the keys agents send; give the portal a key of its own")
     try:
         public = web.public_origin(args.portal_public_origin) if args.portal_public_origin else None
     except ValueError as error:
@@ -512,7 +523,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.admit_derived and not is_environment(args.scenario):
             print("error: --admit-derived is for environments; a CLM scenario has no derived rules", file=sys.stderr)
             return 2
-        portal_key, public = _portal_settings(args) if args.portal is not None else (None, None)
+        portal_key, public = _portal_settings(args, keys) if args.portal is not None else (None, None)
         serve = serving.merged(serving.read(args.scenario), args.tools, args.exclude_tools, args.read_only)
         if serve.read_only and args.review:
             raise ScenarioError(NO_REVIEW)

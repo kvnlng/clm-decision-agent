@@ -638,3 +638,16 @@ def test_the_portal_public_origin_reaches_the_page(write_environment, portal_sta
     portal_app = portal_started[0][1]
     assert portal_app.public == "https://portal.example"
     assert portal_app.hosts == {"127.0.0.1:8400", "localhost:8400", "portal.example"}
+
+
+def test_the_portal_key_is_not_an_agents_key(write_environment, portal_started, monkeypatch, capsys):
+    monkeypatch.setenv("DECISION_SERVER_KEY", PORTAL_KEY)
+    assert server.main([str(write_environment()), "--http", "--portal", "8400"]) == 2
+    err = capsys.readouterr().err
+    assert "one of the keys agents send" in err and PORTAL_KEY not in err and len(err.strip().splitlines()) == 1
+    assert not portal_started
+
+
+def test_holds_notes_no_use():
+    keys = server.KeySet.from_sources("the-agents-key", None)
+    assert keys.holds("the-agents-key") and not keys.holds("another-key") and not keys.last_used

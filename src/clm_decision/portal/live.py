@@ -73,7 +73,8 @@ def result_dict(name: str, result) -> dict:
 class LiveServer:
     """The agents' server (built by build_environment_server), its admin and its checks, for the portal. `error`
     says why the last reload failed, while the server goes on serving what it loaded before; `testing` is whether
-    Ask talks to the private testing server. One lock takes reloads and testing changes in turn, so a load never
+    Ask talks to the private testing server, and `testing_error` why testing was turned off when a reload that
+    succeeded could not build it again. One lock takes reloads and testing changes in turn, so a load never
     reuses an environment a concurrent reload retired; registry changes run on the event loop."""
 
     running = True      # the server is built before the portal starts, and serves until the process stops
@@ -81,6 +82,7 @@ class LiveServer:
     def __init__(self, server: MCPServer, admin: admin_module.Admin | None, checks):
         self.server, self.admin, self.checks = server, admin, checks
         self.error: str | None = None
+        self.testing_error: str | None = None
         self._testing: MCPServer | None = None
         self._testing_env: Environment | None = None
         self._lock: asyncio.Lock | None = None
@@ -117,7 +119,8 @@ class LiveServer:
     async def reload(self) -> None:
         """Read the environment file again and serve it: calls already running finish with the old environment.
         Never raises: when the load or the choice of tools fails, the old environment goes on serving and `error`
-        says why; a reload that succeeds clears it and builds the testing server again, if one is on."""
+        says why; a reload that succeeds clears it and builds the testing server again, if one is on. When that
+        rebuild fails, the reload still succeeded: testing is turned off and `testing_error` says why."""
         async with self.lock:
             current = self.server.holder.current
             try:
@@ -132,12 +135,14 @@ class LiveServer:
                 try:
                     await self._build_testing()
                 except Exception as error:  # pylint: disable=broad-exception-caught
-                    self.error = f"testing is off: the testing server could not be built: {scrub(str(error))}"
+                    self.testing_error = ("the change is served; testing was turned off because the testing server "
+                                          f"could not be built: {scrub(str(error) or type(error).__name__)}")
 
     async def set_testing(self, on: bool) -> None:
         """Point Ask at a private testing server, which admits every derived status but rejected, or back at the
         agents' server. The error of a testing server that cannot be built is raised, and testing stays off."""
         async with self.lock:
+            self.testing_error = None
             if on:
                 await self._build_testing()
             else:
