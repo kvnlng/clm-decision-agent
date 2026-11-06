@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
-from collections import defaultdict
+import time
+from collections import Counter, defaultdict
+from datetime import datetime
 
 import numpy as np
 
@@ -27,6 +30,30 @@ def load(path: str) -> list[dict]:
     except ValueError:
         pass
     return records
+
+
+def parse_time(text: str, now: float) -> float:
+    """An epoch time from `15m`, `2h` or `30s` (that long before `now`) or an ISO time such as
+    2026-11-06T12:00:00+00:00. A time with no offset is local. Anything else raises ValueError."""
+    ago = re.fullmatch(r"(\d+(?:\.\d+)?)([smh])", text.strip())
+    if ago:
+        return now - float(ago.group(1)) * {"s": 1, "m": 60, "h": 3600}[ago.group(2)]
+    try:
+        return datetime.fromisoformat(text.strip()).timestamp()
+    except ValueError:
+        raise ValueError(f"{text!r} is neither a time such as 15m, 2h or 30s nor an ISO time") from None
+
+
+def window(records: list[dict], since: float | None, until: float | None) -> list[dict]:
+    """The calls that started from `since` to `until`, both ends included and either open, without the
+    health-check calls the server makes itself."""
+    return [record for record in records if not record.get("synthetic")
+            and (since is None or record["started"] >= since) and (until is None or record["started"] <= until)]
+
+
+def _caller(record: dict) -> str:
+    caller = record.get("caller") or {}
+    return caller.get("client_id") or caller.get("key_id") or "unknown"
 
 
 def _stages(record: dict) -> dict[str, float]:
@@ -81,8 +108,9 @@ def _percent(value: float | None) -> str:
     return "-" if value is None else f"{value:.0%}"
 
 
-def report(summary: dict[str, dict]) -> str:
-    """The summary as text, one table per MCP tool."""
+def report(summary: dict[str, dict], records: list[dict] | None = None) -> str:
+    """The summary as text, one table per MCP tool. Given the records it summarises, it ends with a table of
+    calls and failures per caller (a client id, else a shared key's id, else unknown) and the failure count."""
     out = []
     for tool, found in summary.items():
         rate = "" if found["per_second"] is None else f", {found['per_second']:.1f} a second"
@@ -101,6 +129,13 @@ def report(summary: dict[str, dict]) -> str:
             out.append("  steps per call: " + ", ".join(f"{value:.1f} {name}"
                                                          for name, value in found["steps_per_call"].items()))
         out.append("")
+    if records:
+        calls = Counter(_caller(record) for record in records)
+        failed = Counter(_caller(record) for record in records if "error" in record["outcome"])
+        out.append(f"  {'caller':<22}{'calls':>10}{'errors':>10}")
+        out.extend(f"  {name:<22}{count:>10}{failed[name]:>10}" for name, count in calls.most_common())
+        out.append(f"errors: {sum(failed.values())} of {len(records)} calls")
+        out.append("")
     return "\n".join(out)
 
 
@@ -108,7 +143,16 @@ def main(argv: list[str] | None = None) -> int:
     """Command-line entry point; returns the process exit code."""
     parser = argparse.ArgumentParser(description="Summarise a trace written by clm-server --trace.")
     parser.add_argument("trace", help="the trace file")
+    parser.add_argument("--since", help="only calls from then: 15m, 2h or 30s ago, or an ISO time")
+    parser.add_argument("--until", help="only calls up to then, written the same way")
     args = parser.parse_args(argv)
+    now = time.time()
+    try:
+        since = None if args.since is None else parse_time(args.since, now)
+        until = None if args.until is None else parse_time(args.until, now)
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
     try:
         records = load(args.trace)
     except (OSError, ValueError) as error:
@@ -117,7 +161,14 @@ def main(argv: list[str] | None = None) -> int:
     if not records:
         print(f"{args.trace} has no calls yet.")
         return 0
-    print(report(summarise(records)))
+    records = window(records, since, until)
+    if not records:
+        def shown(moment):
+            return datetime.fromtimestamp(moment).astimezone().isoformat(" ", "seconds")
+        start = "the start" if since is None else shown(since)
+        print(f"no calls between {start} and {shown(now if until is None else until)}.")
+        return 0
+    print(report(summarise(records), records))
     return 0
 
 

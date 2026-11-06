@@ -111,6 +111,9 @@ its URI (`rule://vesting`), with the caller and whether it failed.
 The report gives each kind of call (`decide`, `check_call`, ...) a table of stages, with each stage's mean, median,
 95th and 99th percentile in milliseconds and its share of the time. Then come the cache hit rate, texts and tokens
 per call, padding's share of what was encoded and, for an environment, steps per call. A stage no call had is left out.
+`--since` and `--until` (`15m`, `2h`, `30s` ago, or an ISO time) keep the report to a window and leave out the
+server's own health-check calls; it ends with a table of calls and failures per caller (client id, else shared-key id,
+else `unknown`) and the error count.
 
 - `--trace-text` adds the requests' text: for a scenario, the text of `decide`, `decide_many`, `check_call` and
   `correct`; for an environment, each tool call's arguments as JSON (a resource read is traced by its URI only). The
