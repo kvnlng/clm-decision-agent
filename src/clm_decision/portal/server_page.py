@@ -149,6 +149,8 @@ async def switch_tool(request: Request) -> Response:
     if admin is None:
         return refused(request, "This server cannot disable tools.", 409)
     name, action = request.path_params["name"], request.path_params["action"]
+    if action not in ("disable", "enable"):
+        return refused(request, f"No action {action}: a tool is switched by disable or enable.", 404)
     try:
         (admin.disable if action == "disable" else admin.enable)(name)
     except ValueError as error:

@@ -216,6 +216,21 @@ async def test_a_slow_oauth_refresh_fails_within_the_limit(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_a_refresh_that_times_out_is_not_read_as_a_pass_on_the_next_run(monkeypatch):
+    monkeypatch.setattr(checks_module, "TIMEOUT_SECONDS", 0.2)
+
+    async def slow(_url):
+        await anyio.sleep(10)
+    verifier = oauth.OidcVerifier("https://login.example.test/realms/clm", "decision-server", fetch=slow)
+    verifier.fetched_at = time.time() - 30      # keys fetched once, before the issuer stopped answering
+    checks = Checks(build_environment_server(load_handbook()), None, verifier)
+    first = by_name(await checks.run(refresh=True))["oauth"]
+    second = by_name(await checks.run())["oauth"]
+    assert verifier.last_error == "no answer within 0.2 s"
+    assert first.status == second.status == "fail" and second.detail == "no answer within 0.2 s"
+
+
+@pytest.mark.anyio
 async def test_a_ping_cancelled_before_its_thread_starts_does_not_block_the_next():
     env = load_handbook()
     checks = Checks(build_environment_server(env), None, None)

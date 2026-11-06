@@ -44,8 +44,8 @@ class Admin:
         return cls(Path(environment_path).parent / FILE)
 
     def _load(self) -> frozenset[str]:
-        """The names in the file: none when there is no file, and a ScenarioError naming it when it cannot be read
-        or is not {"disabled": [names]}."""
+        """The names in the file but describe, which cannot be disabled: none when there is no file, and a
+        ScenarioError naming it when it cannot be read or is not {"disabled": [names]}."""
         if not self.path.exists():
             return frozenset()
         try:
@@ -55,7 +55,7 @@ class Admin:
         names = data.get("disabled") if isinstance(data, dict) else None
         if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
             raise ScenarioError(f"{self.path} must be {{\"disabled\": [tool names]}}")
-        return frozenset(names)
+        return frozenset(names) - {"describe"}
 
     @property
     def disabled(self) -> frozenset[str]:

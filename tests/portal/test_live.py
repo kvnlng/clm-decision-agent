@@ -215,6 +215,45 @@ def test_both_ports_stop():
     assert not any(answers(port) for port in ports)
 
 
+def test_a_second_stop_ends_a_shutdown_held_by_a_slow_request():
+    entered = threading.Event()
+
+    async def slow(_request):
+        entered.set()
+        await asyncio.sleep(30)
+        return PlainTextResponse("late")
+    app = Starlette(routes=[Route("/", lambda request: PlainTextResponse("up")), Route("/slow", slow)])
+    ports = free_port(), free_port()
+    stops: list = []
+
+    def on_signal(stop):
+        stops.append(stop)
+        return lambda: None
+    thread = threading.Thread(target=live.serve_both, args=(app, app, ("127.0.0.1", ports[0]),
+                                                            ("127.0.0.1", ports[1]), on_signal))
+    thread.start()
+    for _ in range(200):
+        if all(answers(port) for port in ports):
+            break
+        time.sleep(0.02)
+    held = socket.create_connection(("127.0.0.1", ports[1]))
+    try:
+        held.sendall(b"GET /slow HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+        assert entered.wait(5)
+        stops[0]()      # the first Ctrl-C: the portal waits for the slow request
+        thread.join(1)
+        waited = thread.is_alive()
+        stops[0]()      # the second
+        thread.join(5)
+        ended = not thread.is_alive()
+    finally:
+        held.close()
+        if thread.is_alive():
+            stops[0]()
+            thread.join(40)
+    assert waited and ended
+
+
 def test_a_reload_whose_testing_rebuild_fails_is_still_a_success(client, server, monkeypatch):
     token = sign_in(client)
     post(client, "/ask/testing", token, {"on": "1"})

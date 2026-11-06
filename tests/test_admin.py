@@ -58,6 +58,19 @@ def test_describe_cannot_be_disabled(served):
         admin.enable("describe")
 
 
+@pytest.mark.anyio
+async def test_describe_in_the_file_is_not_disabled(write_environment, tmp_path):
+    path = tmp_path / "disabled_tools.json"
+    path.write_text(json.dumps({"disabled": ["describe", "query_suppliers"]}))
+    admin = Admin(path)
+    server = build_environment_server(load_environment(write_environment()), admin=admin)
+    async with Client(server) as client:
+        names = {tool.name for tool in (await client.list_tools()).tools}
+        described = await client.call_tool("describe", {})
+    assert "describe" in names and "query_suppliers" not in names and not described.is_error
+    assert "describe" not in admin.hidden() and admin.disabled == frozenset({"query_suppliers"})
+
+
 def test_an_unknown_name_is_refused_with_the_tools_there_are(served):
     _, admin = served
     with pytest.raises(ValueError, match="nope.*query_suppliers"):

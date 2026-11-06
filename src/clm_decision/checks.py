@@ -202,8 +202,12 @@ class Checks:
         if verifier is None:
             return NOT_CONFIGURED, "no OAuth"
         if refresh:
-            with anyio.fail_after(TIMEOUT_SECONDS):
-                await verifier.refresh()
+            try:
+                with anyio.fail_after(TIMEOUT_SECONDS):
+                    await verifier.refresh()
+            except TimeoutError:
+                # Kept, so the next run without a refresh does not read the old keys as a pass
+                verifier.last_error = f"no answer within {TIMEOUT_SECONDS} s"
         if verifier.last_error is not None:
             return FAIL, verifier.last_error
         if verifier.fetched_at is None:

@@ -82,6 +82,13 @@ def test_a_refused_switch_shows_its_message(client):
     assert response.status_code == 400 and "no tool &#x27;nonesuch&#x27;" in response.text
 
 
+def test_a_switch_that_is_neither_disable_nor_enable_is_not_found(client, live_server):
+    token = sign_in(client)
+    post(client, "/server/tools/decision_carry/disable", token)
+    response = post(client, "/server/tools/decision_carry/toggle", token)
+    assert response.status_code == 404 and "decision_carry" not in agents_tools(live_server)
+
+
 def test_no_secret_on_page(client):
     token = sign_in(client)
     post(client, "/server/checks", token)

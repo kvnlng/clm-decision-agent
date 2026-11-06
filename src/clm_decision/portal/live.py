@@ -213,8 +213,9 @@ def _on_signal(stop: Callable[[], None]) -> Callable[[], None]:
 def serve_both(agents_app, portal_app, agents: tuple[str, int], portal: tuple[str, int],
                on_signal: Callable[[Callable[[], None]], Callable[[], None]] = _on_signal) -> None:
     """Serve the agents' app at agents (host, port) and the portal's at portal, on one event loop, until SIGINT or
-    SIGTERM, or until either stops, stops both; returns once both have. `on_signal(stop)` installs what calls stop
-    and returns what removes it."""
+    SIGTERM, or until either stops, stops both; returns once both have. A second SIGINT or SIGTERM stops both at
+    once, without waiting for requests in progress. `on_signal(stop)` installs what calls stop and returns what
+    removes it."""
     asyncio.run(_serve_both([(agents_app, *agents), (portal_app, *portal)], on_signal))
 
 
@@ -225,12 +226,24 @@ async def _serve_both(apps: list[tuple], on_signal) -> None:
         for server in servers:
             server.should_exit = True
 
+    def on_stop() -> None:
+        # A second SIGINT or SIGTERM stops at once, not waiting for a request in progress, such as an Ask. Only
+        # a signal does: stop() is also called when one server ends, which must leave the other to finish.
+        # force_exit alone stops uvicorn waiting for its requests, but not for their connections to close, so the
+        # requests are cancelled too, as uvicorn does when a graceful shutdown times out
+        for server in servers:
+            if server.should_exit:
+                server.force_exit = True
+                for task in server.server_state.tasks:
+                    task.cancel()
+            server.should_exit = True
+
     async def serve(server: uvicorn.Server) -> None:
         try:
             await server.serve()
         finally:
             stop()      # one that stops, as when its port is taken, stops the other
-    remove = on_signal(stop)
+    remove = on_signal(on_stop)
     try:
         await asyncio.gather(*(serve(server) for server in servers))
     finally:
