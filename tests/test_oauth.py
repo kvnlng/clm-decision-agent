@@ -283,3 +283,35 @@ async def test_keys_over_plain_http_are_refused_with_a_warning(caplog):
     with caplog.at_level("WARNING", logger="decision-server.oauth"):
         assert await oauth.OidcVerifier(ISSUER, AUDIENCE, fetch=fetch).verify_token(token()) is None
     assert "http://keys.example.test/certs" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_refresh_bypasses_limit():
+    issuer = Issuer()
+    check = verifier(issuer)
+    assert check.fetched_at is None and check.last_error is None
+    await check.verify_token(token())
+    first = check.fetched_at
+    await check.refresh()
+    assert issuer.fetched.count(f"{ISSUER}/certs") == 2
+    assert first is not None and check.fetched_at >= first and check.last_error is None
+
+
+@pytest.mark.anyio
+async def test_last_error_kept():
+    issuer = Issuer()
+    check = verifier(issuer)
+    await check.refresh()
+    fetched = check.fetched_at
+    secret = token()
+
+    async def down(url):
+        raise oauth.OAuthError(f"cannot read {url}: connection refused")
+    check.fetch = down
+    await check.refresh()
+    assert check.last_error == f"cannot read {ISSUER}/certs: connection refused"
+    assert check.fetched_at == fetched and secret not in check.last_error
+    assert await check.verify_token(secret) is not None
+    check.fetch = issuer.fetch
+    await check.refresh()
+    assert check.last_error is None and check.fetched_at > fetched

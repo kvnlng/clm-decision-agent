@@ -19,6 +19,11 @@ cases and the measured figures, in the same order as the overview.
 | `[derived]` | Slots the documents fill | [Derived rules and facts](#derived-rules-and-facts) |
 | `[serve]` | Which tools to offer | [Serving settings](environment.md#serving-settings) |
 
+A `[queries.*]`, `[decisions.*]`, `[calculations.*]`, `[judges.*]` or `[scenarios.*]` table may declare what its
+tool runs on, as `infrastructure = ["postgres"]`: a list of `postgres`, `neo4j` and `clm`, anything else refused
+naming the table. The server adds `postgres` to the document tools, `neo4j` to the queries on Neo4j and `clm` to the
+judges, and the server's PostgreSQL, Neo4j and CLM checks name the offered tools that run on what they check.
+
 ## The graph
 
 Named queries use the operations of the in-memory graph (`graph.py`):

@@ -7,6 +7,8 @@ fixed-length vector of letter counts. Both follow the protocols in clm_decision.
 # pylint: disable=missing-function-docstring,unused-argument
 from __future__ import annotations
 
+from clm_decision.scenario import StepError
+
 
 def _matches(value, wanted) -> bool:
     if isinstance(wanted, list):
@@ -22,6 +24,12 @@ class FakeStore:
     def __init__(self):
         self.collections: dict[str, list[dict]] = {}
         self.info: dict[str, dict] = {}
+        self.down: str | None = None     # set to make ping fail with this reason
+
+    def ping(self) -> bool:
+        if self.down:
+            raise StepError(f"documents at fake: {self.down}")
+        return False
 
     def replace(self, collection: str, documents: list[dict], vectors: list[list[list[float]]], built: dict) -> None:
         self.collections[collection] = [dict(document) for document in documents]

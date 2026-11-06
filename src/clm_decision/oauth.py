@@ -8,6 +8,7 @@ protected resource metadata that tells a client which issuer to ask.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import time
@@ -73,7 +74,7 @@ def _scopes(claims: dict) -> list[str]:
     return list(dict.fromkeys(scopes))
 
 
-class OidcVerifier:
+class OidcVerifier:  # pylint: disable=too-many-instance-attributes
     """Checks a token's signature, issuer, audience, expiry and not-before; the SDK then checks the scopes."""
 
     def __init__(self, issuer: str, audience: str, fetch: Callable[[str], Awaitable[dict]] = fetch_json):
@@ -83,6 +84,9 @@ class OidcVerifier:
         # When keys were last asked for, whether or not the issuer answered
         self._asked: float | None = None
         self._lock = asyncio.Lock()
+        # When keys were last fetched (time.time()), and why the last fetch failed, or None when it did not
+        self.fetched_at: float | None = None
+        self.last_error: str | None = None
 
     def _may_ask(self) -> bool:
         return self._asked is None or time.monotonic() - self._asked > REFETCH_SECONDS
@@ -110,7 +114,25 @@ class OidcVerifier:
             raise OAuthError(f"{url} did not answer with a JSON object")
         return document
 
+    async def refresh(self) -> None:
+        """Fetches the keys now, whatever the once-a-minute limit says; a failure is kept in last_error, not
+        raised."""
+        async with self._lock:
+            self._asked = time.monotonic()
+            with contextlib.suppress(OAuthError):
+                await self._fetch_keys()
+
     async def _fetch_keys(self) -> None:
+        """Fetches the keys, noting fetched_at, or the one-line reason in last_error and raising OAuthError."""
+        try:
+            await self._fetch()
+        except (OAuthError, KeyError) as error:
+            reason = str(error) if isinstance(error, OAuthError) else f"the discovery document has no {error}"
+            self.last_error = (reason.strip().splitlines() or [type(error).__name__])[0]
+            raise OAuthError(reason) from error
+        self.fetched_at, self.last_error = time.time(), None
+
+    async def _fetch(self) -> None:
         if self._jwks_uri is None:
             document = await self._document(self.issuer.rstrip("/") + "/.well-known/openid-configuration")
             if document.get("issuer") != self.issuer:

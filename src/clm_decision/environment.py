@@ -29,6 +29,8 @@ from .scenario import CLM_BACKENDS, DEFAULT_CLM, ScenarioError, StepError
 BACKENDS = ("builtin", "neo4j")
 INFORMATION_KINDS = ("fact", "estimate", "supplied")
 QUERY_KINDS = ("fact", "estimate")
+# What a tool may run on, which a check of it names the tool under (checks.py)
+INFRASTRUCTURE = ("postgres", "neo4j", "clm")
 TYPES = ("string", "number", "integer", "boolean", "list")
 DMN_SLOT_TYPES = ("string", "number", "integer", "boolean")      # a derived decision's inputs and outputs
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
@@ -60,6 +62,7 @@ class Query:
     function: str | None
     cypher: str | None
     kind: str = "fact"
+    infrastructure: tuple[str, ...] = ()    # what it runs on, as declared: postgres, neo4j, clm
 
 
 @dataclass(frozen=True)
@@ -100,6 +103,7 @@ class Decision:  # pylint: disable=too-many-instance-attributes
     origin: str = "supplied"            # or "derived": read from the documents by a model, and checked
     status: str | None = None           # a derived rule's status in the derived layer
     source: dict | None = None          # a derived rule's source: document, passages, quote and edition
+    infrastructure: tuple[str, ...] = ()    # what it runs on, as declared: postgres, neo4j, clm
 
 
 @dataclass(frozen=True)
@@ -126,6 +130,7 @@ class Calculation:
     description: str
     params: dict[str, str]
     function: str
+    infrastructure: tuple[str, ...] = ()    # what it runs on, as declared: postgres, neo4j, clm
 
 
 @dataclass(frozen=True)
@@ -141,6 +146,7 @@ class ScenarioDef:  # pylint: disable=too-many-instance-attributes
     limits: tuple[str, ...]
     uncertain: tuple[str, ...] = ()     # estimate queries whose low and high are tried, and headroom searched
     approvals: tuple[str, ...] = ()     # decisions saying whether someone must approve: listed, never rejecting
+    infrastructure: tuple[str, ...] = ()    # what it runs on, as declared: postgres, neo4j, clm
 
 
 @dataclass(frozen=True)
@@ -149,6 +155,7 @@ class Judge:
     name: str
     description: str
     instructions: str
+    infrastructure: tuple[str, ...] = ()    # what it runs on, as declared: postgres, neo4j, clm
 
 
 class Clm:
@@ -293,6 +300,13 @@ def _params(table: dict, where: str) -> dict[str, str]:
     return dict(params)
 
 
+def _infrastructure(table: dict, where: str) -> tuple[str, ...]:
+    value = table.get("infrastructure", [])
+    if not isinstance(value, list) or not all(item in INFRASTRUCTURE for item in value):
+        raise ScenarioError(f"{where}.infrastructure: must be a list of {', '.join(INFRASTRUCTURE)}, not {value!r}")
+    return tuple(dict.fromkeys(value))
+
+
 def _function(table: dict, where: str, functions: ModuleType) -> str:
     name = _text(table, "function", where)
     if not callable(getattr(functions, name, None)):
@@ -409,7 +423,8 @@ def _judge(name: str, table: dict, clm: Clm | None) -> Judge:
         raise ScenarioError(f"{where}: a judge needs CLM: add a [clm] table (docs/environment.md)")
     if table.get("type", "noul") != "noul":
         raise ScenarioError(f"{where}.type: only noul (a yes/no question) for now")
-    return Judge(name, _text(table, "description", where), _text(table, "instructions", where))
+    return Judge(name, _text(table, "description", where), _text(table, "instructions", where),
+                 _infrastructure(table, where))
 
 
 def _query(name: str, table: dict, functions: ModuleType, backend: str) -> Query:
@@ -421,7 +436,8 @@ def _query(name: str, table: dict, functions: ModuleType, backend: str) -> Query
     kind = table.get("kind", "fact")
     if kind not in QUERY_KINDS:
         raise ScenarioError(f"{where}.kind: must be {' or '.join(QUERY_KINDS)}, not {kind!r}")
-    return Query(name, _text(table, "description", where), _params(table, where), function, cypher, kind)
+    return Query(name, _text(table, "description", where), _params(table, where), function, cypher, kind,
+                 _infrastructure(table, where))
 
 
 def _names(table: dict, key: str, where: str) -> tuple[str, ...]:
@@ -492,7 +508,7 @@ def _decision(name: str, table: dict, folder: Path, functions: ModuleType) -> De
     collection = _text(table, "collection", where) if "collection" in table else None
     if "function" in table:
         return Decision(name, description, _params(table, where), None, _function(table, where, functions), rule,
-                        collection)
+                        collection, infrastructure=_infrastructure(table, where))
     path = folder / _text(table, "dmn", where)
     if not path.is_file():
         raise ScenarioError(f"{where}.dmn: no file {path.name}")
@@ -504,7 +520,8 @@ def _decision(name: str, table: dict, folder: Path, functions: ModuleType) -> De
         if _bad_name(item):
             raise ScenarioError(f"{where}.dmn: input '{item}' cannot be a parameter: {_bad_name(item)}")
     params = {item: _DMN_TYPES.get(kind.rsplit(":", 1)[-1], "any") for item, kind in zip(dmn.inputs, dmn.types)}
-    return Decision(name, description, params, dmn, None, rule, collection)
+    return Decision(name, description, params, dmn, None, rule, collection,
+                    infrastructure=_infrastructure(table, where))
 
 
 def _citations(decision: Decision) -> list[tuple[str, str]]:
@@ -578,7 +595,8 @@ def _scenario(name: str, table: dict, functions: ModuleType, kinds: dict[str, st
             raise ScenarioError(f"{where}.approvals: {_not_a_decision(decision, kinds)}")
     return ScenarioDef(name, _text(table, "description", where), _params(table, where),
                        {lever: tuple(values) for lever, values in levers.items()},
-                       branch, _text(table, "objective", where), maximise, tuple(limits), uncertain, approvals)
+                       branch, _text(table, "objective", where), maximise, tuple(limits), uncertain, approvals,
+                       _infrastructure(table, where))
 
 
 def in_force(document: dict, on: date) -> bool:
@@ -813,7 +831,8 @@ def load_environment(path: str | Path, backend: str | None = None,
     _check_rules(decisions, information)
     calculations = {name: Calculation(name, _text(table, "description", f"calculations.{name}"),
                                       _params(table, f"calculations.{name}"),
-                                      _function(table, f"calculations.{name}", functions))
+                                      _function(table, f"calculations.{name}", functions),
+                                      _infrastructure(table, f"calculations.{name}"))
                     for name, table in _parts(data, "calculations").items()}
     kinds = {**dict.fromkeys(decisions, "decisions"), **{name: slot.kind for name, slot in slots.items()}}
     scenarios = {name: _scenario(name, table, functions, kinds, queries)

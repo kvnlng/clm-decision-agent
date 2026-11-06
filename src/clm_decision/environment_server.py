@@ -35,7 +35,7 @@ from . import oauth
 from . import serving
 from . import tracing
 from .dmn import DmnError
-from .environment import NOT_DERIVED, Environment
+from .environment import NOT_DERIVED, BuiltinConnector, Environment
 from .holder import Holder
 from .scenario import ScenarioError
 from .serving import Serve
@@ -61,14 +61,15 @@ def _branch_counts(result: dict) -> dict:
 
 
 @dataclass
-class _Offering:
+class _Offering:  # pylint: disable=too-many-instance-attributes
     """What a server built here serves, kept on it as `server.offering` so reload can choose again: the holder, how
-    tools are chosen, the trace, the operator's disabled tools, the tools offered now and the resources and templates
-    added, which stay."""
+    tools are chosen, the trace, the operator's disabled tools, the server's checks (checks.py, which register
+    themselves), the tools offered now and the resources and templates added, which stay."""
     holder: Holder
     serve: Serve
     trace: tracing.TraceWriter | None
     admin: admin_module.Admin | None = None
+    checks: Any = None      # a checks.Checks, rebaselined at each reload
     offered: list[str] = field(default_factory=list)
     resources: set[str] = field(default_factory=set)
     reloading: threading.Lock = field(default_factory=threading.Lock)     # one reload at a time; calls never wait
@@ -264,6 +265,25 @@ def in_force(env: Environment, readable: list[str] | None = None) -> dict:
     return {"admit": list(env.admit), "entries": entries}
 
 
+def infrastructure(env: Environment) -> dict[str, set[str]]:
+    """What each tool the environment can offer runs on: what its table declares, and filled in, postgres for the
+    document tools, neo4j for the queries on Neo4j and clm for the judges."""
+    found: dict[str, set[str]] = {}
+    _all_tools(env, lambda name, *_: found.setdefault(name, set()), lambda current: {})
+    for kind, parts in (("query", env.queries), ("decision", env.decisions), ("calculation", env.calculations),
+                        ("judge", env.judges), ("scenario", env.scenarios)):
+        for name, part in parts.items():
+            found[f"{kind}_{name}"].update(part.infrastructure)
+    for name in env.collections if env.document_tools else ():
+        for kind in ("search", "document", "cites", "cited_by"):
+            found[f"{kind}_{name}"].add("postgres")
+    for name in env.queries if not isinstance(env.connector, BuiltinConnector) else ():
+        found[f"query_{name}"].add("neo4j")
+    for name in env.judges:
+        found[f"judge_{name}"].add("clm")
+    return found
+
+
 def _found(env: Environment, offering: _Offering) -> list[tuple[str, str, Callable, inspect.Signature]]:
     """Every tool the environment can offer, as (name, description, run, signature)."""
     found: list[tuple[str, str, Callable, inspect.Signature]] = []
@@ -454,6 +474,8 @@ def reload(server: MCPServer, new: Environment) -> dict:
         before = offering.offered
         _offer_tools(server, offering, found, offered)
         _add_resources(server, offering, new, offered)
+        if offering.checks is not None:
+            offering.checks.rebaseline()
     if offering.admin and set(offered) != set(before):
         offering.admin.announce()
     return {"added": [name for name in offered if name not in before],

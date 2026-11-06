@@ -142,6 +142,13 @@ class PostgresStore:
         except psycopg.Error as error:
             raise StepError(f"documents at {self.where}: {_first_line(error)}") from error
 
+    def ping(self) -> bool:
+        """Runs SELECT 1, opening the connection again first when it was lost; True when it had to. Raises StepError
+        in one line when the database does not answer."""
+        before = self.connection
+        self._rows("SELECT 1", ())
+        return self.connection is not before
+
     def replace(self, collection: str, documents: list[dict], vectors: list[list[list[float]]], built: dict) -> None:
         """Replace the collection with these documents, one vector per passage, in one transaction; raises StepError
         in one line when the database refuses them, having rolled back."""

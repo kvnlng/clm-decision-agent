@@ -59,6 +59,14 @@ class Neo4jConnector:  # pylint: disable=too-few-public-methods
         """Closes the driver and its connections."""
         self.driver.close()
 
+    def ping(self) -> None:
+        """Runs RETURN 1; raises StepError in one line when the database does not answer."""
+        try:
+            with self.driver.session(database=self.database) as session:
+                session.run("RETURN 1").single()
+        except self.errors as error:
+            raise StepError(f"Neo4j at {self.uri}: {_first_line(error)}") from error
+
     def run(self, query, params: dict) -> list[dict]:
         """The query's rows."""
         try:

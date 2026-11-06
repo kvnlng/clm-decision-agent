@@ -26,6 +26,9 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 _CURRENT: contextvars.ContextVar[dict | None] = contextvars.ContextVar("trace", default=None)
 # Which agents' key the request came with (the first 8 hex of its hash), set where the key is checked; never the key
 CALLER_KEY_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("caller_key_id", default=None)
+# Whether the call is the server's own check (checks.py), not an agent's: its line says synthetic, and the trace
+# report leaves it out
+SYNTHETIC: contextvars.ContextVar[bool] = contextvars.ContextVar("synthetic", default=False)
 
 
 def active() -> bool:
@@ -117,6 +120,8 @@ class TraceWriter:
             record["text"] = request_text
         if self.read_only:
             record["read_only"] = True
+        if SYNTHETIC.get():
+            record["synthetic"] = True
         # With OAuth, who called, and which agents' key; never the token or the key itself
         access, key_id = get_access_token(), CALLER_KEY_ID.get()
         caller = {"client_id": access.client_id, "subject": access.subject} if access is not None else {}
