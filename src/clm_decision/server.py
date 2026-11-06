@@ -479,7 +479,7 @@ def _serve_with_portal(args: argparse.Namespace, server: MCPServer, admin: Admin
     portal = web.Portal(Path(args.scenario), live.LiveServer(server, admin, checks),
                         managed.Jobs(withheld=(args.key_env,)),
                         options={"backend": args.ask_backend, "model": args.ask_model, "model_url": args.ask_model_url},
-                        agents_url=args.resource_url or f"http://{shown}:{args.port}/mcp", keys=keys)
+                        agents_url=args.resource_url or f"http://{shown}:{args.port}/mcp", keys=keys, oauth=auth)
     portal_app = web.create_app(portal, portal_key, args.portal_host, args.portal, public)
     print(f"Serving MCP at http://{shown}:{args.port}/mcp"
           + (f", taking tokens from {auth.settings.issuer_url}" if auth else "")

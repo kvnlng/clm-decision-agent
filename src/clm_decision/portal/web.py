@@ -69,14 +69,16 @@ class Session:
 class Portal:  # pylint: disable=too-few-public-methods,too-many-instance-attributes
     """What the page works on: the environment file, the server agents use (a live.LiveServer), its jobs and the
     signed-in sessions. `agents_url` is where agents reach the server, and `keys` the keys they may send (a
-    server.KeySet, or None under OAuth)."""
+    server.KeySet, or None under OAuth); `oauth` is the server's oauth.OAuth, or None with keys. `started_at` is
+    when the portal was made."""
 
     # pylint: disable-next=too-many-arguments
     def __init__(self, environment: Path, server, jobs: Jobs, find=script, options: dict | None = None, *,
-                 agents_url: str = "http://127.0.0.1:8000/mcp", keys=None):
+                 agents_url: str = "http://127.0.0.1:8000/mcp", keys=None, oauth=None):
         self.environment, self.server, self.jobs, self.find = Path(environment), server, jobs, find
         self.options = options or {}
-        self.agents_url, self.keys = agents_url, keys
+        self.agents_url, self.keys, self.oauth = agents_url, keys, oauth
+        self.started_at = time.time()
         self.sessions: dict[str, Session] = {}
         self.make_model = self._model
 
@@ -124,7 +126,8 @@ def page(portal: Portal, session: Session | None, title: str, body: str, *, stat
         nav = ""
     else:
         links = "".join(f'<a href="{href}">{name}</a>' for href, name in (
-            ("/", "Configuration"), ("/ask", "Ask"), ("/review", "Review"), ("/documents", "Documents")))
+            ("/", "Configuration"), ("/ask", "Ask"), ("/review", "Review"), ("/documents", "Documents"),
+            ("/server", "Server")))
         nav = (f'<nav>{links}<span class="who">Signed in as {esc(session.name)}</span>'
                f'<form method="post" action="/sign-out">{csrf_field(session)}<button>Sign out</button></form></nav>')
     banner = f'<p class="banner testing">{TESTING_BANNER}</p>' if portal.server.testing and portal.server.running \
@@ -1004,6 +1007,7 @@ def public_origin(text: str) -> str:
 
 def routes() -> list:
     """Every route of the page."""
+    from . import server_page  # pylint: disable=import-outside-toplevel,cyclic-import  # it imports this module
     return [Route("/sign-in", sign_in, methods=["GET", "POST"]), Route("/sign-out", sign_out, methods=["POST"]),
             Route("/", configuration_page), Route("/reload", reload_action, methods=["POST"]),
             Route("/passage", passage_page), Route("/review", review_page),
@@ -1013,7 +1017,7 @@ def routes() -> list:
             Route("/ask/testing", ask_testing, methods=["POST"]), Route("/documents", documents_page),
             Route("/documents/load", documents_load, methods=["POST"]),
             Route("/documents/derive", documents_derive, methods=["POST"]), Route("/jobs/current", jobs_current),
-            Mount("/static", StaticFiles(directory=STATIC), name="static")]
+            *server_page.routes(), Mount("/static", StaticFiles(directory=STATIC), name="static")]
 
 
 async def run_checks(checks) -> None:
