@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 450" width="1000" height="450" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>One routing decision: CLM picks the route, informing tools add facts, CLM answers the questions and picks any option, then the acting tools run unless the route or option is uncertain or the server is read-only, and the reply goes back to the agent</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .agent { fill: #6b6b6b; }
+    .clm { fill: #2f6db3; }
+    .yours { fill: #2e7d4f; }
+    .reject { fill: #8a3b3b; }
+    .conflict { fill: #8f5410; }
+    .name { fill: #ffffff; font-size: 15px; font-weight: 600; }
+    .sub { fill: #ffffff; font-size: 13px; }
+    .note { fill: #fff6d6; stroke: #d4a72c; }
+    .ntext { fill: #1f2328; font-size: 13px; }
+    .line { stroke: #6b6b6b; stroke-width: 1.6; fill: none; }
+    .dash { stroke-dasharray: 6 4; }
+    .life { stroke: #9a9a9a; stroke-width: 1.2; stroke-dasharray: 4 4; fill: none; }
+    .frame { stroke: #8a8a8a; stroke-width: 1.2; fill: none; }
+    .head, .dot { fill: #6b6b6b; }
+    .label { fill: #444444; font-size: 13px; paint-order: stroke; stroke: #ffffff; stroke-width: 5px; stroke-linejoin: round; }
+    .strong { font-weight: 600; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .note { fill: #2e2408; stroke: #9e6a03; }
+      .ntext { fill: #e6edf3; }
+      .line { stroke: #9198a1; }
+      .life, .frame { stroke: #6e7681; }
+      .head, .dot { fill: #9198a1; }
+      .label { fill: #c9d1d9; stroke: #0d1117; }
+    }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path class="head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1000" height="450" rx="12"/>
+  <rect class="agent" x="32" y="40" width="200" height="88" rx="8"/>
+  <text class="name" x="132" y="79.5" text-anchor="middle">Agent calls decide</text>
+  <text class="sub" x="132" y="99.5" text-anchor="middle">with a request's text</text>
+  <rect class="clm" x="280" y="40" width="200" height="88" rx="8"/>
+  <text class="name" x="380" y="79.5" text-anchor="middle">CLM picks the route</text>
+  <text class="sub" x="380" y="99.5" text-anchor="middle">with [routing] inform facts</text>
+  <rect class="yours" x="528" y="40" width="200" height="88" rx="8"/>
+  <text class="name" x="628" y="71" text-anchor="middle">Informing tools run</text>
+  <text class="sub" x="628" y="91" text-anchor="middle">add facts; an options tool</text>
+  <text class="sub" x="628" y="108" text-anchor="middle">fetches candidates</text>
+  <rect class="clm" x="776" y="40" width="200" height="88" rx="8"/>
+  <text class="name" x="876" y="71" text-anchor="middle">CLM answers questions</text>
+  <text class="sub" x="876" y="91" text-anchor="middle">rules checked;</text>
+  <text class="sub" x="876" y="108" text-anchor="middle">an option chosen, if any</text>
+  <polygon class="clm" points="876,208 976,264 876,320 776,264"/>
+  <text class="name" x="876" y="269" text-anchor="middle">Can it act?</text>
+  <rect class="yours" x="528" y="220" width="200" height="88" rx="8"/>
+  <text class="name" x="628" y="259.5" text-anchor="middle">Acting tools run</text>
+  <text class="sub" x="628" y="279.5" text-anchor="middle">those whose conditions hold</text>
+  <rect class="agent" x="280" y="220" width="200" height="88" rx="8"/>
+  <text class="name" x="380" y="251" text-anchor="middle">Reply to the agent</text>
+  <text class="sub" x="380" y="271" text-anchor="middle">route, facts, answers,</text>
+  <text class="sub" x="380" y="288" text-anchor="middle">option, actions</text>
+  <path class="line" d="M232,84 L279,84" marker-end="url(#arrow)"/>
+  <path class="line" d="M480,84 L527,84" marker-end="url(#arrow)"/>
+  <path class="line" d="M728,84 L775,84" marker-end="url(#arrow)"/>
+  <path class="line" d="M876,128 L876,207" marker-end="url(#arrow)"/>
+  <path class="line" d="M776,264 L729,264" marker-end="url(#arrow)"/>
+  <path class="line" d="M528,264 L481,264" marker-end="url(#arrow)"/>
+  <path class="line" d="M876,320 L876,360 L380,360 L380,309" marker-end="url(#arrow)"/>
+  <text class="label" x="752" y="254" text-anchor="middle">yes</text>
+  <text class="label" x="628" y="384" text-anchor="middle">no: route or option uncertain, or a read-only server</text>
+  <rect class="agent" x="24" y="417" width="14" height="14" rx="3"/>
+  <text class="label" x="46" y="428" text-anchor="start">The agent and the reply</text>
+  <rect class="clm" x="258" y="417" width="14" height="14" rx="3"/>
+  <text class="label" x="280" y="428" text-anchor="start">CLM</text>
+  <rect class="yours" x="332" y="417" width="14" height="14" rx="3"/>
+  <text class="label" x="354" y="428" text-anchor="start">Your tools</text>
+</svg>

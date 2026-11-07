@@ -11,7 +11,7 @@ times a day (which team handles a request) or once (whether to change supplier o
 whether Claude, a local model or one built on Databricks, talks to the person; your tools supply the information;
 the decision comes back with its reasons.
 
-<p align="center"><img src="docs/images/architecture.svg" alt="Any MCP agent (Claude, a local model, Databricks) calls clm-server over MCP. The server runs decisions, by routing with CLM or by weighing options against rules, over your environment: the tools you define, which reach your data, take actions and hold your rules." width="820"></p>
+<p align="center"><img src="docs/images/architecture.svg" alt="C4 container diagram. An MCP agent calls the MCP server; the administrator uses the portal, which reaches the server in process through a control layer. The server scores options with CLM, reads the environment (rules, queries, your tools), searches the document store and acts on your systems through your tools. clm-derive derives rules from the documents into the environment." width="820"></p>
 
 Three principles:
 

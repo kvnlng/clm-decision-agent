@@ -25,6 +25,8 @@ be derived from the documents and checked before a person approves it, and each 
 ([Derived rules and facts](#derived-rules-and-facts)). Without judges the server has no language model: the same
 inputs give the same outputs. A judge adds one, for evidence no rule can read, and every answer it gives is traced.
 
+<p align="center"><img src="images/weighing-decision.svg" alt="One weighing decision as a sequence: the agent calls describe, then a scenario tool with its parameters. The engine runs each lever combination through your queries, calculation and limits, rejects a branch over a limit, fails one that skipped a limit or step, and ranks the rest by the objective. The agent answers from the results without calculating, and the number check matches each figure to a tool result." width="760"></p>
+
 ## The file
 
 Put `environment.toml` in a folder with the graph's CSV files, the DMN tables and your Python module. A mistake stops
@@ -231,6 +233,8 @@ mechanically, and only a person's approval lets it decide. Every decision step, 
 `origin: "supplied"` or `"derived"`. Supplied always decides: derivation never edits a supplied file, and a document
 that disagrees with a supplied fact is reported as a conflict. A reading that gave no value, or one a person rejected,
 opens no conflict; the conflict of a fact rejected later is dropped at the next `run`.
+
+<p align="center"><img src="images/derived-states.svg" alt="The statuses of a derived rule or fact: clm-derive run proposes it; passing the mechanical check makes it checked; a person approves it; a person can reject any entry, and a rejected one never decides. A new edition, a document gone or an edited table sends it back to proposed. It decides once loading admits it. A conflict with a supplied fact is open until a person resolves it, and the supplied fact decides throughout." width="760"></p>
 
 The environment declares **slots**, the decisions and facts it needs, without their contents; without a `[derived]`
 table the layer is ignored:

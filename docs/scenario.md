@@ -16,6 +16,8 @@ When an agent calls `decide` with the text of a request:
 4. The acting tools whose conditions hold run, unless the route is uncertain.
 5. The reply goes back to the agent.
 
+<p align="center"><img src="images/routing-decision.svg" alt="One routing decision: the agent calls decide; CLM picks the route; the informing tools add facts and an options tool fetches candidates; CLM answers the questions, the rules are checked and an option is chosen. If the route and option are certain and the server is not read-only, the acting tools whose conditions hold run. The reply goes back to the agent." width="760"></p>
+
 `decide_many` does this for many requests, CLM reading each step's texts in one batched pass. Every request's
 informing tools run before any acting tool, then the acting tools run in request order. So when an action changes
 what a tool reads (seats held for an earlier request), a later request can be offered what is already taken, and its

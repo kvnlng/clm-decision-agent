@@ -1,85 +1,102 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 380" width="960" height="380" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
-  <title>Any MCP agent calls clm-server, which runs decisions over your environment of tools</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="48 104 1192 824" width="1192" height="824" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>C4 container diagram: an MCP agent calls the MCP server; the portal reaches it in process; the server uses CLM, the environment and the document store, and acts on your systems; clm-derive derives rules from documents</title>
   <style>
     .bg { fill: #ffffff; }
-    .box { fill: #f6f8fa; stroke: #d0d7de; }
-    .server { fill: #ddf4ff; stroke: #54aeff; }
-    .routing { fill: #fff8c5; stroke: #d4a72c; }
-    .weighing { fill: #fbefff; stroke: #c297ff; }
-    .env { fill: #dafbe1; stroke: #4ac26b; }
-    .frame { fill: none; stroke: #d0d7de; stroke-dasharray: 5 4; }
-    .title { fill: #1f2328; font-size: 16px; font-weight: 600; }
-    .text { fill: #1f2328; font-size: 13px; }
-    .muted { fill: #59636e; font-size: 12.5px; }
-    .line { stroke: #59636e; stroke-width: 1.6; fill: none; }
-    .head { fill: #59636e; }
-    .label { fill: #59636e; font-size: 12.5px; font-weight: 600; }
+    .person { fill: #08427b; }
+    .ext { fill: #6b6b6b; }
+    .cont { fill: #2f6db3; }
+    .name { fill: #ffffff; font-size: 18px; font-weight: 600; }
+    .tech { fill: #ffffff; font-size: 13px; opacity: 0.9; }
+    .desc { fill: #ffffff; font-size: 15px; }
+    .frame { fill: none; stroke: #8a8a8a; stroke-width: 2; stroke-dasharray: 8 6; }
+    .frame-label { fill: #444444; font-size: 15px; }
+    .line { stroke: #6b6b6b; stroke-width: 1.6; fill: none; }
+    .head { fill: #6b6b6b; }
+    .label { fill: #444444; font-size: 14px; paint-order: stroke; stroke: #ffffff; stroke-width: 5px; stroke-linejoin: round; }
     @media (prefers-color-scheme: dark) {
       .bg { fill: #0d1117; }
-      .box { fill: #161b22; stroke: #3d444d; }
-      .server { fill: #0c2d4a; stroke: #1f6feb; }
-      .routing { fill: #2e2408; stroke: #9e6a03; }
-      .weighing { fill: #2a1640; stroke: #8957e5; }
-      .env { fill: #0f2d1a; stroke: #238636; }
-      .frame { stroke: #3d444d; }
-      .title, .text { fill: #e6edf3; }
-      .muted, .label { fill: #9198a1; }
+      .frame { stroke: #6e7681; }
+      .frame-label, .label { fill: #c9d1d9; }
+      .label { stroke: #0d1117; }
       .line { stroke: #9198a1; }
       .head { fill: #9198a1; }
     }
   </style>
   <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
       <path class="head" d="M0,0 L10,5 L0,10 z"/>
     </marker>
   </defs>
-  <rect class="bg" width="960" height="380" rx="12"/>
-
-  <!-- The agent -->
-  <rect class="box" x="20" y="142" width="160" height="96" rx="10"/>
-  <text class="title" x="100" y="176" text-anchor="middle">Any MCP agent</text>
-  <text class="muted" x="100" y="198" text-anchor="middle">Claude, a local model,</text>
-  <text class="muted" x="100" y="216" text-anchor="middle">Databricks</text>
-
-  <path class="line" d="M180,190 L238,190" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
-  <text class="label" x="209" y="180" text-anchor="middle">MCP</text>
-
-  <!-- The server frame -->
-  <rect class="frame" x="240" y="20" width="520" height="340" rx="12"/>
-  <rect class="server" x="256" y="34" width="488" height="38" rx="8"/>
-  <text class="title" x="500" y="58" text-anchor="middle">clm-server: runs, checks and traces every step</text>
-
-  <!-- Decisions -->
-  <text class="label" x="256" y="98">DECISIONS, IN ONE OF TWO STYLES</text>
-  <rect class="routing" x="256" y="108" width="236" height="100" rx="10"/>
-  <text class="title" x="272" y="134">Routing</text>
-  <text class="text" x="272" y="158">CLM reads a message and picks</text>
-  <text class="text" x="272" y="176">the route; tools carry it out</text>
-  <text class="muted" x="272" y="198">scenario.toml</text>
-
-  <rect class="weighing" x="508" y="108" width="236" height="100" rx="10"/>
-  <text class="title" x="524" y="134">Weighing options</text>
-  <text class="text" x="524" y="158">Alternatives worked out, checked</text>
-  <text class="text" x="524" y="176">against rules, ranked; CLM judges</text>
-  <text class="muted" x="524" y="198">environment.toml</text>
-
-  <path class="line" d="M374,208 L374,228" marker-end="url(#arrow)"/>
-  <path class="line" d="M626,208 L626,228" marker-end="url(#arrow)"/>
-
-  <!-- Environment -->
-  <rect class="env" x="256" y="230" width="488" height="116" rx="10"/>
-  <text class="title" x="272" y="256">Your environment: the tools you define</text>
-  <text class="text" x="272" y="280">• queries that reach your data</text>
-  <text class="text" x="272" y="302">• actions: open a ticket, hold a seat, book a hotel</text>
-  <text class="text" x="272" y="324">• your rules: DMN tables, calculations, limits</text>
-
-  <!-- Resources -->
-  <path class="line" d="M744,292 L796,292" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
-  <rect class="box" x="798" y="190" width="142" height="168" rx="10"/>
-  <text class="title" x="869" y="218" text-anchor="middle">Your resources</text>
-  <text class="muted" x="869" y="246" text-anchor="middle">databases</text>
-  <text class="muted" x="869" y="268" text-anchor="middle">knowledge graphs</text>
-  <text class="muted" x="869" y="290" text-anchor="middle">issue trackers</text>
-  <text class="muted" x="869" y="312" text-anchor="middle">booking systems</text>
-  <text class="muted" x="869" y="334" text-anchor="middle">public data</text>
+  <rect class="bg" x="48" y="104" width="1192" height="824" rx="12"/>
+  <rect class="frame" x="64" y="288" width="1160" height="624" rx="8"/>
+  <text class="frame-label" x="80" y="892"><tspan font-weight="600">CLM decision server</tspan> [Software System]</text>
+  <path class="line" d="M236,496 L1052,496"/>
+  <path class="line" d="M236,232 L236,335" marker-end="url(#arrow)"/>
+  <path class="line" d="M1052,232 L1052,335" marker-end="url(#arrow)"/>
+  <path class="line" d="M912,396 L377,396" marker-end="url(#arrow)"/>
+  <path class="line" d="M330,336 L330,264 L644,264 L644,233" marker-end="url(#arrow)"/>
+  <path class="line" d="M236,456 L236,535" marker-end="url(#arrow)"/>
+  <path class="line" d="M1052,496 L1052,535" marker-end="url(#arrow)"/>
+  <path class="line" d="M644,496 L644,535" marker-end="url(#arrow)"/>
+  <path class="line" d="M1052,736 L1052,657" marker-end="url(#arrow)"/>
+  <path class="line" d="M912,796 L644,796 L644,657" marker-end="url(#arrow)"/>
+  <rect class="ext" x="96" y="120" width="280" height="112" rx="6"/>
+  <text class="name" x="236" y="150" text-anchor="middle">MCP agent</text>
+  <text class="tech" x="236" y="174" text-anchor="middle">[Software System]</text>
+  <text class="desc" x="236" y="194" text-anchor="middle">Claude, a local model</text>
+  <text class="desc" x="236" y="214" text-anchor="middle">or Databricks</text>
+  <rect class="ext" x="504" y="120" width="280" height="112" rx="6"/>
+  <text class="name" x="644" y="150" text-anchor="middle">Your systems</text>
+  <text class="tech" x="644" y="174" text-anchor="middle">[Software System]</text>
+  <text class="desc" x="644" y="194" text-anchor="middle">Ticketing, booking,</text>
+  <text class="desc" x="644" y="214" text-anchor="middle">databases</text>
+  <rect class="person" x="912" y="120" width="280" height="112" rx="28"/>
+  <text class="name" x="1052" y="150" text-anchor="middle">Administrator</text>
+  <text class="tech" x="1052" y="174" text-anchor="middle">[Person]</text>
+  <text class="desc" x="1052" y="194" text-anchor="middle">Configures and tests</text>
+  <text class="desc" x="1052" y="214" text-anchor="middle">the server</text>
+  <rect class="cont" x="96" y="336" width="280" height="120" rx="6"/>
+  <text class="name" x="236" y="360" text-anchor="middle">MCP server</text>
+  <text class="tech" x="236" y="384" text-anchor="middle">[Container: Python, MCP SDK]</text>
+  <text class="desc" x="236" y="404" text-anchor="middle">Offers decisions as tools,</text>
+  <text class="desc" x="236" y="424" text-anchor="middle">resources and a prompt;</text>
+  <text class="desc" x="236" y="444" text-anchor="middle">traces and checks every call</text>
+  <rect class="cont" x="912" y="336" width="280" height="120" rx="6"/>
+  <text class="name" x="1052" y="370" text-anchor="middle">Portal</text>
+  <text class="tech" x="1052" y="394" text-anchor="middle">[Container: Python, same process]</text>
+  <text class="desc" x="1052" y="414" text-anchor="middle">Configuration, Ask, Review,</text>
+  <text class="desc" x="1052" y="434" text-anchor="middle">Documents and Server pages</text>
+  <rect class="cont" x="96" y="536" width="280" height="120" rx="6"/>
+  <text class="name" x="236" y="570" text-anchor="middle">CLM</text>
+  <text class="tech" x="236" y="594" text-anchor="middle">[Container: MLX or PyTorch]</text>
+  <text class="desc" x="236" y="614" text-anchor="middle">Scores a request</text>
+  <text class="desc" x="236" y="634" text-anchor="middle">against its options</text>
+  <rect class="cont" x="504" y="536" width="280" height="120" rx="6"/>
+  <text class="name" x="644" y="560" text-anchor="middle">Environment</text>
+  <text class="tech" x="644" y="584" text-anchor="middle">[Files: TOML, DMN, CSV, Python]</text>
+  <text class="desc" x="644" y="604" text-anchor="middle">Queries, rules, limits, scenarios</text>
+  <text class="desc" x="644" y="624" text-anchor="middle">and your tools; graph in</text>
+  <text class="desc" x="644" y="644" text-anchor="middle">CSV or Neo4j</text>
+  <rect class="cont" x="912" y="536" width="280" height="120" rx="6"/>
+  <text class="name" x="1052" y="570" text-anchor="middle">Document store</text>
+  <text class="tech" x="1052" y="594" text-anchor="middle">[Container: PostgreSQL + pgvector]</text>
+  <text class="desc" x="1052" y="614" text-anchor="middle">Documents, passages</text>
+  <text class="desc" x="1052" y="634" text-anchor="middle">and citations</text>
+  <rect class="cont" x="912" y="736" width="280" height="120" rx="6"/>
+  <text class="name" x="1052" y="760" text-anchor="middle">clm-derive</text>
+  <text class="tech" x="1052" y="784" text-anchor="middle">[Container: Python CLI]</text>
+  <text class="desc" x="1052" y="804" text-anchor="middle">Derives rules from documents</text>
+  <text class="desc" x="1052" y="824" text-anchor="middle">and checks them;</text>
+  <text class="desc" x="1052" y="844" text-anchor="middle">a person approves</text>
+  <text class="label" x="224" y="256" text-anchor="end">Calls tools</text>
+  <text class="label" x="224" y="273" text-anchor="end">[MCP: HTTP or stdio]</text>
+  <text class="label" x="656" y="252" text-anchor="start">Acts through your tools</text>
+  <text class="label" x="1064" y="256" text-anchor="start">Configures, asks</text>
+  <text class="label" x="1064" y="273" text-anchor="start">[HTTPS]</text>
+  <text class="label" x="644" y="384" text-anchor="middle">Asks, configures [control layer, in process]</text>
+  <text class="label" x="248" y="520" text-anchor="start">Scores options</text>
+  <text class="label" x="656" y="520" text-anchor="start">Reads rules, runs tools</text>
+  <text class="label" x="1064" y="520" text-anchor="start">Searches</text>
+  <text class="label" x="1064" y="700" text-anchor="start">Reads documents</text>
+  <text class="label" x="656" y="730" text-anchor="start">Writes derived rules</text>
 </svg>
